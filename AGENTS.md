@@ -34,6 +34,11 @@
 （winui / installer / release 脚本与文档 / AGENTS.md；**排除** dist、bin、obj、*.zip/*.exe、installer\payload.zip、
 release\deepsleep-setup\package、任何 data 目录与密钥文件）。源码提交与 Release 推送由 AI 助手完成，不要做成软件功能。
 
+## 仓库范围：只放 winui 版
+GitHub 仓库 `zhdezs/deepsleep` **只放 winui 版源码**：`winui/`（WinUI 3 客户端）、`installer/`（WPF 安装程序）、`release/`（发布脚本与使用说明），
+以及根目录的 `AGENTS.md` / `README.md` / `.gitignore`。
+**不要**再推旧版 python（app/、main.py、trainer.py 等）、cpp/、trainer/ 那套（`以理服人` 时期的东西）。
+
 ## 令牌与安全
 
 - 令牌多层加密存放在 `<安装目录>\data\github.token`
