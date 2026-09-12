@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>以理服人 · 键盘侠反制</title>
+<style>
+  :root {
+    --bg: #ededed;
+    --panel: #f7f7f7;
+    --bubble-self: #95ec69;
+    --bubble-other: #ffffff;
+    --text: #1a1a1a;
+    --text-sub: #999;
+    --accent: #07c160;
+    --accent-dark: #06ad56;
+    --danger: #fa5151;
+    --line: #e5e5e5;
+    --shadow: 0 2px 10px rgba(0,0,0,.06);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+      "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100%;
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .app {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    max-width: 760px;
+    margin: 0 auto;
+    background: var(--bg);
+    box-shadow: 0 0 40px rgba(0,0,0,.08);
+  }
+
+  /* 横屏：铺满整屏，聊天区更宽、气泡更舒展 */
+  @media (orientation: landscape) {
+    .app { max-width: none; width: 100%; }
+    .bubble-wrap { max-width: 62%; }
+    .chat { padding: 20px 28px 10px; }
+    .inputbar { padding: 12px 28px 18px; }
+  }
+  /* 竖屏：居中窄列，贴近手机聊天观感 */
+  @media (orientation: portrait) {
+    .app { max-width: 760px; }
+  }
+  /* 极窄屏（手机竖屏）进一步收紧 */
+  @media (max-width: 480px) {
+    .avatar { width: 34px; height: 34px; font-size: 15px; }
+    .bubble { font-size: 14px; padding: 9px 11px; }
+    .bubble-wrap { max-width: 82%; }
+    .topbar { padding: 10px 10px; }
+    .mode-btn { padding: 4px 8px; font-size: 11px; }
+  }
+
+  /* 顶部栏 */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    position: relative;
+    z-index: 5;
+  }
+  .back-btn {
+    width: 32px; height: 32px;
+    border: none; background: none;
+    font-size: 22px; color: var(--text);
+    cursor: pointer; line-height: 1;
+  }
+  .title-block { flex: 1; min-width: 0; }
+  .title {
+    font-size: 16px; font-weight: 600;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #c9c9c9; display: inline-block; flex-shrink: 0;
+  }
+  .dot.online { background: var(--accent); }
+  .subtitle { font-size: 12px; color: var(--text-sub); margin-top: 1px; }
+
+  .top-actions { display: flex; align-items: center; gap: 8px; }
+  .icon-btn {
+    width: 34px; height: 34px;
+    border: none; border-radius: 50%;
+    background: #fff; cursor: pointer;
+    font-size: 17px; display: flex; align-items: center; justify-content: center;
+    box-shadow: var(--shadow); transition: transform .1s;
+  }
+  .icon-btn:active { transform: scale(.92); }
+  .icon-btn.active { background: var(--accent); color: #fff; }
+
+  /* 模式切换（DeepSeek 省 token 控制） */
+  .mode-switch {
+    display: flex; align-items: center; gap: 2px;
+    background: #fff; border-radius: 20px; padding: 3px;
+    box-shadow: var(--shadow);
+  }
+  .mode-btn {
+    border: none; background: none; cursor: pointer;
+    font-size: 12px; padding: 5px 11px; border-radius: 16px;
+    color: var(--text-sub); white-space: nowrap; transition: all .15s;
+  }
+  .mode-btn.active { background: var(--accent); color: #fff; font-weight: 600; }
+
+  /* 聊天区 */
+  .chat {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 14px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .chat::-webkit-scrollbar { width: 6px; }
+  .chat::-webkit-scrollbar-thumb { background: #d0d0d0; border-radius: 3px; }
+
+  .msg { display: flex; gap: 10px; align-items: flex-start; }
+  .msg.self { flex-direction: row-reverse; }
+  .avatar {
+    width: 40px; height: 40px; border-radius: 6px;
+    flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 18px; color: #fff; user-select: none;
+  }
+  .avatar.other { background: #b0b0b0; }
+  .avatar.self { background: #07c160; }
+
+  .bubble-wrap { max-width: 78%; display: flex; flex-direction: column; }
+  .msg.self .bubble-wrap { align-items: flex-end; }
+  .bubble {
+    padding: 10px 13px;
+    border-radius: 8px;
+    font-size: 15px;
+    line-height: 1.55;
+    word-break: break-word;
+    white-space: pre-wrap;
+    position: relative;
+    box-shadow: 0 1px 2px rgba(0,0,0,.04);
+  }
+  .msg.other .bubble { background: var(--bubble-other); }
+  .msg.self .bubble { background: var(--bubble-self); }
+  .msg.other .bubble { border-top-left-radius: 2px; }
+  .msg.self .bubble { border-top-right-radius: 2px; }
+
+  .meta {
+    font-size: 11px; color: var(--text-sub);
+    margin-top: 4px; padding: 0 2px;
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  }
+  .tag {
+    font-size: 10px; padding: 1px 6px; border-radius: 8px;
+    background: #ececec; color: #888;
+  }
+  .tag.deepseek { background: #e8f3ff; color: #2b7bd4; }
+  .tag.lm { background: #eef7ee; color: #4c9a4c; }
+  .tag.local { background: #ececec; color: #888; }
+
+  /* 换一招按钮 */
+  .alt-btn {
+    border: none; background: none; cursor: pointer;
+    font-size: 11px; color: #576b95; padding: 2px 4px;
+  }
+  .alt-btn:hover { text-decoration: underline; }
+
+  /* 输入区 */
+  .inputbar {
+    display: flex; align-items: flex-end; gap: 10px;
+    padding: 10px 14px 14px;
+    background: var(--panel);
+    border-top: 1px solid var(--line);
+  }
+  .inputbox {
+    flex: 1; position: relative;
+    background: #fff; border-radius: 8px; padding: 9px 12px;
+    min-height: 42px; max-height: 120px;
+    overflow-y: auto; outline: none;
+    font-size: 15px; line-height: 1.5;
+  }
+  .inputbox:empty::before {
+    content: attr(data-placeholder);
+    color: #b2b2b2; pointer-events: none;
+  }
+  .send-btn {
+    border: none; background: var(--accent); color: #fff;
+    width: 76px; height: 40px; border-radius: 8px;
+    font-size: 15px; font-weight: 600; cursor: pointer;
+    transition: background .15s, transform .1s; flex-shrink: 0;
+  }
+  .send-btn:hover { background: var(--accent-dark); }
+  .send-btn:active { transform: scale(.96); }
+  .send-btn:disabled { background: #c8c8c8; cursor: not-allowed; }
+
+  /* 输入提示 / typing */
+  .typing {
+    display: flex; align-items: center; gap: 10px; padding: 4px 2px;
+  }
+  .typing .avatar { width: 34px; height: 34px; font-size: 15px; }
+  .typing .bubble { display: flex; gap: 4px; padding: 14px 16px; }
+  .typing .bubble i {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: #bbb; animation: blink 1.2s infinite;
+  }
+  .typing .bubble i:nth-child(2) { animation-delay: .2s; }
+  .typing .bubble i:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%,60%,100% { opacity: .3; } 30% { opacity: 1; } }
+
+  /* 弹层 */
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.4);
+    display: none; align-items: center; justify-content: center; z-index: 20;
+  }
+  .overlay.show { display: flex; }
+  .panel {
+    background: #fff; border-radius: 12px; width: 88%; max-width: 420px;
+    padding: 22px; box-shadow: 0 10px 40px rgba(0,0,0,.2);
+    max-height: 80vh; overflow-y: auto;
+  }
+  .panel h3 { font-size: 17px; margin-bottom: 14px; }
+  .panel p { font-size: 13px; color: #666; line-height: 1.7; }
+  .panel .stat-line {
+    font-size: 14px; padding: 7px 0; border-bottom: 1px solid var(--line);
+  }
+  .panel .stat-line:last-child { border-bottom: none; }
+  .panel pre {
+    white-space: pre-wrap; font-family: inherit; font-size: 13px;
+    color: #444; line-height: 1.7;
+  }
+  .panel .close-btn {
+    width: 100%; margin-top: 16px; padding: 10px;
+    border: none; border-radius: 8px; background: var(--accent);
+    color: #fff; font-size: 15px; cursor: pointer;
+  }
+  .panel .btn-row { display: flex; gap: 10px; margin-top: 16px; }
+  .panel .btn-row button {
+    flex: 1; padding: 10px; border: none; border-radius: 8px;
+    font-size: 14px; cursor: pointer;
+  }
+  .btn-secondary { background: #f0f0f0; color: #333; }
+  .btn-primary { background: var(--accent); color: #fff; }
+
+  .toast {
+    position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,.78); color: #fff; font-size: 13px;
+    padding: 9px 18px; border-radius: 8px; z-index: 30;
+    opacity: 0; pointer-events: none; transition: opacity .25s;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- 顶部栏 -->
+  <div class="topbar">
+    <div class="title-block">
+      <div class="title">
+        <span class="dot online"></span>网络键盘侠
+      </div>
+      <div class="subtitle" id="subtitle">正在输入…</div>
+    </div>
+    <div class="top-actions">
+      <div class="mode-switch" id="modeSwitch" title="DeepSeek 增强：自动开启最省 token">
+        <button class="mode-btn active" data-mode="auto">自动</button>
+        <button class="mode-btn" data-mode="off">本地</button>
+        <button class="mode-btn" data-mode="on">DeepSeek</button>
+      </div>
+      <button class="icon-btn" id="statsBtn" title="对线统计">📊</button>
+      <button class="icon-btn" id="newBtn" title="新开一场">✚</button>
+      <button class="icon-btn" id="quitBtn" title="退出服务">✕</button>
+    </div>
+  </div>
+
+  <!-- 聊天区 -->
+  <div class="chat" id="chat"></div>
+
+  <!-- 输入区 -->
+  <div class="inputbar">
+    <div class="inputbox" id="input" contenteditable="true" data-placeholder="输入对方的攻击言论…"></div>
+    <button class="send-btn" id="sendBtn">发送</button>
+  </div>
+</div>
+
+<!-- 统计弹层 -->
+<div class="overlay" id="statsOverlay">
+  <div class="panel">
+    <h3>📊 对线统计</h3>
+    <div id="statsBody"><p>加载中…</p></div>
+    <button class="close-btn" onclick="closeOverlay('statsOverlay')">关闭</button>
+  </div>
+</div>
+
+<!-- 换一招弹层 -->
+<div class="overlay" id="altOverlay">
+  <div class="panel">
+    <h3>换一招</h3>
+    <div id="altBody"></div>
+    <button class="close-btn" onclick="closeOverlay('altOverlay')">关闭</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var chatEl = document.getElementById("chat");
+  var inputEl = document.getElementById("input");
+  var sendBtn = document.getElementById("sendBtn");
+  var subtitle = document.getElementById("subtitle");
+  var mode = "auto";
+  var lastTrollText = "";
+  var busy = false;
+
+  function toast(msg) {
+    var t = document.getElementById("toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(t._timer);
+    t._timer = setTimeout(function () { t.classList.remove("show"); }, 2200);
+  }
+
+  function api(path, opts) {
+    return fetch(path, opts).then(function (r) { return r.json(); });
+  }
+
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function sourceTag(source) {
+    if (source === "deepseek") return '<span class="tag deepseek">DeepSeek</span>';
+    if (source === "local-lm") return '<span class="tag lm">本地语言模型</span>';
+    return '<span class="tag local">实时组装</span>';
+  }
+
+  function scrollBottom() {
+    chatEl.scrollTop = chatEl.scrollHeight;
+  }
+
+  function addMessage(role, content, extra) {
+    var isSelf = role === "ai";
+    var wrap = document.createElement("div");
+    wrap.className = "msg " + (isSelf ? "self" : "other");
+
+    var avatar = document.createElement("div");
+    avatar.className = "avatar " + (isSelf ? "self" : "other");
+    avatar.textContent = isSelf ? "理" : "侠";
+
+    var bubbleWrap = document.createElement("div");
+    bubbleWrap.className = "bubble-wrap";
+
+    var bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.textContent = content;
+
+    bubbleWrap.appendChild(bubble);
+
+    if (isSelf && extra) {
+      var meta = document.createElement("div");
+      meta.className = "meta";
+      if (extra.strategy_name) {
+        meta.innerHTML = '<span class="tag local">' + esc(extra.strategy_name) + "</span>";
+      }
+      if (extra.source) {
+        meta.innerHTML += sourceTag(extra.source);
+      }
+      var altBtn = document.createElement("button");
+      altBtn.className = "alt-btn";
+      altBtn.textContent = "换一招";
+      altBtn.onclick = function () { showAlternatives(); };
+      meta.appendChild(altBtn);
+      bubbleWrap.appendChild(meta);
+    }
+
+    wrap.appendChild(avatar);
+    wrap.appendChild(bubbleWrap);
+    chatEl.appendChild(wrap);
+    scrollBottom();
+    return wrap;
+  }
+
+  function showTyping() {
+    var wrap = document.createElement("div");
+    wrap.className = "typing";
+    wrap.id = "typing";
+    wrap.innerHTML =
+      '<div class="avatar self">理</div>' +
+      '<div class="bubble"><i></i><i></i><i></i></div>';
+    chatEl.appendChild(wrap);
+    scrollBottom();
+  }
+  function hideTyping() {
+    var t = document.getElementById("typing");
+    if (t) t.remove();
+  }
+
+  function send() {
+    if (busy) return;
+    var text = inputEl.innerText.replace(/\u00a0/g, " ").trim();
+    if (!text) { toast("先说点什么吧"); return; }
+
+    addMessage("troll", text);
+    inputEl.innerHTML = "";
+    lastTrollText = text;
+    busy = true;
+    sendBtn.disabled = true;
+    subtitle.textContent = mode === "auto" ? "自动判断中…" : "正在输入…";
+    showTyping();
+
+    api("/api/reply", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: text, mode: mode }),
+    }).then(function (res) {
+      hideTyping();
+      busy = false;
+      sendBtn.disabled = false;
+      if (res && res.ok && res.data) {
+        var d = res.data;
+        addMessage("ai", d.response, d);
+        var who = d.source === "deepseek" ? "DeepSeek 生成" :
+          d.source === "local-lm" ? "本地语言模型" : "本地实时组装";
+        subtitle.textContent = d.category_name + " · " + who;
+      } else {
+        toast((res && res.error) || "生成失败，请重试");
+        subtitle.textContent = "生成失败";
+      }
+    }).catch(function () {
+      hideTyping();
+      busy = false;
+      sendBtn.disabled = false;
+      toast("网络错误，请确认服务已启动");
+      subtitle.textContent = "网络错误";
+    });
+  }
+
+  function showAlternatives() {
+    if (!lastTrollText) { toast("先跟对方过一招，才能换招"); return; }
+    var body = document.getElementById("altBody");
+    body.innerHTML = "<p>生成中…</p>";
+    document.getElementById("altOverlay").classList.add("show");
+    api("/api/alternatives", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: lastTrollText, n: 3 }),
+    }).then(function (res) {
+      if (!res || !res.ok || !res.data || !res.data.length) {
+        body.innerHTML = "<p>暂无备选回复。</p>";
+        return;
+      }
+      body.innerHTML = "";
+      res.data.forEach(function (a) {
+        var div = document.createElement("div");
+        div.className = "stat-line";
+        var b = document.createElement("div");
+        b.textContent = a.response;
+        var btn = document.createElement("button");
+        btn.className = "btn-primary";
+        btn.style.cssText = "margin-top:8px;padding:6px 12px;border:none;border-radius:6px;color:#fff;cursor:pointer;font-size:13px;";
+        btn.textContent = "用这条";
+        btn.onclick = function () {
+          addMessage("ai", a.response, { strategy_name: a.strategy_name, source: "local" });
+          closeOverlay("altOverlay");
+        };
+        div.appendChild(b);
+        div.appendChild(btn);
+        body.appendChild(div);
+      });
+    }).catch(function () {
+      body.innerHTML = "<p>加载失败。</p>";
+    });
+  }
+
+  function openStats() {
+    var body = document.getElementById("statsBody");
+    body.innerHTML = "<p>加载中…</p>";
+    document.getElementById("statsOverlay").classList.add("show");
+    api("/api/stats").then(function (res) {
+      if (res && res.ok) {
+        body.innerHTML = "<pre>" + esc(res.data) + "</pre>";
+      } else {
+        body.innerHTML = "<p>加载失败。</p>";
+      }
+    });
+  }
+
+  function closeOverlay(id) {
+    document.getElementById(id).classList.remove("show");
+  }
+
+  function newSession() {
+    api("/api/session/new", { method: "POST" }).then(function (res) {
+      if (res && res.ok) {
+        chatEl.innerHTML = "";
+        lastTrollText = "";
+        subtitle.textContent = "新的一场，放马过来";
+        toast("已新开一场");
+      }
+    });
+  }
+
+  // 事件绑定
+  sendBtn.addEventListener("click", send);
+  inputEl.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      send();
+    }
+  });
+
+  document.querySelectorAll(".mode-btn").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      document.querySelectorAll(".mode-btn").forEach(function (b) {
+        b.classList.remove("active");
+      });
+      btn.classList.add("active");
+      mode = btn.getAttribute("data-mode");
+      var tip = { auto: "自动：强度高时才用 DeepSeek，省 token",
+        off: "本地：语言模型 + 实时组装，零开销",
+        on: "DeepSeek：全程大模型增强" }[mode];
+      subtitle.textContent = tip;
+      toast(tip);
+    });
+  });
+
+  document.getElementById("statsBtn").addEventListener("click", openStats);
+  document.getElementById("newBtn").addEventListener("click", newSession);
+  document.getElementById("quitBtn").addEventListener("click", function () {
+    if (!confirm("退出服务？")) return;
+    api("/api/quit", { method: "POST" }).then(function () {
+      toast("服务已退出");
+      setTimeout(function () { document.body.innerHTML =
+        '<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#999;font-size:14px;">服务已退出，可关闭此页面。</div>'; }, 400);
+    });
+  });
+
+  // 横竖屏切换：跟随窗口尺寸变化实时调整（CSS media query 已适配）
+  window.addEventListener("orientationchange", function () {
+    setTimeout(scrollBottom, 200);
+  });
+
+  // 加载会话状态（DeepSeek 是否已配置）
+  api("/api/state").then(function (res) {
+    if (res && res.ok && res.data) {
+      if (res.data.deepseek_configured) {
+        subtitle.textContent = "DeepSeek 已就绪，自动模式省 token";
+      } else {
+        subtitle.textContent = "未配置 DeepSeek，将走本地模型";
+      }
+    }
+  });
+
+  inputEl.focus();
+})();
+</script>
+</body>
+</html>

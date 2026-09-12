@@ -1,0 +1,33 @@
+# ---- 构建产物 ----
+[Bb]in/
+[Oo]bj/
+dist/
+publish/
+*.user
+
+# ---- 大二进制 / 发布物（走 Releases，不进源码库）----
+*.zip
+*.exe
+*.pdb
+*.dll
+*.pri
+release/deepsleep-setup/package/
+installer/payload.zip
+
+# ---- 用户数据与密钥（绝对不能提交）----
+data/
+*.token
+**/data/config.json
+**/data/conversations.json
+**/data/memory.json
+**/data/agent.log
+**/data/runtime_state.json
+
+# ---- 备份 / 环境 ----
+.patch-backup-*/
+.venv/
+__pycache__/
+*.pyc
+.idea/
+.vs/
+node_modules/

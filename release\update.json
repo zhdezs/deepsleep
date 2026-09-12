@@ -1,0 +1,6 @@
+{
+    "version":  "1.0.2",
+    "url":  "C:\\Users\\lichenghan\\CodeBuddy\\20260812123427\\release\\deepsleep-Setup.exe",
+    "sha256":  "DFB8A687A51D9063C147B430B8A11E7AC0499565F3E3359F25EB0E8EF8150685",
+    "notes":  "1.0.2：GitHub 令牌多层加密保存（DPAPI 封装密钥 + AES-256-GCM + 机器绑定 AAD + ACL 收紧），设置里一句话录入；tools 目录收拢辅助脚本；工具调用流程 tool_call→执行→回灌→最终回复；OpenAI Responses API；思考中气泡按时间顺序；API 连不上不再静默降级"
+}
