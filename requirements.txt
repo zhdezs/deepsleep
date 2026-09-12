@@ -1,2 +1,0 @@
-# No third-party dependencies: only requires Python 3.8+ (built-in tkinter & sqlite3).
-# On Windows, just install the official Python build; nothing else needs installing.
