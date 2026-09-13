@@ -108,7 +108,6 @@ src/                      WinUI 3 客户端全部源码（.NET 10）
 
 installer/DeepSleepSetup/ WPF 图形安装程序（单文件，内嵌 payload.zip）
 release/                  发布脚本与说明（make-update.ps1、tools/、使用说明.txt）
-AGENTS.md                 开发约定（含发版流程）
 ```
 
 ---
@@ -140,7 +139,7 @@ dotnet publish -c Release -r win-x64 --self-contained true
 ```
 
 发版由维护脚本一体化完成：改版本号 → 编译 → 打包 → 生成 update.json →
-推送 GitHub Release 与源码（详见 `AGENTS.md`）。
+推送 GitHub Release 与源码（`release\tools\publish-via-api.py`，需自备 GitHub 令牌）。
 
 ---
 
