@@ -41,7 +41,7 @@
 ## 二、技术架构
 
 ```
-winui/                     主应用源码（WinUI 3 / .NET 10）
+src/                       主应用源码（原 winui）（WinUI 3 / .NET 10）
   ├─ MainWindow.xaml(.cs)  主界面（AI 助手 / Agent 集群）
   ├─ Agent.cs              智能体主循环 + 12 项工具实现
   ├─ ApiClient.cs          在线 API（OpenAI 兼容 / Claude / Gemini）
@@ -120,7 +120,7 @@ deepsleep-Setup.exe --silent --dir "D:\Apps\deepsleep" --no-desktop --no-launch
 
 ```powershell
 # 1. 编译新版本主应用，覆盖 release/deepsleep-setup/package/
-cd winui
+cd src
 dotnet publish -c Release -o ..\release\deepsleep-setup\package
 
 # 2. 重新打包安装器内嵌的 payload.zip（把 package 内容压进去），

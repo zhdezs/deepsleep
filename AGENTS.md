@@ -7,11 +7,11 @@
 不允许只改本地不推送。完整流程：
 
 1. 版本号四处同步：
-   - `winui\TrollWrangler.csproj` 的 `<Version>` 与 `<FileVersion>`
+   - `src\TrollWrangler.csproj` 的 `<Version>` 与 `<FileVersion>`
    - `installer\DeepSleepSetup\DeepSleepSetup.csproj` 的 `<Version>`
    - `installer\DeepSleepSetup\MainWindow.xaml.cs` 的 `AppVersion`
    - `installer\DeepSleepSetup\MainWindow.xaml` 的副标题
-2. 发布主程序：`winui` 下
+2. 发布主程序：`src` 下
    `dotnet publish -c Release -r win-x64 --self-contained true -o dist\deepsleep-win-x64`
 3. 更新载荷：把 dist（**排除 data**，别把你的 Key 和聊天记录打进安装包）覆盖到
    `release\deepsleep-setup\package`，再重打 `installer\payload.zip` 和
@@ -31,11 +31,11 @@
 
 ## 源码也要推（和 Release 一起）
 仓库 `zhdezs/deepsleep` 同时存放**源码和 Release**：每次发版除了推 Release，还要把当前源码同步过去
-（winui / installer / release 脚本与文档 / AGENTS.md；**排除** dist、bin、obj、*.zip/*.exe、installer\payload.zip、
+（src / installer / release 脚本与文档 / AGENTS.md；**排除** dist、bin、obj、*.zip/*.exe、installer\payload.zip、
 release\deepsleep-setup\package、任何 data 目录与密钥文件）。源码提交与 Release 推送由 AI 助手完成，不要做成软件功能。
 
 ## 仓库范围：只放 winui 版
-GitHub 仓库 `zhdezs/deepsleep` **只放 winui 版源码**：`winui/`（WinUI 3 客户端）、`installer/`（WPF 安装程序）、`release/`（发布脚本与使用说明），
+GitHub 仓库 `zhdezs/deepsleep` **只放 winui 版源码**：`src/`（WinUI 3 客户端，原 winui）、`installer/`（WPF 安装程序）、`release/`（发布脚本与使用说明），
 以及根目录的 `AGENTS.md` / `README.md` / `.gitignore`。
 **不要**再推旧版 python（app/、main.py、trainer.py 等）、cpp/、trainer/ 那套（`以理服人` 时期的东西）。
 

@@ -1,4 +1,4 @@
-﻿<#
+<#
   deepsleep · 一键发布新版本到 GitHub（OTA 用）
   ==================================================================
   做四件事：
@@ -311,7 +311,7 @@ foreach ($f in $files) {
 if (-not $NoConfigPatch) {
     Head '把「更新源」写进客户端配置'
     $patched = 0
-    foreach ($d in @($appDir, 'C:\Users\lichenghan\CodeBuddy\20260812123427\winui\dist\deepsleep-win-x64')) {
+    foreach ($d in @($appDir, 'C:\Users\lichenghan\CodeBuddy\20260812123427\src\dist\deepsleep-win-x64')) {
         if (-not $d -or -not (Test-Path (Join-Path $d 'deepsleep.exe'))) { continue }
         $cfg = Read-Config $d
         if (-not $cfg) { continue }
