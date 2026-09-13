@@ -364,7 +364,11 @@ public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double
             using (var hc = NewClient(TimeSpan.FromMinutes(30)))
             {
                 if (info.Url.Contains("api.github.com", StringComparison.OrdinalIgnoreCase))
-                    hc.DefaultRequestHeaders.Accept.Clear();   // API 资产要 octet-stream
+                    {
+                        // API 资产必须显式要二进制，否则会返回 JSON 元数据（之前只 Clear 了 Accept，导致下回来 1441 字节的 JSON）
+                        hc.DefaultRequestHeaders.Accept.Clear();
+                        hc.DefaultRequestHeaders.Accept.ParseAdd("application/octet-stream");
+                    }
                 using (var resp = await hc.GetAsync(info.Url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false))
                 {
                     resp.EnsureSuccessStatusCode();
@@ -383,6 +387,13 @@ public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double
                 }
             }
 
+            // 防御：如果下回来的还是 JSON（含 "release-assets" 之类元数据），直接判失败重试
+            using (var head = File.OpenRead(dest))
+            {
+                var probe = new byte[2];
+                if (head.Read(probe, 0, 2) == 2 && probe[0] == (byte)'{' && probe[1] == (byte)'"')
+                    throw new InvalidDataException("下载到的不是安装包（是 JSON 元数据），重试中");
+            }
             long actualSize = new FileInfo(dest).Length;
             if (info.Size > 0 && actualSize != info.Size)
                 throw new InvalidDataException($"下载不完整：官方 {info.Size} 字节，实际 {actualSize} 字节");

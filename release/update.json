@@ -1,6 +1,6 @@
 {
-    "version":  "1.0.5",
+    "version":  "1.0.6",
     "url":  "C:\\Users\\lichenghan\\CodeBuddy\\20260812123427\\release\\deepsleep-Setup.exe",
-    "sha256":  "2B40970B2DAFF962FAEC7F262CBB1525546410339AE809EF5AF2C435026D57D7",
-    "notes":  "1.0.5：换用官方 DeepSeek 鲸鱼图标（去掉 deepsleep 字样、白底抠透明）；新增桌宠用透明鲸鱼图 pet.png"
+    "sha256":  "F293BF02981354611B2FDC7EDF4ED3A78EEE274EF1DA208DD13B9DE65B02D6AF",
+    "notes":  "1.0.6：修复 OTA 下载拿到 JSON 元数据的问题（API 资产地址现在显式要 application/octet-stream），并加防御：下回来的若不是安装包立即重试"
 }
