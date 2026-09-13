@@ -1,6 +1,6 @@
 {
-    "version":  "1.0.9",
-    "url":  "https://github.com/zhdezs/deepsleep/releases/download/v1.0.9/deepsleep-Setup.exe",
-    "sha256":  "47964BCF5F8293B6AF03C0DEB99B3D74339C6B2BA14A4279E3A68E230D3E0948",
-    "notes":  "1.0.9 修 bug：桌宠之前根本不会显示（创建分层窗口时漏了 WS_VISIBLE，1.0.7/1.0.8 都中招），现在真的会出现在桌面右下角；隐藏/显示改用正规 ShowWindow。1.0.8 的国内镜像回退、断点续传、桌宠设置开关一并包含。"
+    "version":  "1.0.10",
+    "url":  "https://github.com/zhdezs/deepsleep/releases/download/v1.0.10/deepsleep-Setup.exe",
+    "sha256":  "115194E7686C655FD75C4C9BF38901E5F52329688E889D6222CB348793C95C14",
+    "notes":  "1.0.10：沙箱放行可执行文件——「打开文件」现在允许打开 exe/bat/cmd/ps1/vbs/msi/jar/reg 等（work 模式先弹一次确认，boom 模式直接放行），命令沙箱的高危拦截不变。"
 }

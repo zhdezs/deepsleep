@@ -611,7 +611,8 @@ public sealed class Agent
         "- 生成图片：参数 {\"提示词\":\"详细的画面描述\",\"尺寸\":\"可选 1024x1024 / 768x1344 / 1344x768\"}。调用 CogView-3-Flash 生成图片并保存到本地，返回本地图片路径。用户要求画图/生成图片/配图时使用。\n" +
         "- 看图：参数 {\"图片路径\":\"本地图片绝对路径\",\"问题\":\"可选，要问的问题\"}。调用 GLM-4.6V-Flash 多模态模型识别/分析图片（描述内容、读图、检查截图、审查生成的图片等）。\n" +
         "- 抓取网页：参数 {\"网址\":\"https://...\"}。用内置爬虫下载网页并提取正文文本（自动去标签、限长），用于阅读搜索结果指向的文章、新闻、价格页等。\n" +
-        "- 打开文件：参数 {\"路径\":\"绝对路径\"}。用系统默认程序打开本地文件（文档/图片/网页/媒体等；可执行文件会被沙箱拦截）。\n" +
+        "- 打开文件：参数 {\"路径\":\"绝对路径\"}。用系统默认程序打开本地文件（文档/图片/网页/媒体等）；" +
+        "可执行文件/脚本也能打开（等于把它运行起来），work 模式下系统会先找用户确认，别自作主张反复调用。\n" +
         "- 读取文件：参数 {\"路径\":\"绝对路径\"}。读取文本文件内容。\n" +
         "- 写入文件：参数 {\"路径\":\"绝对路径\",\"内容\":\"要写入的内容\"}。写入或覆盖文本文件。\n" +
         "- 记住：参数 {\"内容\":\"要记住的事实或用户偏好\"}。把重要信息写入长期记忆（跨会话有效），之后任何对话都能用到。\n" +
@@ -683,7 +684,8 @@ public sealed class Agent
         if (RunMode != "chat")
             prompt += "\n- 联网搜索：参数 {\"关键词\":\"搜索词\"}。用百度（失败自动切换 DuckDuckGo）搜索网页，返回标题/链接/摘要。用户要求搜索、查价格、查资料、找最新信息时优先使用；若工具提示已关闭，请提醒用户打开 🌐 开关，不要用命令行代替。";
             prompt += "\n- 抓取网页：参数 {\"网址\":\"https://...\"}。用内置爬虫抓取网页正文（自动去标签、限长 8000 字）。搜索得到链接后需要看原文时使用；若网页抓不到正文，如实说明，不要假装成功。";
-            prompt += "\n- 打开文件：参数 {\"路径\":\"绝对路径\"}。用系统默认程序打开本地文件；危险的可执行/脚本文件会被沙箱拦截。";
+            prompt += "\n- 打开文件：参数 {\"路径\":\"绝对路径\"}。用系统默认程序打开本地文件；" +
+                      "可执行文件/脚本也允许打开（打开就是运行它，work 模式下会先请用户确认）。";
         if (!string.IsNullOrWhiteSpace(ExtraPrompt))
             prompt += "\n\n" + ExtraPrompt;
         if (MultimodalMain)
@@ -1489,7 +1491,7 @@ public sealed class Agent
                     : await VisionTool(args, sid, ct),
                 ToolSearch => await WebSearchTool(args, ct),
                 ToolFetch => await FetchUrlTool(args, ct),
-                ToolOpenFile => OpenFileTool(args),
+                ToolOpenFile => await OpenFileTool(args, sid),
                 ToolReadFile => ReadFileTool(args),
                 ToolWriteFile => WriteFileTool(args),
                 ToolRemember => RememberTool(args),
@@ -2021,19 +2023,31 @@ public sealed class Agent
         return $"已写入：{full}（{content.Length} 字符）";
     }
 
-    private static string OpenFileTool(JsonElement args)
+    /// <summary>
+    /// 用系统默认程序打开文件。可执行 / 脚本类文件（打开即运行）不再被沙箱一刀切拦掉：
+    /// work 模式先弹一次确认，boom 模式直接放行。
+    /// </summary>
+    private async Task<string> OpenFileTool(JsonElement args, int sid)
     {
         string? path = GetArg(args, "路径");
         if (string.IsNullOrWhiteSpace(path))
             return "参数错误：缺少「路径」。";
         if (!File.Exists(path))
             return $"文件不存在：{path}";
-        string? blocked = Sandbox.CheckOpenPath(path);
-        if (blocked != null) return blocked;
+
+        string full = Path.GetFullPath(path);
+        bool runsCode = Sandbox.IsExecutableLike(full);
+        if (runsCode && RunMode == "work" && ConfirmRequested != null)
+        {
+            bool ok = await ConfirmRequested(sid,
+                $"启动可执行文件（打开即运行）：{full}\n只会启动它本身，不带任何参数。");
+            if (!ok)
+                return $"用户拒绝：已取消启动 {full}。";
+        }
         try
         {
-            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
-            return $"已用系统默认程序打开：{path}";
+            Process.Start(new ProcessStartInfo(full) { UseShellExecute = true });
+            return runsCode ? $"已启动：{full}" : $"已用系统默认程序打开：{full}";
         }
         catch (Exception ex)
         {

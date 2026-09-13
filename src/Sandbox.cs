@@ -71,12 +71,21 @@ public static class Sandbox
         return null;
     }
 
-    public static string? CheckOpenPath(string path)
+    /// <summary>"打开"就等于运行代码的文件类型（exe / 脚本 / 安装包 / 注册表脚本）。</summary>
+    private static readonly string[] ExecutableLike =
+    {
+        ".exe", ".bat", ".cmd", ".ps1", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh",
+        ".scr", ".msi", ".msp", ".com", ".cpl", ".jar", ".reg", ".hta",
+    };
+
+    /// <summary>
+    /// 打开这类文件会直接执行系统里的代码，属于"要动手"的操作 —— 沙箱不再一刀切禁止，
+    /// 改为交给上层：work 模式先弹确认，boom 模式直接放行。
+    /// </summary>
+    public static bool IsExecutableLike(string path)
     {
         string ext = Path.GetExtension(path).ToLowerInvariant();
-        if (ext is ".exe" or ".dll" or ".bat" or ".cmd" or ".ps1" or ".vbs" or ".scr" or ".msi" or ".com")
-            return "沙箱拦截：不允许直接打开可执行/脚本文件（避免运行未知代码）。";
-        return null;
+        return Array.IndexOf(ExecutableLike, ext) >= 0;
     }
 
     private static bool ContainsSystemDir(string lower)
