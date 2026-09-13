@@ -198,6 +198,21 @@ public sealed partial class MainWindow : Window
         llmTimer.Start();
 
         _ = AutoCheckUpdateAsync();   // OTA：启动时静默检查新版本
+
+        // 桌宠：透明分层窗口，只有鲸鱼本体显示在桌面上（右键可隐藏/退出）
+        try
+        {
+            string petRaw = Path.Combine(AppContext.BaseDirectory, "pet.raw");
+            if (_config.PetEnabled && File.Exists(petRaw))
+            {
+                _pet = new DesktopPet(petRaw, () =>
+                {
+                    try { AppWindow.Show(); Activate(); }
+                    catch { /* 打不开就忽略 */ }
+                });
+            }
+        }
+        catch { _pet = null; }
     }
 
     // ------------------------------------------------------------------
@@ -601,6 +616,8 @@ public sealed partial class MainWindow : Window
         ("生成代码", "请根据下面的需求生成完整可运行的代码：\n\n"),
         ("写周报", "请把下面的工作内容整理成周报格式：\n\n"),
     };
+
+    private DesktopPet? _pet;
 
     private AgentRunState GetAgentState(int sid)
         => _agentStates.TryGetValue(sid, out var s) ? s : AgentRunState.Idle;

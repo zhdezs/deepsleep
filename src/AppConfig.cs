@@ -36,6 +36,8 @@ public sealed class AppConfig
     public string UpdateUrl { get; set; } = "";
     /// <summary>启动时自动检查更新。</summary>
     public bool AutoCheckUpdate { get; set; } = true;
+    /// <summary>是否显示桌面鲸鱼桌宠。</summary>
+    public bool PetEnabled { get; set; } = true;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {

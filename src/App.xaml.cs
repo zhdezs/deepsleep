@@ -7,6 +7,11 @@ namespace TrollWrangler;
 
 public partial class App : Application
 {
+    /// <summary>供桌宠右键菜单调用：退出整个程序。</summary>
+    public static void ExitApp()
+    {
+        try { Current?.Exit(); } catch { Environment.Exit(0); }
+    }
     private Window? _window;
 
     public App()

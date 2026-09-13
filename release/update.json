@@ -1,6 +1,6 @@
 {
-    "version":  "1.0.6",
+    "version":  "1.0.7",
     "url":  "C:\\Users\\lichenghan\\CodeBuddy\\20260812123427\\release\\deepsleep-Setup.exe",
-    "sha256":  "F293BF02981354611B2FDC7EDF4ED3A78EEE274EF1DA208DD13B9DE65B02D6AF",
-    "notes":  "1.0.6：修复 OTA 下载拿到 JSON 元数据的问题（API 资产地址现在显式要 application/octet-stream），并加防御：下回来的若不是安装包立即重试"
+    "sha256":  "2BC36A5B0A16D6E5794E093A3BFC3CD9601FE610DEF6D6D1BD9FA8ADEC8CB091",
+    "notes":  "1.0.7：新增桌面鲸鱼桌宠（透明分层窗口、可拖动、右键菜单）；安装程序与主程序统一使用官方鲸鱼图标"
 }
