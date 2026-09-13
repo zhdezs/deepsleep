@@ -324,7 +324,7 @@ public sealed class ApiClient : IDisposable
     // ------------------------------------------------------------------
     private async Task<string?> ChatResponsesAsync(string system,
         IReadOnlyList<(string Role, string Content)> messages, CancellationToken ct,
-        bool stream, Action<string>? onDelta)
+        bool stream, Action<string>? onDelta, int maxOut = 8192)
     {
         var input = new List<object>();
         foreach (var (role, content) in messages)
@@ -347,7 +347,7 @@ public sealed class ApiClient : IDisposable
         {
             ["model"] = Model,
             ["input"] = input,
-            ["max_output_tokens"] = 8192,
+            ["max_output_tokens"] = maxOut,
             ["stream"] = stream,
         };
         if (!string.IsNullOrWhiteSpace(system)) payload["instructions"] = system;
@@ -391,7 +391,7 @@ public sealed class ApiClient : IDisposable
                 return null;
             }).ConfigureAwait(false);
             // 流式没拿到内容（部分兼容端点不支持）→ 退回非流式，保证能出话
-            if (string.IsNullOrEmpty(text)) return await ChatResponsesAsync(system, messages, ct, false, null);
+            if (string.IsNullOrEmpty(text)) return await ChatResponsesAsync(system, messages, ct, false, null, maxOut);
             LastError = null;
             return text;
         }
@@ -400,36 +400,61 @@ public sealed class ApiClient : IDisposable
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
 
-        // ① 方便字段 output_text（SDK 风格）
+        string got = ExtractResponsesText(root, out string status, out string reason);
+        if (got.Length > 0)
+        {
+            // 即使被判定为 incomplete（例如刚好卡在 token 上限），也先把已经拿到的部分交给用户，别整段丢掉
+            LastError = null;
+            return got;
+        }
+
+        // 完全没拿到文本：如果是 token 用尽，放大上限重试一次
+        if (status == "incomplete" && reason.Contains("max_output_tokens", StringComparison.OrdinalIgnoreCase) &&
+            maxOut < 32768)
+        {
+            return await ChatResponsesAsync(system, messages, ct, false, null, Math.Min(32768, maxOut * 2))
+                .ConfigureAwait(false);
+        }
+
+        LastError = string.IsNullOrEmpty(status)
+            ? "响应里没有可用的文本（检查模型名是否支持 Responses API）"
+            : $"响应里没有可用的文本（status={status}" + (string.IsNullOrEmpty(reason) ? "" : " · " + reason) + "）";
+        return null;
+    }
+
+    /// <summary>
+    /// 宽容解析 Responses API 的返回：output_text / output[].content[].text / output[].text 都认，
+    /// 不再要求 content 的 type 一定等于 output_text（各家实现不一致），
+    /// 并顺带带回 status 与 incomplete_details.reason，方便把「为什么没有文本」说清楚。
+    /// </summary>
+    private static string ExtractResponsesText(JsonElement root, out string status, out string reason)
+    {
+        status = root.TryGetProperty("status", out var st) && st.ValueKind == JsonValueKind.String
+            ? st.GetString() ?? "" : "";
+        reason = "";
+        if (root.TryGetProperty("incomplete_details", out var inc) && inc.ValueKind == JsonValueKind.Object &&
+            inc.TryGetProperty("reason", out var rs) && rs.ValueKind == JsonValueKind.String)
+            reason = rs.GetString() ?? "";
+
         if (root.TryGetProperty("output_text", out var ot) && ot.ValueKind == JsonValueKind.String)
         {
-            LastError = null;
-            return ot.GetString();
+            string s = ot.GetString() ?? "";
+            if (s.Length > 0) return s;
         }
-        // ② 标准结构 output[].content[].text
+
         var sb = new StringBuilder();
         if (root.TryGetProperty("output", out var arr) && arr.ValueKind == JsonValueKind.Array)
+        {
             foreach (var item in arr.EnumerateArray())
             {
-                if (!item.TryGetProperty("content", out var cs) || cs.ValueKind != JsonValueKind.Array) continue;
-                foreach (var c in cs.EnumerateArray())
-                {
-                    if (!c.TryGetProperty("type", out var cty) || cty.ValueKind != JsonValueKind.String) continue;
-                    if (cty.GetString() != "output_text") continue;
-                    if (c.TryGetProperty("text", out var tx) && tx.ValueKind == JsonValueKind.String)
-                        sb.Append(tx.GetString());
-                }
+                if (item.TryGetProperty("content", out var cs) && cs.ValueKind == JsonValueKind.Array)
+                    foreach (var c in cs.EnumerateArray())
+                        if (c.TryGetProperty("text", out var tx) && tx.ValueKind == JsonValueKind.String)
+                            sb.Append(tx.GetString());
+                if (item.TryGetProperty("text", out var itx) && itx.ValueKind == JsonValueKind.String)
+                    sb.Append(itx.GetString());
             }
-        if (sb.Length == 0)
-        {
-            string status = root.TryGetProperty("status", out var st) && st.ValueKind == JsonValueKind.String
-                ? st.GetString() ?? "" : "";
-            LastError = string.IsNullOrEmpty(status)
-                ? "响应中没有 output_text"
-                : $"响应中没有 output_text（status={status}）";
-            return null;
         }
-        LastError = null;
         return sb.ToString();
     }
 
@@ -465,7 +490,7 @@ public sealed class ApiClient : IDisposable
     // ------------------------------------------------------------------
     private async Task<string?> ChatAnthropicAsync(string system,
         IReadOnlyList<(string Role, string Content)> messages, CancellationToken ct,
-        bool stream, Action<string>? onDelta)
+        bool stream, Action<string>? onDelta, int maxOut = 8192)
     {
         var msgs = new List<object>();
         foreach (var (role, content) in messages)
@@ -523,7 +548,7 @@ public sealed class ApiClient : IDisposable
     // ------------------------------------------------------------------
     private async Task<string?> ChatGeminiAsync(string system,
         IReadOnlyList<(string Role, string Content)> messages, CancellationToken ct,
-        bool stream, Action<string>? onDelta)
+        bool stream, Action<string>? onDelta, int maxOut = 8192)
     {
         string url = Endpoint.Replace("{model}", Model);
         if (!url.Contains(":generateContent"))

@@ -1,6 +1,6 @@
 {
-    "version":  "1.0.2",
+    "version":  "1.0.3",
     "url":  "C:\\Users\\lichenghan\\CodeBuddy\\20260812123427\\release\\deepsleep-Setup.exe",
-    "sha256":  "DFB8A687A51D9063C147B430B8A11E7AC0499565F3E3359F25EB0E8EF8150685",
-    "notes":  "1.0.2：GitHub 令牌多层加密保存（DPAPI 封装密钥 + AES-256-GCM + 机器绑定 AAD + ACL 收紧），设置里一句话录入；tools 目录收拢辅助脚本；工具调用流程 tool_call→执行→回灌→最终回复；OpenAI Responses API；思考中气泡按时间顺序；API 连不上不再静默降级"
+    "sha256":  "7F1C24B184B93D4849277B3757686640057B38C89B55C571190843EC37E1AD7B",
+    "notes":  "1.0.3：修复 Responses API 返回 incomplete 时整段回复被丢弃（改为宽容解析 output/content/text 并保留已生成内容）；token 用尽自动放大上限重试；把 incomplete 原因显示出来"
 }
