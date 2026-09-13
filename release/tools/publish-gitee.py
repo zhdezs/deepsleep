@@ -145,7 +145,7 @@ def planned_assets(version):
 
 # --------------------------------------------------------------- 源码同步
 def remote_tree():
-    st, d = api("GET", "/git/trees/" + BRANCH, {"recursive": 1})
+    st, d = api("GET", "/git/trees/" + BRANCH, None, {"recursive": 1})
     if st != 200 or not isinstance(d, dict):
         if st != 404:
             print("读远端树失败：HTTP %s %s" % (st, str(d)[:200]))
@@ -172,6 +172,8 @@ def do_source(version):
         if rel not in local and tracked(rel):
             deletes.append(rel)
 
+    if not remote and len(local) > 5:
+        print("（提示：远端树读回来是空的，如果仓库里其实有文件，八成是 git/trees 调用出问题了）")
     print("源码：本地 %d 个文件，远端 %d 个；要传 %d、要删 %d"
           % (len(local), len(remote), len(uploads), len(deletes)))
     if not uploads and not deletes:
@@ -189,6 +191,13 @@ def do_source(version):
         if rel in remote:
             method, body["sha"] = "PUT", remote[rel]
         st, res = api(method, "/contents/" + urllib.parse.quote(rel), body)
+        if st == 400 and method == "POST" and "已存在" in str(res):
+            # 树没读全 / 别处刚推过 → 取远端 sha 改成 PUT 更新
+            st2, cur = api("GET", "/contents/" + urllib.parse.quote(rel), None, {"ref": BRANCH})
+            sha = cur.get("sha") if isinstance(cur, dict) else None
+            if sha:
+                body["sha"] = sha
+                st, res = api("PUT", "/contents/" + urllib.parse.quote(rel), body)
         if st not in (200, 201):
             print("  上传失败 %s：HTTP %s %s" % (rel, st, str(res)[:200]))
             return False
