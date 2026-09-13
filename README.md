@@ -6,7 +6,7 @@
 
 | | |
 | --- | --- |
-| 当前版本 | **1.0.8** |
+| 当前版本 | **1.0.9** |
 | 系统要求 | Windows 10 1809+ / x64（推荐 Windows 11，可享亚克力毛玻璃界面） |
 | 下载 | [Releases](https://github.com/zhdezs/deepsleep/releases/latest) → `deepsleep-Setup.exe` |
 | OTA 更新源 | `zhdezs/deepsleep`（在 ⚙ 设置里填这个即可一键升级） |

@@ -1,6 +1,6 @@
 {
-    "version":  "1.0.8",
-    "url":  "https://github.com/zhdezs/deepsleep/releases/download/v1.0.8/deepsleep-Setup.exe",
-    "sha256":  "57B2AE4143D5E454D0543C88EE867DFD0D3812CFCB5609C843C9DBEB0D96EA15",
-    "notes":  "1.0.8：在线更新支持国内镜像回退与断点续传（直连慢或断线自动换镜像接着下，仍按官方 SHA256 校验）；桌宠可在设置里开关、右键隐藏会记住；清掉安装包内残留的 ONNX/DirectML，安装包体积再减约 24MB。"
+    "version":  "1.0.9",
+    "url":  "https://github.com/zhdezs/deepsleep/releases/download/v1.0.9/deepsleep-Setup.exe",
+    "sha256":  "47964BCF5F8293B6AF03C0DEB99B3D74339C6B2BA14A4279E3A68E230D3E0948",
+    "notes":  "1.0.9 修 bug：桌宠之前根本不会显示（创建分层窗口时漏了 WS_VISIBLE，1.0.7/1.0.8 都中招），现在真的会出现在桌面右下角；隐藏/显示改用正规 ShowWindow。1.0.8 的国内镜像回退、断点续传、桌宠设置开关一并包含。"
 }

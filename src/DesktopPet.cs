@@ -11,12 +11,13 @@ namespace TrollWrangler;
 /// </summary>
 public sealed class DesktopPet : IDisposable
 {
-    private const int WS_POPUP = unchecked((int)0x80000000);
+    private const int WS_POPUP = unchecked((int)0x80000000), WS_VISIBLE = 0x10000000;
     private const int WS_EX_LAYERED = 0x00080000, WS_EX_TOOLWINDOW = 0x00000080, WS_EX_TOPMOST = 0x00000008;
     private const int ULW_ALPHA = 0x02, AC_SRC_OVER = 0x00, AC_SRC_ALPHA = 0x01;
     private const int WM_LBUTTONDOWN = 0x0201, WM_MOUSEMOVE = 0x0200, WM_LBUTTONUP = 0x0202,
                       WM_RBUTTONUP = 0x0205, WM_TIMER = 0x0113, WM_COMMAND = 0x0111;
     private const int SWP_NOSIZE = 0x0001, SWP_NOZORDER = 0x0004, SWP_NOACTIVATE = 0x0010;
+    private const int SW_HIDE = 0, SW_SHOWNOACTIVATE = 4;
     private const uint MF_STRING = 0x0, TPM_RETURNCMD = 0x0100, TPM_RIGHTBUTTON = 0x0002;
 
     [StructLayout(LayoutKind.Sequential)] private struct POINT { public int X, Y; }
@@ -38,6 +39,7 @@ public sealed class DesktopPet : IDisposable
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr CallWindowProcW(IntPtr p, IntPtr h, uint m, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT p);
     [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint f);
+    [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr h, int cmd);
     [DllImport("user32.dll")] private static extern IntPtr SetTimer(IntPtr h, IntPtr id, uint el, IntPtr p);
     [DllImport("user32.dll")] private static extern bool KillTimer(IntPtr h, IntPtr id);
     [DllImport("user32.dll")] private static extern IntPtr CreatePopupMenu();
@@ -77,8 +79,9 @@ public sealed class DesktopPet : IDisposable
         _x = GetSystemMetrics(0) - _w - 60;
         _y = GetSystemMetrics(1) - _h - 120;
 
+        // 必须带 WS_VISIBLE：光靠 UpdateLayeredWindow 不会让窗口显示出来（之前漏了，桌宠一直没露面）
         _hwnd = CreateWindowExW(WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TOPMOST, "STATIC", "deepsleep 桌宠",
-            WS_POPUP, _x, _y, _w, _h, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+            WS_POPUP | WS_VISIBLE, _x, _y, _w, _h, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
         if (_hwnd == IntPtr.Zero) throw new InvalidOperationException("创建桌宠窗口失败");
 
         IntPtr screen = GetDC(IntPtr.Zero);
@@ -163,12 +166,12 @@ public sealed class DesktopPet : IDisposable
 
     public void Hide()
     {
-        if (_hwnd != IntPtr.Zero) SetWindowPos(_hwnd, IntPtr.Zero, -4000, -4000, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+        if (_hwnd != IntPtr.Zero) ShowWindow(_hwnd, SW_HIDE);
     }
 
     public void Show()
     {
-        if (_hwnd != IntPtr.Zero) { SetWindowPos(_hwnd, IntPtr.Zero, _x, _y, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE); Paint(); }
+        if (_hwnd != IntPtr.Zero) { ShowWindow(_hwnd, SW_SHOWNOACTIVATE); Paint(); }
     }
 
     public void Dispose()
