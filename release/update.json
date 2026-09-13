@@ -1,6 +1,6 @@
 {
-    "version":  "1.0.3",
+    "version":  "1.0.4",
     "url":  "C:\\Users\\lichenghan\\CodeBuddy\\20260812123427\\release\\deepsleep-Setup.exe",
-    "sha256":  "7F1C24B184B93D4849277B3757686640057B38C89B55C571190843EC37E1AD7B",
-    "notes":  "1.0.3：修复 Responses API 返回 incomplete 时整段回复被丢弃（改为宽容解析 output/content/text 并保留已生成内容）；token 用尽自动放大上限重试；把 incomplete 原因显示出来"
+    "sha256":  "F23381498EBCB37EB5668B30699CAF1B1048FAA9EB48950E1E661A389A384783",
+    "notes":  "1.0.4：更新包下载加入 3 次自动重下 + 官方字节数核对（跨境网络把大文件截断时报错更准确，不再只说校验失败）"
 }

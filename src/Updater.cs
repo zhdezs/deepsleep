@@ -18,6 +18,8 @@ public sealed class UpdateInfo
 public string Version { get; set; } = "";
 public string Url { get; set; } = "";
 public string Sha256 { get; set; } = "";
+/// <summary>资产大小（字节），用于判断下载是否完整。</summary>
+public long Size { get; set; }
 public string Notes { get; set; } = "";
 }
 
@@ -233,6 +235,7 @@ private static async Task<UpdateInfo?> CheckGitHubAsync(string owner, string rep
         string tag = root.TryGetProperty("tag_name", out var tagEl) ? tagEl.GetString() ?? "" : "";
         string notes = root.TryGetProperty("body", out var bodyEl) ? bodyEl.GetString() ?? "" : "";
         string url = "", sha = "";
+        long size = 0;
 
         if (root.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
         {
@@ -254,6 +257,7 @@ private static async Task<UpdateInfo?> CheckGitHubAsync(string owner, string rep
 // 私有仓库用 API 资产地址 + 令牌才能下载；公开仓库继续用浏览器直链
 string apiAssetUrl = best.TryGetProperty("url", out var au) ? au.GetString() ?? "" : "";
 url = (HasToken && !string.IsNullOrWhiteSpace(apiAssetUrl)) ? apiAssetUrl : browserUrl;
+                    if (best.TryGetProperty("size", out var sz) && sz.TryGetInt64(out long szv)) size = szv;
                 if (best.TryGetProperty("digest", out var dg) && dg.ValueKind == JsonValueKind.String)
                 {
                     string d = dg.GetString() ?? "";
@@ -264,7 +268,7 @@ url = (HasToken && !string.IsNullOrWhiteSpace(apiAssetUrl)) ? apiAssetUrl : brow
         }
 
         if (string.IsNullOrWhiteSpace(url)) return null;
-        return new UpdateInfo { Version = tag, Url = url, Sha256 = sha, Notes = notes };
+        return new UpdateInfo { Version = tag, Url = url, Sha256 = sha, Notes = notes, Size = size };
     }
     catch { return null; }
 }
@@ -351,29 +355,48 @@ public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double
         return dest;
     }
 
-    using (var hc = NewClient(TimeSpan.FromMinutes(30)))
+    // 大文件跨境下载经常被截断/污染：失败就重下（最多 3 次），并与官方给的字节数核对
+    Exception? lastError = null;
+    for (int attempt = 1; attempt <= 3; attempt++)
     {
-        if (info.Url.Contains("api.github.com", StringComparison.OrdinalIgnoreCase))
-            hc.DefaultRequestHeaders.Accept.Clear();   // API 资产要 octet-stream
-    using (var resp = await hc.GetAsync(info.Url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false))
-    {
-        resp.EnsureSuccessStatusCode();
-        long? total = resp.Content.Headers.ContentLength;
-        using Stream src = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-        using var dst = File.Create(dest);
-        var buffer = new byte[81920];
-        long read = 0;
-        int n;
-        while ((n = await src.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+        try
         {
-            await dst.WriteAsync(buffer.AsMemory(0, n), ct).ConfigureAwait(false);
-            read += n;
-            if (total is > 0) progress?.Report(Math.Min(100.0, read * 100.0 / total.Value));
+            using (var hc = NewClient(TimeSpan.FromMinutes(30)))
+            {
+                if (info.Url.Contains("api.github.com", StringComparison.OrdinalIgnoreCase))
+                    hc.DefaultRequestHeaders.Accept.Clear();   // API 资产要 octet-stream
+                using (var resp = await hc.GetAsync(info.Url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false))
+                {
+                    resp.EnsureSuccessStatusCode();
+                    long? total = resp.Content.Headers.ContentLength;
+                    using Stream src = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+                    using var dst = File.Create(dest);
+                    var buffer = new byte[81920];
+                    long read = 0;
+                    int n;
+                    while ((n = await src.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+                    {
+                        await dst.WriteAsync(buffer.AsMemory(0, n), ct).ConfigureAwait(false);
+                        read += n;
+                        if (total is > 0) progress?.Report(Math.Min(100.0, read * 100.0 / total.Value));
+                    }
+                }
+            }
+
+            long actualSize = new FileInfo(dest).Length;
+            if (info.Size > 0 && actualSize != info.Size)
+                throw new InvalidDataException($"下载不完整：官方 {info.Size} 字节，实际 {actualSize} 字节");
+            VerifyHash(dest, info.Sha256);
+            return dest;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException && attempt < 3)
+        {
+            lastError = ex;
+            try { if (File.Exists(dest)) File.Delete(dest); } catch { }
+            await Task.Delay(TimeSpan.FromSeconds(2 * attempt), ct).ConfigureAwait(false);
         }
     }
-    VerifyHash(dest, info.Sha256);
-    return dest;
-    }
+    throw lastError ?? new InvalidDataException("更新包下载失败");
 }
 
 /// <summary>SHA256 校验（清单未提供校验值时跳过）。</summary>
@@ -383,7 +406,8 @@ private static void VerifyHash(string file, string expectedHex)
     using var fs = File.OpenRead(file);
     string actual = Convert.ToHexString(SHA256.HashData(fs));
     if (!actual.Equals(expectedHex.Trim(), StringComparison.OrdinalIgnoreCase))
-        throw new InvalidDataException("更新包校验失败（SHA256 不匹配），已终止升级。");
+        throw new InvalidDataException(
+            $"更新包校验失败（SHA256 不匹配，已自动重下 {3} 次）：`n期望 {expectedHex.Trim().ToLowerInvariant()}`n实际 {actual.ToLowerInvariant()}`n文件大小 {new FileInfo(file).Length} 字节`n多半是下载被网络/代理截断，请重试，或到 Releases 页面手动下载安装包。");
 }
 
 /// <summary>
