@@ -209,16 +209,12 @@ def do_source(version):
 
 
 # ----------------------------------------------------------------- Release
-def release_assets(release_id):
-    st, d = api("GET", "/releases/%s" % release_id)
-    if st == 200 and isinstance(d, dict):
-        return d.get("assets") or []
-    return []
-
-
-def delete_asset(release_id, asset_id, name):
-    st, _ = api("DELETE", "/releases/%s/attach_files/%s" % (release_id, asset_id))
-    print("  删掉 Gitee 上的同名旧附件 %s（HTTP %s）" % (name, st))
+def reset_release(release_id):
+    """Gitee 的附件 JSON 里**没有 id**（只有 name + 下载地址），删不掉单个附件，
+    而且同名附件不会覆盖、只会并存（重发会出现两份 part1，客户端可能拿到旧的）。
+    所以重发时的办法是：把整个 Release 删掉再重建，标签 vX.Y.Z 会保留。"""
+    st, res = api("DELETE", "/releases/%s" % release_id)
+    print("  删掉旧 Release 以便重发（HTTP %s）%s" % (st, "" if st in (200, 204) else str(res)[:200]))
     return st in (200, 204)
 
 
@@ -275,12 +271,26 @@ def upload_asset(release_id, path, name):
 
 def do_release(version, notes):
     tag = "v" + version
+    plan = planned_assets(version)
+    if not plan:
+        print("release\\ 下没找到安装包（先编译再发布）")
+        return False
+    want = {name for name, _p, _s in plan}
+
     st, rel = api("GET", "/releases/tags/" + tag)
     if st == 200 and isinstance(rel, dict) and rel.get("id"):
-        print("复用已有 Gitee Release：%s" % rel.get("html_url", tag))
-        api("PATCH", "/releases/%s" % rel["id"],
-            {"name": "deepsleep %s" % version, "body": notes, "target_commitish": BRANCH})
+        have = [a.get("name") for a in (rel.get("assets") or [])]
+        if want & set(have):
+            print("Gitee Release %s 上已经有同名附件了，删掉重建（避免新旧两份并存）" % tag)
+            reset_release(rel["id"])
+            rel = None
+        else:
+            print("复用已有 Gitee Release：%s" % rel.get("html_url", tag))
+            api("PATCH", "/releases/%s" % rel["id"],
+                {"name": "deepsleep %s" % version, "body": notes, "target_commitish": BRANCH})
     else:
+        rel = None
+    if rel is None:
         body = {"tag_name": tag, "name": "deepsleep %s" % version, "body": notes,
                 "target_commitish": BRANCH, "prerelease": False}
         st, rel = api("POST", "/releases", body)
@@ -293,15 +303,8 @@ def do_release(version, notes):
             return False
         print("Gitee Release 已创建：%s" % rel.get("html_url", tag))
 
-    plan = planned_assets(version)
-    if not plan:
-        print("release\\ 下没找到安装包（先编译再发布）")
-        return False
-    existing = {a.get("name"): a.get("id") for a in release_assets(rel["id"])}
     ok = True
     for name, path, _size in plan:
-        if name in existing:
-            delete_asset(rel["id"], existing[name], name)
         ok = upload_asset(rel["id"], path, name) and ok
     return ok
 

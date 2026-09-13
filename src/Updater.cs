@@ -398,7 +398,7 @@ private static async Task<UpdateInfo?> CheckGiteeAsync(string owner, string repo
         if (string.IsNullOrWhiteSpace(url)) return null;
         return new UpdateInfo
         {
-            Version = tag, Url = url, Notes = notes, Size = size, Source = "gitee",
+            Version = NormalizeVersion(tag), Url = url, Notes = notes, Size = size, Source = "gitee",
             PartUrls = partUrls, PartSizes = partSizes,
         };
     }
@@ -455,7 +455,7 @@ url = (HasToken && !string.IsNullOrWhiteSpace(apiAssetUrl)) ? apiAssetUrl : brow
         }
 
         if (string.IsNullOrWhiteSpace(url)) return null;
-        return new UpdateInfo { Version = tag, Url = url, Sha256 = sha, Notes = notes, Size = size, Source = "github" };
+        return new UpdateInfo { Version = NormalizeVersion(tag), Url = url, Sha256 = sha, Notes = notes, Size = size, Source = "github" };
     }
     catch { return null; }
 }
@@ -486,6 +486,16 @@ private static async Task<UpdateInfo?> CheckManifestAsync(string manifestUrl, Ca
         return IsNewer(info.Version, CurrentVersion) ? info : null;
     }
     catch { return null; }
+}
+
+/// <summary>
+/// 把 Release 的 tag 规范化成版本号（去掉开头的 v）——
+/// 界面上到处都会再补一个 "v"，不规范化就会显示成 "vv1.0.11"。
+/// </summary>
+public static string NormalizeVersion(string tag)
+{
+    string t = (tag ?? "").Trim();
+    return t.Length > 1 && (t[0] == 'v' || t[0] == 'V') ? t[1..] : t;
 }
 
 /// <summary>版本比较（支持 1.0.0 / 1.0.0.0 / v1.0.0 形式）。</summary>
