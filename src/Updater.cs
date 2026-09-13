@@ -230,11 +230,14 @@ public static async Task<UpdateInfo?> CheckAsync(string manifestUrl, bool giteeM
 
         if (ghNewer)
         {
-            // 同一个版本 → 优先用 Gitee 的地址下载（整包或分片），SHA256 仍用 GitHub 官方 digest
-            if (gt != null && gt.Version == gh!.Version && gt.Size > 0 &&
-                (gh.Size == 0 || gt.Size == gh.Size))
+            // 同一个版本 → 优先用 Gitee 的地址下载（整包或分片），SHA256 仍用 GitHub 官方 digest。
+            // 注意：Gitee 的 release JSON 里**没有 size**（只有 name + 下载地址），所以大小未知也得认，
+            // 完整性最终由 GitHub 官方摘要（以及这边记录的 gh.Size）兜底。
+            bool sameVersion = gt != null && gt.Version == gh!.Version;
+            bool sizeOk = gt != null && (gt.Size == 0 || gh.Size == 0 || gt.Size == gh.Size);
+            if (sameVersion && sizeOk)
             {
-                if (gt.PartUrls.Count > 0)
+                if (gt!.PartUrls.Count > 0)
                 {
                     gh.PartUrls = gt.PartUrls;
                     gh.PartSizes = gt.PartSizes;
@@ -703,9 +706,11 @@ private static async Task<string> DownloadPartsAsync(UpdateInfo info, string des
         {
             var partProgress = new Progress<double>(p =>
             {
-                if (total > 0)
-                    progress?.Report(Math.Min(99.9,
-                        (completed + partSize * p / 100.0) * 100.0 / total));
+                // Gitee 不给附件大小 → 按"第几片"均分进度，别让进度条一直停在 0
+                double done = total > 0
+                    ? (completed + partSize * p / 100.0) * 100.0 / total
+                    : (index + p / 100.0) * 100.0 / count;
+                progress?.Report(Math.Min(99.9, done));
             });
             try
             {
@@ -725,7 +730,9 @@ private static async Task<string> DownloadPartsAsync(UpdateInfo info, string des
             throw new InvalidDataException($"Gitee 分片 {index + 1}/{count} 下载失败：{lastError.Message}", lastError);
 
         completed += new FileInfo(parts[index]).Length;
-        if (total > 0) progress?.Report(Math.Min(99.9, completed * 100.0 / total));
+        progress?.Report(Math.Min(99.9, total > 0
+            ? completed * 100.0 / total
+            : (index + 1) * 100.0 / count));
     }
 
     // 拼回整包（顺序必须和上传时一致，否则 SHA256 对不上）
