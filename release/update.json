@@ -1,6 +1,6 @@
 {
-    "version":  "1.0.4",
+    "version":  "1.0.5",
     "url":  "C:\\Users\\lichenghan\\CodeBuddy\\20260812123427\\release\\deepsleep-Setup.exe",
-    "sha256":  "F23381498EBCB37EB5668B30699CAF1B1048FAA9EB48950E1E661A389A384783",
-    "notes":  "1.0.4：更新包下载加入 3 次自动重下 + 官方字节数核对（跨境网络把大文件截断时报错更准确，不再只说校验失败）"
+    "sha256":  "2B40970B2DAFF962FAEC7F262CBB1525546410339AE809EF5AF2C435026D57D7",
+    "notes":  "1.0.5：换用官方 DeepSeek 鲸鱼图标（去掉 deepsleep 字样、白底抠透明）；新增桌宠用透明鲸鱼图 pet.png"
 }

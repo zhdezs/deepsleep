@@ -19,8 +19,8 @@
     <ApplicationIcon>deepsleep.ico</ApplicationIcon>
     <RootNamespace>TrollWrangler</RootNamespace>
     <ApplicationTitle>deepsleep · AI 助手</ApplicationTitle>
-    <Version>1.0.4</Version>
-    <FileVersion>1.0.4.0</FileVersion>
+    <Version>1.0.5</Version>
+    <FileVersion>1.0.5.0</FileVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
@@ -30,6 +30,7 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="deepsleep.ico" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="pet.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="tools\set-github-token.ps1" CopyToOutputDirectory="PreserveNewest" Link="tools\set-github-token.ps1" />
     <Content Include="tools\publish-github-release.ps1" CopyToOutputDirectory="PreserveNewest" Link="tools\publish-github-release.ps1" />
   </ItemGroup>
