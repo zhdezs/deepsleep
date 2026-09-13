@@ -112,3 +112,12 @@
       - work（工作）模式：弹一次确认，告诉你 AI 要启动哪个文件，点同意才运行
       - boom（爆破）模式：直接放行，和运行命令一致
   · 仍然不变的安全底线：命令沙箱（format / diskpart / 删系统目录 / 篡改注册表等）照旧拦截
+
+
+十三、1.0.11 更新要点（加 Gitee 国内更新源）
+  · 更新源新增 Gitee 仓库写法：填 gitee.com/owner/repo（或 gitee:owner/repo）就走 Gitee Releases
+  · 填 GitHub 仓库时自动同时看同名 Gitee 仓库（zhdezs/deepsleep）：同一个版本优先从 Gitee 下载，
+    国内实测约 8 MB/s，比跨境直连快一个数量级；校验值仍然用 GitHub 官方 SHA256，慢不了也骗不了
+  · Gitee 单个附件上限 100MB，装不下的大安装包在那边切成 deepsleep-Setup.exe.part1 / .part2 / …，
+    客户端逐片下载（每片都能断点续传、单独重试），拼回整包再校验；片下不来就自动回退 GitHub 整包
+  · 设置里的「同时用 Gitee 同名仓库加速」开关默认打开，不想要可以关掉

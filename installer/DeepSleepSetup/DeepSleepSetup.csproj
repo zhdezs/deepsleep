@@ -16,7 +16,7 @@
     <ApplicationIcon>deepsleep.ico</ApplicationIcon>
     <AssemblyTitle>deepsleep AI 助手 安装程序</AssemblyTitle>
     <Product>deepsleep AI 助手</Product>
-    <Version>1.0.10</Version>
+    <Version>1.0.11</Version>
     <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
   </PropertyGroup>
 

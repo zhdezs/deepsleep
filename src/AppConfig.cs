@@ -36,6 +36,8 @@ public sealed class AppConfig
     public string UpdateUrl { get; set; } = "";
     /// <summary>启动时自动检查更新。</summary>
     public bool AutoCheckUpdate { get; set; } = true;
+    /// <summary>更新源是 GitHub 时，同时看同名 Gitee 仓库并优先从 Gitee 下载（国内快，校验仍用 GitHub 摘要）。</summary>
+    public bool GiteeMirror { get; set; } = true;
     /// <summary>是否显示桌面鲸鱼桌宠。</summary>
     public bool PetEnabled { get; set; } = true;
 

@@ -239,7 +239,7 @@ public sealed partial class MainWindow : Window
     private async Task AutoCheckUpdateAsync()
     {
         if (!_config.AutoCheckUpdate || string.IsNullOrWhiteSpace(_config.UpdateUrl)) return;
-        var info = await Updater.CheckAsync(_config.UpdateUrl);
+        var info = await Updater.CheckAsync(_config.UpdateUrl, _config.GiteeMirror);
         if (info == null) return;
         _pendingUpdate = info;
         UpdateBtn.Content = $"⬆ 有新版 v{info.Version}";
@@ -270,7 +270,7 @@ public sealed partial class MainWindow : Window
         UpdateBtn.IsEnabled = false;
         try
         {
-            UpdateInfo? info = _pendingUpdate ?? await Updater.CheckAsync(_config.UpdateUrl);
+            UpdateInfo? info = _pendingUpdate ?? await Updater.CheckAsync(_config.UpdateUrl, _config.GiteeMirror);
             if (info == null)
             {
                 UpdateBtn.Content = "⬆ 检查更新";
@@ -280,6 +280,14 @@ public sealed partial class MainWindow : Window
             }
             _pendingUpdate = info;
             string notes = string.IsNullOrWhiteSpace(info.Notes) ? "（无更新说明）" : info.Notes;
+            bool giteeRoute = !string.IsNullOrWhiteSpace(info.MirrorUrl) || info.PartUrls.Count > 0;
+            string route = giteeRoute
+                ? (info.PartUrls.Count > 0
+                    ? "下载走 Gitee 国内源（装不下的安装包在那边切成多片存放，客户端下齐后拼回整包，校验用 GitHub 官方 SHA256）。"
+                    : "下载走 Gitee 国内源（更快），失败会回退 GitHub，校验用 GitHub 官方 SHA256。")
+                : info.Source == "gitee"
+                    ? "该版本来自 Gitee 国内源。"
+                    : "下载优先走直连，失败或中断会自动切换国内加速镜像接着下（断点续传），下完仍按官方 SHA256 校验。";
             var confirm = new ContentDialog
             {
                 Title = $"发现新版本 v{info.Version}",
@@ -287,7 +295,7 @@ public sealed partial class MainWindow : Window
                 {
                     Text = $"当前版本：v{Updater.CurrentVersion}\n\n更新内容：\n{notes}\n\n" +
                            "升级会下载安装包，退出后静默覆盖安装并自动重启。用户数据（API Key、对话历史、记忆、自训练模型）不受影响。" +
-                           "\n\n下载优先走直连，失败或中断会自动切换国内镜像接着下（断点续传），下完仍按官方 SHA256 校验。",
+                           "\n\n" + route,
                     TextWrapping = TextWrapping.Wrap,
                 },
                 PrimaryButtonText = "立即升级",
@@ -2690,7 +2698,7 @@ public sealed partial class MainWindow : Window
         panel.Children.Add(lblUpdate);
         var updateUrl = new TextBox
         {
-            Header = "更新源（GitHub 仓库 owner/repo，或 update.json 的 URL）",
+            Header = "更新源（GitHub 仓库 owner/repo、gitee.com/owner/repo，或 update.json 的 URL）",
             Text = _config.UpdateUrl,
             PlaceholderText = "例如 lichenghan/deepsleep",
         };
@@ -2700,8 +2708,15 @@ public sealed partial class MainWindow : Window
             IsChecked = _config.AutoCheckUpdate,
             Margin = new Thickness(0, 6, 0, 0),
         };
+        var giteeMirror = new CheckBox
+        {
+            Content = "同时用 Gitee 同名仓库加速（同版本优先从 Gitee 下载，仍按 GitHub 官方 SHA256 校验）",
+            IsChecked = _config.GiteeMirror,
+            Margin = new Thickness(0, 6, 0, 0),
+        };
         panel.Children.Add(updateUrl);
         panel.Children.Add(autoUpdate);
+        panel.Children.Add(giteeMirror);
         var tokenBtn = new Button
         {
             Content = "🔑 录入 GitHub 令牌（多层加密保存）",
@@ -2768,6 +2783,7 @@ public sealed partial class MainWindow : Window
         _config.MultimodalMain = multiModal.IsChecked == true;
         _config.UpdateUrl = updateUrl.Text.Trim();
         _config.AutoCheckUpdate = autoUpdate.IsChecked == true;
+        _config.GiteeMirror = giteeMirror.IsChecked == true;
         _config.UseOllama = useOllama.IsChecked == true;
         _config.PetEnabled = petToggle.IsChecked == true;
 

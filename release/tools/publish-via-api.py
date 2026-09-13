@@ -82,10 +82,16 @@ def upload_asset(rel, path):
     """流式上传：Content-Length + 分块 send，跨境慢链路也不会整体超时。"""
     name = os.path.basename(path)
     size = os.path.getsize(path)
+    local = sha256(path)
     st, assets = api("GET", "%s/repos/%s/releases/%d/assets" % (API, REPO, rel["id"]))
     if st == 200:
         for a in assets:
             if a["name"] == name:
+                digest = (a.get("digest") or "").split(":")[-1].lower()
+                if digest and digest == local.lower() and a.get("size") == size:
+                    print("✓ %s 已在 Release 上、SHA256 也一致，跳过重复上传（%.1f MB）"
+                          % (name, size / 1048576.0))
+                    return True
                 print("  删除同名旧资产：%s" % name)
                 api("DELETE", "%s/repos/%s/releases/assets/%d" % (API, REPO, a["id"]))
 
@@ -203,6 +209,10 @@ def main():
     ap.add_argument("--source", action="store_true")
     ap.add_argument("--all", action="store_true")
     a = ap.parse_args()
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # Windows 管道下默认 GBK，会崩
+    except Exception:
+        pass
     REPO = a.repo
     version = current_version()
     notes = a.notes or "deepsleep %s" % version

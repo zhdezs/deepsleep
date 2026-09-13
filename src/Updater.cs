@@ -17,21 +17,34 @@ public sealed class UpdateInfo
 {
 public string Version { get; set; } = "";
 public string Url { get; set; } = "";
+/// <summary>国内加速地址（Gitee 同名仓库的同一版本）；有就优先用它下载。</summary>
+public string MirrorUrl { get; set; } = "";
+/// <summary>Gitee 上把安装包切成了多片（单附件 100MB 上限）；有值就逐片下载再拼回整包。</summary>
+public List<string> PartUrls { get; set; } = new();
+/// <summary>每片的字节数，顺序与 PartUrls 一致（用于进度显示与完整性判断）。</summary>
+public List<long> PartSizes { get; set; } = new();
 public string Sha256 { get; set; } = "";
 /// <summary>资产大小（字节），用于判断下载是否完整。</summary>
 public long Size { get; set; }
 public string Notes { get; set; } = "";
+/// <summary>这个更新信息是从哪个源读到的：github / gitee / manifest。</summary>
+public string Source { get; set; } = "";
 }
 
 /// <summary>
 /// OTA 自动更新：检查清单 → 下载安装包（SHA256 校验）→ 退出后静默覆盖安装 → 自动重启。
 ///
-/// 更新源支持三种写法（设置 → OTA 自动更新 → 更新源）：
+/// 更新源支持四种写法（设置 → OTA 自动更新 → 更新源）：
 ///   1) GitHub 仓库：owner/repo 或 https://github.com/owner/repo
 ///      走官方 Releases API 读最新 tag + deepsleep-Setup.exe 资产；
 ///      仓库没有 Release 时自动退回仓库里的 update.json（main / master 都试）。
-///   2) 清单直链：https://.../update.json（自建服务器、静态托管）
-///   3) 本地 / 共享盘：D:\release\update.json（离线升级）
+///   2) Gitee 仓库：gitee.com/owner/repo，也可以写 gitee:owner/repo —— 国内直连快
+///   3) 清单直链：https://.../update.json（自建服务器、静态托管）
+///   4) 本地 / 共享盘：D:\release\update.json（离线升级）
+///
+/// 填 GitHub 仓库时会顺带看同名 Gitee 仓库：同一个版本优先从 Gitee 下载（国内快一个数量级），
+/// 校验始终用 GitHub 官方 SHA256。Gitee 单个附件不能超过 100MB，装不下的大安装包在那边切成
+/// deepsleep-Setup.exe.part1 / .part2 / … 存放，客户端逐片下载后拼回整包再校验。
 ///
 /// 依赖发布版的 deepsleep-Setup.exe（支持 --silent --dir 参数）。
 /// </summary>
@@ -192,19 +205,52 @@ public static bool TryParseGitHub(string text, out string owner, out string repo
 }
 
 /// <summary>读取更新源，返回比当前版本更新的信息；无更新或失败返回 null。</summary>
-public static async Task<UpdateInfo?> CheckAsync(string manifestUrl, CancellationToken ct = default)
+/// <param name="giteeMirror">GitHub 源时是否同时看同名 Gitee 仓库（国内下载快）。</param>
+public static async Task<UpdateInfo?> CheckAsync(string manifestUrl, bool giteeMirror = true,
+                                                 CancellationToken ct = default)
 {
     if (string.IsNullOrWhiteSpace(manifestUrl)) return null;
     manifestUrl = manifestUrl.Trim();
 
-    // 1) GitHub 仓库 → Releases API
+    // 1) 显式写 Gitee 仓库 → Gitee Releases API
+    if (TryParseGitee(manifestUrl, out string gOwner, out string gRepo))
+    {
+        var only = await CheckGiteeAsync(gOwner, gRepo, ct).ConfigureAwait(false);
+        return (only != null && IsNewer(only.Version, CurrentVersion)) ? only : null;
+    }
+
+    // 2) GitHub 仓库 → Releases API（顺便看 Gitee 同名仓库，能加速就加速）
     if (TryParseGitHub(manifestUrl, out string owner, out string repo))
     {
         var gh = await CheckGitHubAsync(owner, repo, ct).ConfigureAwait(false);
-        if (gh != null)
-            return IsNewer(gh.Version, CurrentVersion) ? gh : null;
+        var gt = giteeMirror ? await CheckGiteeAsync(owner, repo, ct).ConfigureAwait(false) : null;
 
-        // 2) 没有 Release 资产 → 退回仓库里的 update.json
+        bool ghNewer = gh != null && IsNewer(gh.Version, CurrentVersion);
+        bool gtNewer = gt != null && IsNewer(gt.Version, CurrentVersion);
+
+        if (ghNewer)
+        {
+            // 同一个版本 → 优先用 Gitee 的地址下载（整包或分片），SHA256 仍用 GitHub 官方 digest
+            if (gt != null && gt.Version == gh!.Version && gt.Size > 0 &&
+                (gh.Size == 0 || gt.Size == gh.Size))
+            {
+                if (gt.PartUrls.Count > 0)
+                {
+                    gh.PartUrls = gt.PartUrls;
+                    gh.PartSizes = gt.PartSizes;
+                }
+                else
+                {
+                    gh.MirrorUrl = gt.Url;
+                }
+            }
+            return gh;
+        }
+        // GitHub 上还没有新版本、Gitee 上有（或 GitHub 挂了）→ 用 Gitee 的
+        if (gtNewer) return gt;
+        if (gh != null || gt != null) return null;   // 两边都读到了，但都不是新版
+
+        // 3) 没有 Release 资产 → 退回仓库里的 update.json
         foreach (string branch in new[] { "main", "master" })
         {
             string raw = $"https://raw.githubusercontent.com/{owner}/{repo}/{branch}/update.json";
@@ -214,8 +260,146 @@ public static async Task<UpdateInfo?> CheckAsync(string manifestUrl, Cancellatio
         return null;
     }
 
-    // 3) 清单直链 / 本地路径
+    // 4) 清单直链 / 本地路径
     return await CheckManifestAsync(manifestUrl, ct).ConfigureAwait(false);
+}
+
+/// <summary>
+/// 识别 Gitee 仓库：gitee.com/owner/repo、https://gitee.com/owner/repo、git@gitee.com:owner/repo、
+/// 也可以显式写 gitee:owner/repo（同名仓库不想和 GitHub 混用时用这个）。
+/// </summary>
+public static bool TryParseGitee(string text, out string owner, out string repo)
+{
+    owner = ""; repo = "";
+    if (string.IsNullOrWhiteSpace(text)) return false;
+    string t = text.Trim();
+
+    if (t.StartsWith("gitee:", StringComparison.OrdinalIgnoreCase))
+    {
+        t = t["gitee:".Length..];
+    }
+    else if (t.StartsWith("git@gitee.com:", StringComparison.OrdinalIgnoreCase))
+    {
+        t = t["git@gitee.com:".Length..];
+    }
+    else if (t.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+             t.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+    {
+        if (!Uri.TryCreate(t, UriKind.Absolute, out var uri)) return false;
+        if (!uri.Host.Equals("gitee.com", StringComparison.OrdinalIgnoreCase) &&
+            !uri.Host.Equals("www.gitee.com", StringComparison.OrdinalIgnoreCase)) return false;
+        t = uri.AbsolutePath.Trim('/');
+    }
+    else if (t.StartsWith("gitee.com/", StringComparison.OrdinalIgnoreCase))
+    {
+        t = t["gitee.com/".Length..];
+    }
+    else return false;
+
+    var parts = t.Split('/', StringSplitOptions.RemoveEmptyEntries);
+    if (parts.Length < 2) return false;
+    owner = parts[0];
+    repo = parts[1];
+    if (repo.EndsWith(".git", StringComparison.OrdinalIgnoreCase)) repo = repo[..^4];
+    if (owner.Contains(':') || repo.Contains(':') || owner.Contains(' ') || repo.Contains(' ')) return false;
+    return owner.Length > 0 && repo.Length > 0;
+}
+
+/// <summary>
+/// 识别分片附件名：xxx.part1 / xxx.part01（片号从 1 开始）。Gitee 单个附件不能超过 100MB，
+/// 所以大安装包在那边切成 deepsleep-Setup.exe.part1 / .part2 …，客户端下齐了再拼回整包。
+/// </summary>
+public static bool TryParsePartIndex(string name, out int index)
+{
+    index = 0;
+    if (string.IsNullOrWhiteSpace(name)) return false;
+    int dot = name.LastIndexOf(".part", StringComparison.OrdinalIgnoreCase);
+    if (dot < 0) return false;
+    string tail = name[(dot + 5)..].Trim();
+    if (tail.Length == 0 || tail.Length > 4) return false;
+    foreach (char c in tail) if (!char.IsDigit(c)) return false;
+    return int.TryParse(tail, out index) && index > 0;
+}
+
+/// <summary>Gitee Releases：api/v5 的 latest，取 tag 当版本、body 当说明、exe 附件当安装包（没有整包就用分片）。</summary>
+private static async Task<UpdateInfo?> CheckGiteeAsync(string owner, string repo, CancellationToken ct)
+{
+    try
+    {
+        using var hc = NewClient(TimeSpan.FromSeconds(20));
+        hc.DefaultRequestHeaders.Accept.Clear();
+        hc.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+        string api = $"https://gitee.com/api/v5/repos/{owner}/{repo}/releases/latest";
+        using var resp = await hc.GetAsync(api, ct).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode) return null;
+
+        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+        var root = doc.RootElement;
+        string tag = root.TryGetProperty("tag_name", out var tagEl) ? tagEl.GetString() ?? "" : "";
+        string notes = root.TryGetProperty("body", out var bodyEl) ? bodyEl.GetString() ?? "" : "";
+        string url = "";
+        long size = 0;
+        var partUrls = new List<string>();
+        var partSizes = new List<long>();
+
+        if (root.TryGetProperty("assets", out var assets) && assets.ValueKind == JsonValueKind.Array)
+        {
+            JsonElement best = default;
+            int bestScore = -1;
+            var parts = new SortedDictionary<int, (string Url, long Size)>();
+            foreach (var a in assets.EnumerateArray())
+            {
+                string name = a.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+                string assetUrl = a.TryGetProperty("browser_download_url", out var u) ? u.GetString() ?? "" : "";
+                if (string.IsNullOrWhiteSpace(assetUrl)) continue;
+                long assetSize = a.TryGetProperty("size", out var sz0) && sz0.TryGetInt64(out long sz0v) ? sz0v : 0;
+
+                // 分片（deepsleep-Setup.exe.part1/.part2…）：Gitee 单附件放不下整包时只能切开存
+                if (TryParsePartIndex(name, out int partIndex))
+                {
+                    parts[partIndex] = (assetUrl, assetSize);
+                    continue;
+                }
+                if (!name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) continue;
+                int score = 0;
+                if (name.Contains("Setup", StringComparison.OrdinalIgnoreCase)) score += 4;
+                if (name.Contains("deepsleep", StringComparison.OrdinalIgnoreCase)) score += 2;
+                if (score > bestScore) { bestScore = score; best = a; }
+            }
+            if (bestScore >= 0)
+            {
+                url = best.TryGetProperty("browser_download_url", out var u2) ? u2.GetString() ?? "" : "";
+                if (best.TryGetProperty("size", out var sz) && sz.TryGetInt64(out long szv)) size = szv;
+            }
+            // 没有整包 → 用分片（必须从 1 号片开始、一片不缺；缺片就当这个源没有可用的包）
+            if (string.IsNullOrWhiteSpace(url) && parts.Count > 0)
+            {
+                bool complete = true;
+                for (int i = 1; i <= parts.Count; i++)
+                    if (!parts.TryGetValue(i, out var pi) || string.IsNullOrWhiteSpace(pi.Url)) { complete = false; break; }
+                if (complete)
+                {
+                    long sum = 0;
+                    for (int i = 1; i <= parts.Count; i++)
+                    {
+                        partUrls.Add(parts[i].Url);
+                        partSizes.Add(parts[i].Size);
+                        sum += parts[i].Size;
+                    }
+                    url = partUrls[0];
+                    size = sum;
+                }
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(url)) return null;
+        return new UpdateInfo
+        {
+            Version = tag, Url = url, Notes = notes, Size = size, Source = "gitee",
+            PartUrls = partUrls, PartSizes = partSizes,
+        };
+    }
+    catch { return null; }
 }
 
 /// <summary>GitHub Releases：取最新 tag 当版本、body 当更新说明、exe 资产当安装包。</summary>
@@ -268,7 +452,7 @@ url = (HasToken && !string.IsNullOrWhiteSpace(apiAssetUrl)) ? apiAssetUrl : brow
         }
 
         if (string.IsNullOrWhiteSpace(url)) return null;
-        return new UpdateInfo { Version = tag, Url = url, Sha256 = sha, Notes = notes, Size = size };
+        return new UpdateInfo { Version = tag, Url = url, Sha256 = sha, Notes = notes, Size = size, Source = "github" };
     }
     catch { return null; }
 }
@@ -330,6 +514,23 @@ public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double
     Directory.CreateDirectory(DownloadDir);
     string dest = Path.Combine(DownloadDir, "deepsleep-Setup.exe");
 
+    // Gitee 那边只存得下 <100MB 的分片 → 先把各片下齐再拼回安装包；
+    // 片没下成、或者 Gitee 挂了，就退回下面的整包流程（照样按官方 SHA256 校验）
+    Exception? partsError = null;
+    if (info.PartUrls.Count > 0)
+    {
+        bool giteeOnly = info.Url.Equals(info.PartUrls[0], StringComparison.OrdinalIgnoreCase);
+        if (giteeOnly) return await DownloadPartsAsync(info, dest, progress, ct).ConfigureAwait(false);
+        try
+        {
+            return await DownloadPartsAsync(info, dest, progress, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            partsError = ex;
+        }
+    }
+
     // 本地文件 / 共享盘：直接复制
     if (!info.Url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
     {
@@ -358,7 +559,7 @@ public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double
     // 跨境下载又慢又容易被截断：直连失败就自动换国内镜像，而且能从断点接着下
     Exception? lastError = null;
     int tries = 0;
-    foreach (string candidate in BuildCandidates(info.Url))
+    foreach (string candidate in BuildCandidates(info))
     {
         for (int attempt = 1; attempt <= 2; attempt++)
         {
@@ -379,8 +580,9 @@ public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double
             }
         }
     }
+    string partsNote = partsError == null ? "" : $"\nGitee 分片包也没下成：{partsError.Message}";
     throw new InvalidDataException(
-        $"更新包下载失败（直连 + {Mirrors.Count} 个国内镜像共试了 {tries} 次）：{lastError?.Message}", lastError);
+        $"更新包下载失败（直连 + {Mirrors.Count} 个国内镜像共试了 {tries} 次）：{lastError?.Message}{partsNote}", lastError);
 }
 
 /// <summary>
@@ -394,10 +596,15 @@ public static IReadOnlyList<string> Mirrors { get; } = new[]
     "https://hub.gitmirror.com/",
 };
 
-/// <summary>候选下载地址：直连优先；只有 GitHub Releases 直链才追加镜像前缀。</summary>
-private static List<string> BuildCandidates(string url)
+/// <summary>候选下载地址：Gitee 镜像（国内直连最快）→ 原地址 → GitHub 加速镜像。</summary>
+private static List<string> BuildCandidates(UpdateInfo info)
 {
-    var list = new List<string> { url };
+    var list = new List<string>();
+    if (!string.IsNullOrWhiteSpace(info.MirrorUrl) &&
+        !info.MirrorUrl.Equals(info.Url, StringComparison.OrdinalIgnoreCase))
+        list.Add(info.MirrorUrl);
+    string url = info.Url;
+    list.Add(url);
     bool isReleaseDownload =
         url.Contains("github.com/", StringComparison.OrdinalIgnoreCase) &&
         url.Contains("/releases/download/", StringComparison.OrdinalIgnoreCase);
@@ -411,8 +618,10 @@ private static List<string> BuildCandidates(string url)
 }
 
 /// <summary>下载一次（支持断点续传）：网络中断留下的残件下次接着下，内容不对才算失败。</summary>
+/// <param name="jsonProbe">开头像 JSON 就判失败（防止把 API 元数据当成安装包下回来）；分片用不上。</param>
 private static async Task<string> DownloadOnceAsync(UpdateInfo info, string url, string dest,
-                                                   IProgress<double>? progress, CancellationToken ct)
+                                                   IProgress<double>? progress, CancellationToken ct,
+                                                   bool jsonProbe = true)
 {
     long have = File.Exists(dest) ? new FileInfo(dest).Length : 0;
     if (info.Size > 0 && have >= info.Size) have = 0;   // 已经下满却仍被判失败 → 从头重下
@@ -453,8 +662,9 @@ private static async Task<string> DownloadOnceAsync(UpdateInfo info, string url,
     }
 
     // 防御：如果下回来的还是 JSON（含 "release-assets" 之类元数据），直接判失败
-    using (var head = File.OpenRead(dest))
+    if (jsonProbe)
     {
+        using var head = File.OpenRead(dest);
         var probe = new byte[2];
         if (head.Read(probe, 0, 2) == 2 && probe[0] == (byte)'{' && probe[1] == (byte)'"')
             throw new InvalidDataException("下载到的不是安装包（是 JSON 元数据）");
@@ -462,6 +672,76 @@ private static async Task<string> DownloadOnceAsync(UpdateInfo info, string url,
     long actualSize = new FileInfo(dest).Length;
     if (info.Size > 0 && actualSize != info.Size)
         throw new InvalidDataException($"下载不完整：官方 {info.Size} 字节，实际 {actualSize} 字节");
+    VerifyHash(dest, info.Sha256);
+    progress?.Report(100);
+    return dest;
+}
+
+/// <summary>
+/// 下载 Gitee 上的安装包分片（deepsleep-Setup.exe.part1/N）再拼回一个完整安装包。
+/// 每片单独重试、支持断点续传，拼完按官方 SHA256 校验 —— 所以和从 GitHub 下整包完全等价。
+/// </summary>
+private static async Task<string> DownloadPartsAsync(UpdateInfo info, string dest,
+                                                     IProgress<double>? progress, CancellationToken ct)
+{
+    int count = info.PartUrls.Count;
+    long total = info.PartSizes.Sum();
+    if (total <= 0) total = info.Size;
+
+    var parts = new string[count];
+    for (int i = 0; i < count; i++) parts[i] = dest + ".part" + (i + 1);
+
+    long completed = 0;
+    for (int i = 0; i < count; i++)
+    {
+        int index = i;
+        long partSize = i < info.PartSizes.Count ? info.PartSizes[i] : 0;
+        var partInfo = new UpdateInfo { Url = info.PartUrls[index], Size = partSize };
+        Exception? lastError = null;
+
+        for (int attempt = 1; attempt <= 3; attempt++)
+        {
+            var partProgress = new Progress<double>(p =>
+            {
+                if (total > 0)
+                    progress?.Report(Math.Min(99.9,
+                        (completed + partSize * p / 100.0) * 100.0 / total));
+            });
+            try
+            {
+                await DownloadOnceAsync(partInfo, partInfo.Url, parts[index], partProgress, ct, false)
+                    .ConfigureAwait(false);
+                lastError = null;
+                break;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                lastError = ex;
+                try { if (File.Exists(parts[index])) File.Delete(parts[index]); } catch { }
+                await Task.Delay(TimeSpan.FromSeconds(1.5 * attempt), ct).ConfigureAwait(false);
+            }
+        }
+        if (lastError != null)
+            throw new InvalidDataException($"Gitee 分片 {index + 1}/{count} 下载失败：{lastError.Message}", lastError);
+
+        completed += new FileInfo(parts[index]).Length;
+        if (total > 0) progress?.Report(Math.Min(99.9, completed * 100.0 / total));
+    }
+
+    // 拼回整包（顺序必须和上传时一致，否则 SHA256 对不上）
+    using (var output = new FileStream(dest, FileMode.Create, FileAccess.Write, FileShare.None))
+    {
+        foreach (string part in parts)
+        {
+            using var input = File.OpenRead(part);
+            await input.CopyToAsync(output, 262144, ct).ConfigureAwait(false);
+        }
+    }
+    foreach (string part in parts) { try { File.Delete(part); } catch { } }
+
+    long actual = new FileInfo(dest).Length;
+    if (info.Size > 0 && actual != info.Size)
+        throw new InvalidDataException($"分片拼回来的安装包大小不对：官方 {info.Size} 字节，实际 {actual} 字节");
     VerifyHash(dest, info.Sha256);
     progress?.Report(100);
     return dest;

@@ -6,10 +6,10 @@
 
 | | |
 | --- | --- |
-| 当前版本 | **1.0.10** |
+| 当前版本 | **1.0.11** |
 | 系统要求 | Windows 10 1809+ / x64（推荐 Windows 11，可享亚克力毛玻璃界面） |
 | 下载 | [Releases](https://github.com/zhdezs/deepsleep/releases/latest) → `deepsleep-Setup.exe` |
-| OTA 更新源 | `zhdezs/deepsleep`（在 ⚙ 设置里填这个即可一键升级） |
+| OTA 更新源 | `zhdezs/deepsleep`（GitHub + Gitee 双源，在 ⚙ 设置里填这个即可一键升级） |
 
 ---
 
@@ -76,8 +76,15 @@ deepsleep-Setup.exe --silent --dir "D:\Apps\deepsleep" --no-desktop --no-launch
 **全自动流程**：读更新源 → 下载新安装包（用 GitHub 提供的 SHA256 摘要校验）→ 退出程序 →
 静默覆盖安装到原目录 → 自动重启。用户数据（Key、对话、记忆、模型）不受影响。
 
-更新源支持三种写法：`owner/repo`（走 GitHub Releases API，推荐）、`https://.../update.json` 直链、
-本地/局域网路径 `D:\release\update.json` 或 `\\服务器\共享\update.json`。
+更新源支持四种写法：`owner/repo`（走 GitHub Releases API，推荐）、`gitee.com/owner/repo`
+（国内源）、`https://.../update.json` 直链、本地/局域网路径 `D:\release\update.json` 或
+`\\服务器\共享\update.json`。
+
+**Gitee 国内源（推荐开）**：填 GitHub 仓库时会自动同时看同名 Gitee 仓库（`zhdezs/deepsleep`），
+同一个版本优先从 Gitee 下载（实测约 8 MB/s，比跨境直连快一个数量级），**校验值仍然用 GitHub
+官方摘要**，所以镜像搬不了假货。Gitee 单个附件上限 100MB，装不下的大安装包在那边切成
+`deepsleep-Setup.exe.part1` / `.part2` 存放，客户端逐片下载、支持断点续传，拼回整包后再校验。
+设置里有「同时用 Gitee 同名仓库加速」开关（默认开）；Gitee 那边下不成会自动回退 GitHub 整包。
 
 **国内下载慢 / 断线**：客户端先走直连，失败或中断时自动按顺序切换国内加速镜像
 （`ghproxy.net` / `gh-proxy.com` / `hub.gitmirror.com`）**断点续传**接着下；下完仍然用 GitHub
@@ -94,7 +101,7 @@ src/                      WinUI 3 客户端全部源码（.NET 10）
   ├─ ApiClient.cs         在线 API（OpenAI 兼容 / Claude / Gemini / Responses）
   ├─ OllamaClient.cs      本机 Ollama
   ├─ TokenVault.cs        GitHub 令牌保险箱（多层加密）
-  ├─ Updater.cs           OTA 自动更新（GitHub Releases / 直链 / 本地，含国内镜像回退）
+  ├─ Updater.cs           OTA 自动更新（GitHub + Gitee Releases / 直链 / 本地，含分片与镜像回退）
   ├─ DesktopPet.cs        桌面鲸鱼桌宠（Win32 分层窗口，真透明）
   ├─ Sandbox.cs           命令与脚本沙箱
   ├─ SkillStore.cs        技能库
