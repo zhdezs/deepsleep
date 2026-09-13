@@ -28,11 +28,33 @@
 5. 生成清单：`release\make-update.ps1 -Version <版本> -Notes "<更新内容>"`
 6. **推到 GitHub（必做）**：给 `zhdezs/deepsleep` 建 `v<版本>` 的 Release，
    上传 `deepsleep-Setup.exe`（有便携版 zip 也一起传）。
-   可用随手工具（无网沙箱里也能跑，因为 Python 的 HTTPS 可用）：
-   `python ...\deepsleep-patch\gh_release.py --token-env DS_GH_TOKEN --repo zhdezs/deepsleep ...`
+   **一条命令搞定（Release + 源码，推荐）**：
+   ```
+   powershell -ExecutionPolicy Bypass -File .secrets\publish.ps1
+   powershell -ExecutionPolicy Bypass -File .secrets\publish.ps1 -Notes "本次更新内容"
+   powershell -ExecutionPolicy Bypass -File .secrets\publish.ps1 -Only release    # 只发 Release
+   ```
+   它做的事：解出 `.secrets` 里的令牌（不落明文/不打印）→ 建或复用 `v<版本>` Release →
+   流式上传 `release\deepsleep-Setup.exe` 与便携包（大文件跨境很慢，>120s 的整包 POST 会超时，
+   必须流式）→ 用 Git Data API 同步源码（整棵树替换，废弃文件会被删掉）。
+   也可直接调底层工具（自备令牌）：`python release\tools\publish-via-api.py --all --token-env DS_GH_TOKEN`
+   —— **沙箱里 git/curl 的 schannel TLS 不可用（SEC_E_NO_CREDENTIALS），发布一律走 Python 的 HTTPS**。
    ⚠ 软件本体**不包含任何发布功能**（不要做成软件里的按钮），发布一律由 AI 助手在命令行完成。
    最后把两份 `config.json` 的 `UpdateUrl` 写成 `zhdezs/deepsleep`、`AutoCheckUpdate = true`。
 7. 收尾必须报告：Release 链接 + 用 GitHub 返回的 `digest` 核对上传文件的 SHA256 是否与本地一致。
+
+## 发布令牌（AI 用，放在 `.secrets\`，不进仓库）
+
+| 文件 | 作用 |
+| --- | --- |
+| `.secrets\github-publish.dpapi` | 推版本用的 GitHub 令牌，**DPAPI LocalMachine** 加密（沙箱账号没加载用户配置文件，CurrentUser 的 DPAPI 用不了） |
+| `.secrets\get-token.ps1` | 解出令牌到标准输出（别在终端直接跑，免得留痕） |
+| `.secrets\set-token.ps1` | 换令牌：`-Token "..."` 或交互输入 |
+| `.secrets\publish.ps1` | 一条命令发布（Release + 源码） |
+
+`.secrets\` 在仓库范围外（源码同步只走 `src` / `installer` / `release` + 三份根文件），
+**永远不要把它加进同步清单**。客户端「检查更新」用的细粒度令牌是另一回事，用 ⚙ 设置 → 🔑 录入，
+由软件自己多层加密存 `data\github.token`，AI 不需要、也解不开。
 
 ## 源码也要推（和 Release 一起）
 仓库 `zhdezs/deepsleep` 同时存放**源码和 Release**：每次发版除了推 Release，还要把当前源码同步过去
