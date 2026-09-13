@@ -19,8 +19,8 @@
     <ApplicationIcon>deepsleep.ico</ApplicationIcon>
     <RootNamespace>TrollWrangler</RootNamespace>
     <ApplicationTitle>deepsleep · AI 助手</ApplicationTitle>
-    <Version>1.0.7</Version>
-    <FileVersion>1.0.7.0</FileVersion>
+    <Version>1.0.8</Version>
+    <FileVersion>1.0.8.0</FileVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
@@ -35,4 +35,16 @@
     <Content Include="tools\set-github-token.ps1" CopyToOutputDirectory="PreserveNewest" Link="tools\set-github-token.ps1" />
     <Content Include="tools\publish-github-release.ps1" CopyToOutputDirectory="PreserveNewest" Link="tools\publish-github-release.ps1" />
   </ItemGroup>
+  <!-- 瘦身：WindowsAppSDK 会带进 Windows ML / ONNX 推理运行时（本程序不使用），发布后剔除 -->
+  <Target Name="TrimUnusedAiRuntime" AfterTargets="Publish">
+    <ItemGroup>
+      <TrimFiles Include="$(PublishDir)onnxruntime.dll" />
+      <TrimFiles Include="$(PublishDir)DirectML.dll" />
+      <TrimFiles Include="$(PublishDir)Microsoft.ML.OnnxRuntime.dll" />
+      <TrimFiles Include="$(PublishDir)NPUDetect.dll" />
+      <TrimFiles Include="$(PublishDir)PerceptiveStreaming.dll" />
+    </ItemGroup>
+    <Delete Files="@(TrimFiles)" />
+    <Message Importance="high" Text="已剔除未使用的 AI/ONNX 运行时（瘦身）" />
+  </Target>
 </Project>

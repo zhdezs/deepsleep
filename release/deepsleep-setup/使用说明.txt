@@ -54,6 +54,11 @@
     3. 本地 / 局域网共享：D:\release\update.json 或 \\服务器\共享\update.json
   仓库里没有 Release 资产时，客户端会自动退回读取仓库根目录的 update.json（main / master 都试）。
 
+  国内网络下载慢 / 中途断掉？不用管：
+    · 客户端会先用直连，失败或中断时自动切换国内加速镜像（ghproxy.net / gh-proxy.com /
+      hub.gitmirror.com）继续下，已下好的部分不用重来（断点续传）
+    · 下完仍然按 GitHub 官方给的 SHA256 校验，镜像只负责搬字节，改不了内容
+
   发布方（你）发新版本的 GitHub 流程：
     1. 改 csproj 里的 <Version>，重新编译 deepsleep-Setup.exe
     2. GitHub 仓库 → Releases → 新建 Release，tag 写 v1.0.1，说明写本次更新内容
@@ -84,3 +89,11 @@
   所有辅助脚本都在程序目录的 tools 子目录里，不会和主程序混在一起：
     tools\set-github-token.ps1      录入 GitHub 令牌（DPAPI 加密）
     tools\publish-github-release.ps1 把新版本一键发布到 GitHub Releases（OTA 用）
+
+
+十、1.0.8 更新要点
+  · 在线更新加了国内镜像回退与断点续传：直连慢或断线会自动换镜像接着下，
+    下完照旧用官方 SHA256 校验（之前只补了下载失败重试，没有镜像）
+  · 桌面鲸鱼桌宠可以在 ⚙ 设置 → 桌面桌宠 里开关，改了立即生效，不用重启
+  · 桌宠右键选「隐藏桌宠」会记进配置，下次启动不会再自己冒出来
+  · 安装程序副标题、版本号、README 同步到 1.0.8

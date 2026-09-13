@@ -16,7 +16,12 @@
 3. 更新载荷：把 dist（**排除 data**，别把你的 Key 和聊天记录打进安装包）覆盖到
    `release\deepsleep-setup\package`，再重打 `installer\payload.zip` 和
    `release\deepsleep-<版本>-win-x64.zip`。
+   **用 `robocopy <dist> <package> /MIR /XD data` 同步，不要只做"覆盖"**：覆盖会把上一版
+   已剔除的文件（onnxruntime/DirectML 等）留在包里 —— v1.0.7 的安装包就是这么胖了 24MB，
+   v1.0.8 起改用 /MIR 清干净。
    **必须用 .NET 的 ZipFile**，不要用 `tar -a`（中文文件名会缺 UTF-8 标记而乱码）。
+   `使用说明.txt`、`uninstall.cmd`、`uninstall.ps1` 在 `release\deepsleep-setup\`（上一层），
+   /MIR 之后要再拷回 `package\`。
 4. 编译安装程序：`installer\DeepSleepSetup` 下
    `dotnet publish -c Release -r win-x64 --self-contained true -o publish`，
    把 `deepsleep-Setup.exe` 与 `.pdb` 复制到 `release\`。
@@ -62,3 +67,24 @@ GitHub 仓库 `zhdezs/deepsleep` **只放 winui 版源码**：`src/`（WinUI 3 �
   tool_call → 软件执行 → 结果回灌 → 单独生成最终回复」这条链。
 - 不允许静默降级：API 配置错误或连不上时，直接把地址、模型名、失败原因显示给用户，
   不要偷偷换成本地小模型装傻。
+## 已废弃（不要实现、不要恢复、不要当有效上下文）
+- **「以理服人」回怼功能及其一切**（标签页、工具列表里的「以理服人」、回怼语气话术）—— 程序是纯 AI 助手，自训练模型仅留作以后用
+- **旧版 Python 实现**：`app/`、`main.py`、`launcher.py`、`train_model.py`、`fetch_rants.py`、`generate_rants.py`、`requirements.txt`、`troll_wrangler.spec`
+- **旧版 C++ 实现与 RL 训练器**：`cpp/`、`trainer/`
+  → 以上都已移到 `archive\abandoned\`，**只作存档**，不进仓库、不参与构建
+- **毛玻璃桌宠方案**（`PetWindow.xaml`，亚克力）—— 已改为 Win32 分层窗口的真透明桌宠
+- **「破军」这个名字**（早已改名为 deepsleep）
+- **用命令行 curl/PowerShell 代替「联网搜索」工具**的做法
+- **软件内置发布功能**（曾实现过 `PublishReleaseAsync`，已删除）—— 发布一律由 AI 在命令行做
+- **框架依赖瘦身路线**（要求目标机预装 .NET/WindowsAppRuntime，风险高，已放弃）—— 改用「剔除 onnxruntime/DirectML」的零风险方案（−43 MB，已实测）
+- 更新清单指向本地路径/自建服务器的旧分发方式 —— 现以 GitHub Releases 为准
+
+## 当前有效范围（唯一真相）
+| 项 | 位置 |
+| --- | --- |
+| 客户端源码 | `src/`（WinUI 3 / .NET 10） |
+| 安装程序 | `installer/DeepSleepSetup/`（WPF 单文件，内嵌 payload.zip） |
+| 发布脚本与说明 | `release/`（`make-update.ps1`、`tools/`、`使用说明.txt`） |
+| 发布仓库 | GitHub `zhdezs/deepsleep`（源码 + Releases），最新 **v1.0.8** |
+| 辅助脚本 | `tools\publish-github-release.ps1` / `set-github-token.ps1` / `download-update.ps1` |
+| 用户数据 | 安装目录 `data\`；令牌多层加密存 `data\github.token` |

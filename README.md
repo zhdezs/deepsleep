@@ -6,7 +6,7 @@
 
 | | |
 | --- | --- |
-| 当前版本 | **1.0.2** |
+| 当前版本 | **1.0.8** |
 | 系统要求 | Windows 10 1809+ / x64（推荐 Windows 11，可享亚克力毛玻璃界面） |
 | 下载 | [Releases](https://github.com/zhdezs/deepsleep/releases/latest) → `deepsleep-Setup.exe` |
 | OTA 更新源 | `zhdezs/deepsleep`（在 ⚙ 设置里填这个即可一键升级） |
@@ -43,6 +43,7 @@
 | **长期记忆** | 跨会话记住偏好与事实，超长自动压缩（`data/memory.json`） |
 | **断点恢复** | 任务被中断、程序被杀甚至断电，重启后仍可从未完成处继续（`data/runtime_state.json`） |
 | **沙箱与确认** | 危险命令/脚本执行前确认，可整体收紧权限 |
+| **桌面桌宠** | 透明鲸鱼桌宠（Win32 分层窗口，真透明）：可拖动、单击唤出主界面、右键菜单；⚙ 设置里可开关，隐藏后会被记住 |
 | **界面** | 毛玻璃（DesktopAcrylic）、线条风圆形按钮、思考中/正在执行 的呼吸动效气泡、滚动到底部 |
 
 ---
@@ -78,6 +79,10 @@ deepsleep-Setup.exe --silent --dir "D:\Apps\deepsleep" --no-desktop --no-launch
 更新源支持三种写法：`owner/repo`（走 GitHub Releases API，推荐）、`https://.../update.json` 直链、
 本地/局域网路径 `D:\release\update.json` 或 `\\服务器\共享\update.json`。
 
+**国内下载慢 / 断线**：客户端先走直连，失败或中断时自动按顺序切换国内加速镜像
+（`ghproxy.net` / `gh-proxy.com` / `hub.gitmirror.com`）**断点续传**接着下；下完仍然用 GitHub
+官方给出的 SHA256 校验，镜像只搬字节、改不了内容。
+
 ---
 
 ## 四、目录结构
@@ -89,7 +94,8 @@ src/                      WinUI 3 客户端全部源码（.NET 10）
   ├─ ApiClient.cs         在线 API（OpenAI 兼容 / Claude / Gemini / Responses）
   ├─ OllamaClient.cs      本机 Ollama
   ├─ TokenVault.cs        GitHub 令牌保险箱（多层加密）
-  ├─ Updater.cs           OTA 自动更新（GitHub Releases / 直链 / 本地）
+  ├─ Updater.cs           OTA 自动更新（GitHub Releases / 直链 / 本地，含国内镜像回退）
+  ├─ DesktopPet.cs        桌面鲸鱼桌宠（Win32 分层窗口，真透明）
   ├─ Sandbox.cs           命令与脚本沙箱
   ├─ SkillStore.cs        技能库
   ├─ MemoryStore.cs       长期记忆
@@ -98,7 +104,7 @@ src/                      WinUI 3 客户端全部源码（.NET 10）
   ├─ ImageGenClient.cs    图片生成
   ├─ VisionClient.cs      看图
   ├─ Engine.cs / NgramModel.cs / NaiveBayes.cs   内置自训练小模型
-  └─ tools/               set-github-token.ps1、publish-github-release.ps1
+  └─ tools/               set-github-token.ps1、publish-github-release.ps1、download-update.ps1
 
 installer/DeepSleepSetup/ WPF 图形安装程序（单文件，内嵌 payload.zip）
 release/                  发布脚本与说明（make-update.ps1、tools/、使用说明.txt）

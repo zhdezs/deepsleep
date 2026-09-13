@@ -355,59 +355,116 @@ public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double
         return dest;
     }
 
-    // 大文件跨境下载经常被截断/污染：失败就重下（最多 3 次），并与官方给的字节数核对
+    // 跨境下载又慢又容易被截断：直连失败就自动换国内镜像，而且能从断点接着下
     Exception? lastError = null;
-    for (int attempt = 1; attempt <= 3; attempt++)
+    int tries = 0;
+    foreach (string candidate in BuildCandidates(info.Url))
     {
-        try
+        for (int attempt = 1; attempt <= 2; attempt++)
         {
-            using (var hc = NewClient(TimeSpan.FromMinutes(30)))
+            tries++;
+            try
             {
-                if (info.Url.Contains("api.github.com", StringComparison.OrdinalIgnoreCase))
-                    {
-                        // API 资产必须显式要二进制，否则会返回 JSON 元数据（之前只 Clear 了 Accept，导致下回来 1441 字节的 JSON）
-                        hc.DefaultRequestHeaders.Accept.Clear();
-                        hc.DefaultRequestHeaders.Accept.ParseAdd("application/octet-stream");
-                    }
-                using (var resp = await hc.GetAsync(info.Url, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false))
+                return await DownloadOnceAsync(info, candidate, dest, progress, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                lastError = ex;
+                if (ex is InvalidDataException)
                 {
-                    resp.EnsureSuccessStatusCode();
-                    long? total = resp.Content.Headers.ContentLength;
-                    using Stream src = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-                    using var dst = File.Create(dest);
-                    var buffer = new byte[81920];
-                    long read = 0;
-                    int n;
-                    while ((n = await src.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
-                    {
-                        await dst.WriteAsync(buffer.AsMemory(0, n), ct).ConfigureAwait(false);
-                        read += n;
-                        if (total is > 0) progress?.Report(Math.Min(100.0, read * 100.0 / total.Value));
-                    }
+                    // 内容本身不对（下回来是 JSON、或者哈希对不上）：残件不能续传，删掉重来
+                    try { if (File.Exists(dest)) File.Delete(dest); } catch { }
                 }
+                await Task.Delay(TimeSpan.FromSeconds(1.5 * attempt), ct).ConfigureAwait(false);
             }
-
-            // 防御：如果下回来的还是 JSON（含 "release-assets" 之类元数据），直接判失败重试
-            using (var head = File.OpenRead(dest))
-            {
-                var probe = new byte[2];
-                if (head.Read(probe, 0, 2) == 2 && probe[0] == (byte)'{' && probe[1] == (byte)'"')
-                    throw new InvalidDataException("下载到的不是安装包（是 JSON 元数据），重试中");
-            }
-            long actualSize = new FileInfo(dest).Length;
-            if (info.Size > 0 && actualSize != info.Size)
-                throw new InvalidDataException($"下载不完整：官方 {info.Size} 字节，实际 {actualSize} 字节");
-            VerifyHash(dest, info.Sha256);
-            return dest;
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException && attempt < 3)
-        {
-            lastError = ex;
-            try { if (File.Exists(dest)) File.Delete(dest); } catch { }
-            await Task.Delay(TimeSpan.FromSeconds(2 * attempt), ct).ConfigureAwait(false);
         }
     }
-    throw lastError ?? new InvalidDataException("更新包下载失败");
+    throw new InvalidDataException(
+        $"更新包下载失败（直连 + {Mirrors.Count} 个国内镜像共试了 {tries} 次）：{lastError?.Message}", lastError);
+}
+
+/// <summary>
+/// 国内可用的 GitHub 下载加速镜像（前缀式）。直连失败或中断时按顺序回退，
+/// 内容与文件名都不变，最后照样用官方 SHA256 校验，不牺牲安全性。
+/// </summary>
+public static IReadOnlyList<string> Mirrors { get; } = new[]
+{
+    "https://ghproxy.net/",
+    "https://gh-proxy.com/",
+    "https://hub.gitmirror.com/",
+};
+
+/// <summary>候选下载地址：直连优先；只有 GitHub Releases 直链才追加镜像前缀。</summary>
+private static List<string> BuildCandidates(string url)
+{
+    var list = new List<string> { url };
+    bool isReleaseDownload =
+        url.Contains("github.com/", StringComparison.OrdinalIgnoreCase) &&
+        url.Contains("/releases/download/", StringComparison.OrdinalIgnoreCase);
+    if (!isReleaseDownload) return list;   // api.github.com 资产地址 / 自建地址不支持镜像前缀
+    foreach (string m in Mirrors)
+    {
+        if (url.StartsWith(m, StringComparison.OrdinalIgnoreCase)) continue;
+        list.Add(m + url);
+    }
+    return list;
+}
+
+/// <summary>下载一次（支持断点续传）：网络中断留下的残件下次接着下，内容不对才算失败。</summary>
+private static async Task<string> DownloadOnceAsync(UpdateInfo info, string url, string dest,
+                                                   IProgress<double>? progress, CancellationToken ct)
+{
+    long have = File.Exists(dest) ? new FileInfo(dest).Length : 0;
+    if (info.Size > 0 && have >= info.Size) have = 0;   // 已经下满却仍被判失败 → 从头重下
+
+    using (var hc = NewClient(TimeSpan.FromMinutes(30)))
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        if (url.Contains("api.github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            // API 资产必须显式要二进制，否则会返回 JSON 元数据（之前只 Clear 了 Accept，导致下回来 1441 字节的 JSON）
+            req.Headers.Accept.Clear();
+            req.Headers.Accept.ParseAdd("application/octet-stream");
+        }
+        if (have > 0) req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(have, null);
+
+        using var resp = await hc.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        resp.EnsureSuccessStatusCode();
+
+        bool append = have > 0 && (int)resp.StatusCode == 206;   // 206 = 服务器同意续传
+        long start = append ? have : 0;
+        long? remain = resp.Content.Headers.ContentLength;
+        long goal = info.Size > 0 ? info.Size : start + (remain ?? 0);
+
+        using (Stream src = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
+        using (var dst = new FileStream(dest, append ? FileMode.Append : FileMode.Create,
+                                        FileAccess.Write, FileShare.None))
+        {
+            var buffer = new byte[262144];
+            long read = start;
+            int n;
+            while ((n = await src.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+            {
+                await dst.WriteAsync(buffer.AsMemory(0, n), ct).ConfigureAwait(false);
+                read += n;
+                if (goal > 0) progress?.Report(Math.Min(99.9, read * 100.0 / goal));
+            }
+        }
+    }
+
+    // 防御：如果下回来的还是 JSON（含 "release-assets" 之类元数据），直接判失败
+    using (var head = File.OpenRead(dest))
+    {
+        var probe = new byte[2];
+        if (head.Read(probe, 0, 2) == 2 && probe[0] == (byte)'{' && probe[1] == (byte)'"')
+            throw new InvalidDataException("下载到的不是安装包（是 JSON 元数据）");
+    }
+    long actualSize = new FileInfo(dest).Length;
+    if (info.Size > 0 && actualSize != info.Size)
+        throw new InvalidDataException($"下载不完整：官方 {info.Size} 字节，实际 {actualSize} 字节");
+    VerifyHash(dest, info.Sha256);
+    progress?.Report(100);
+    return dest;
 }
 
 /// <summary>SHA256 校验（清单未提供校验值时跳过）。</summary>

@@ -200,17 +200,33 @@ public sealed partial class MainWindow : Window
         _ = AutoCheckUpdateAsync();   // OTA：启动时静默检查新版本
 
         // 桌宠：透明分层窗口，只有鲸鱼本体显示在桌面上（右键可隐藏/退出）
+        ApplyPetVisibility();
+    }
+
+    /// <summary>按配置显示 / 关闭桌面桌宠（设置里改了开关立即生效，不必重启）。</summary>
+    private void ApplyPetVisibility()
+    {
         try
         {
-            string petRaw = Path.Combine(AppContext.BaseDirectory, "pet.raw");
-            if (_config.PetEnabled && File.Exists(petRaw))
+            if (!_config.PetEnabled)
             {
-                _pet = new DesktopPet(petRaw, () =>
-                {
-                    try { AppWindow.Show(); Activate(); }
-                    catch { /* 打不开就忽略 */ }
-                });
+                _pet?.Dispose();
+                _pet = null;
+                return;
             }
+            if (_pet != null) { _pet.Show(); return; }
+            string petRaw = Path.Combine(AppContext.BaseDirectory, "pet.raw");
+            if (!File.Exists(petRaw)) return;
+            _pet = new DesktopPet(petRaw, () =>
+            {
+                try { AppWindow.Show(); Activate(); }
+                catch { /* 打不开就忽略 */ }
+            }, visible =>
+            {
+                // 右键「隐藏桌宠」：记进配置并落盘，下次启动不会再自己冒出来
+                _config.PetEnabled = visible;
+                _config.Save();
+            });
         }
         catch { _pet = null; }
     }
@@ -270,7 +286,8 @@ public sealed partial class MainWindow : Window
                 Content = new TextBlock
                 {
                     Text = $"当前版本：v{Updater.CurrentVersion}\n\n更新内容：\n{notes}\n\n" +
-                           "升级会下载安装包，退出后静默覆盖安装并自动重启。用户数据（API Key、对话历史、记忆、自训练模型）不受影响。",
+                           "升级会下载安装包，退出后静默覆盖安装并自动重启。用户数据（API Key、对话历史、记忆、自训练模型）不受影响。" +
+                           "\n\n下载优先走直连，失败或中断会自动切换国内镜像接着下（断点续传），下完仍按官方 SHA256 校验。",
                     TextWrapping = TextWrapping.Wrap,
                 },
                 PrimaryButtonText = "立即升级",
@@ -2704,6 +2721,25 @@ public sealed partial class MainWindow : Window
         panel.Children.Add(tokenBtn);
         panel.Children.Add(tokenHint);
 
+        var lblPet = new TextBlock { Text = "桌面桌宠", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 8, 0, 0) };
+        panel.Children.Add(lblPet);
+        var petToggle = new CheckBox
+        {
+            Content = "显示桌面鲸鱼桌宠（透明窗口、可拖动、单击打开主界面、右键有菜单）",
+            IsChecked = _config.PetEnabled,
+            Margin = new Thickness(0, 6, 0, 0),
+        };
+        panel.Children.Add(petToggle);
+        var petHint = new TextBlock
+        {
+            Text = "在桌宠上点右键选「隐藏桌宠」也会关掉这里的开关，下次启动不再出现。",
+            FontSize = 11,
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Gray),
+            Margin = new Thickness(0, 4, 0, 0),
+        };
+        panel.Children.Add(petHint);
+
         var dlg = new ContentDialog
         {
             Title = "模型设置",
@@ -2733,6 +2769,7 @@ public sealed partial class MainWindow : Window
         _config.UpdateUrl = updateUrl.Text.Trim();
         _config.AutoCheckUpdate = autoUpdate.IsChecked == true;
         _config.UseOllama = useOllama.IsChecked == true;
+        _config.PetEnabled = petToggle.IsChecked == true;
 
         _config.Save();
         _engine.ApplyConfig(_config);
@@ -2745,6 +2782,7 @@ public sealed partial class MainWindow : Window
         _clusterAgent.MultimodalMain = _config.MultimodalMain;
         UpdateAgentStatus();
         UpdateClusterStatus();
+        ApplyPetVisibility();
 
     }
 }

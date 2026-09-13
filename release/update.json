@@ -1,6 +1,6 @@
 {
-    "version":  "1.0.7",
-    "url":  "C:\\Users\\lichenghan\\CodeBuddy\\20260812123427\\release\\deepsleep-Setup.exe",
-    "sha256":  "2BC36A5B0A16D6E5794E093A3BFC3CD9601FE610DEF6D6D1BD9FA8ADEC8CB091",
-    "notes":  "1.0.7：新增桌面鲸鱼桌宠（透明分层窗口、可拖动、右键菜单）；安装程序与主程序统一使用官方鲸鱼图标"
+    "version":  "1.0.8",
+    "url":  "https://github.com/zhdezs/deepsleep/releases/download/v1.0.8/deepsleep-Setup.exe",
+    "sha256":  "57B2AE4143D5E454D0543C88EE867DFD0D3812CFCB5609C843C9DBEB0D96EA15",
+    "notes":  "1.0.8：在线更新支持国内镜像回退与断点续传（直连慢或断线自动换镜像接着下，仍按官方 SHA256 校验）；桌宠可在设置里开关、右键隐藏会记住；清掉安装包内残留的 ONNX/DirectML，安装包体积再减约 24MB。"
 }

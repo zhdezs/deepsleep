@@ -56,6 +56,7 @@ public sealed class DesktopPet : IDisposable
         ref SIZE size, IntPtr src, ref POINT pptSrc, int key, ref BLENDFUNCTION blend, int flags);
 
     private readonly Action _onOpen;
+    private readonly Action<bool>? _onVisible;
     private IntPtr _hwnd = IntPtr.Zero, _prevProc = IntPtr.Zero, _memDC = IntPtr.Zero, _bmp = IntPtr.Zero;
     private WndProcDelegate? _proc;
     private int _w, _h, _x, _y, _phase;
@@ -64,9 +65,12 @@ public sealed class DesktopPet : IDisposable
 
     private delegate IntPtr WndProcDelegate(IntPtr h, uint m, IntPtr w, IntPtr l);
 
-    public DesktopPet(string rawPath, Action onOpen)
+    /// <param name="onOpen">单击桌宠：打开主界面。</param>
+    /// <param name="onVisible">显示 / 隐藏状态变化（隐藏时主程序记进配置，下次启动不再自己冒出来）。</param>
+    public DesktopPet(string rawPath, Action onOpen, Action<bool>? onVisible = null)
     {
         _onOpen = onOpen;
+        _onVisible = onVisible;
         byte[] blob = File.ReadAllBytes(rawPath);
         _w = BitConverter.ToInt32(blob, 0);
         _h = BitConverter.ToInt32(blob, 4);
@@ -128,13 +132,13 @@ public sealed class DesktopPet : IDisposable
     {
         IntPtr menu = CreatePopupMenu();
         AppendMenuW(menu, MF_STRING, 1, "打开主界面");
-        AppendMenuW(menu, MF_STRING, 2, "隐藏桌宠");
+        AppendMenuW(menu, MF_STRING, 2, "隐藏桌宠（在 ⚙ 设置里可重新显示）");
         AppendMenuW(menu, MF_STRING, 9, "退出 deepsleep");
         GetCursorPos(out POINT p);
         int cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, p.X, p.Y, 0, h, IntPtr.Zero);
         DestroyMenu(menu);
         if (cmd == 1) _onOpen();
-        else if (cmd == 2) Hide();
+        else if (cmd == 2) { Hide(); _onVisible?.Invoke(false); }
         else if (cmd == 9) App.ExitApp();
     }
 
