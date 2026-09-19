@@ -1,6 +1,6 @@
 {
-    "version":  "1.0.13",
-    "url":  "https://github.com/zhdezs/deepsleep/releases/download/v1.0.13/deepsleep-Setup.exe",
-    "sha256":  "AA9EE8C2C56896D2EBEF1CB56DBC2CFA04BF388C9B8497B5885295B9D19B0F9B",
-    "notes":  "1.0.13：修桌宠发消息的一个边界情况 —— 在桌宠浮窗里「停止」某一轮之后又直接发新消息时，先清掉被中止那一轮的残留上下文（否则历史里会留着一个没有结果的工具调用，接口会直接报错）；主界面一直有这步处理，桌宠这边漏了。其余功能与 1.0.12 相同：桌宠按原图 45% 显示、单击弹出桌宠专属聊天窗（与主界面同一条会话）、按住拖动摆位置并记住坐标、右键菜单（聊天 / 打开主界面 / 隐藏 / 退出）。"
+    "version":  "1.0.14",
+    "url":  "https://github.com/zhdezs/deepsleep/releases/download/v1.0.14/deepsleep-Setup.exe",
+    "sha256":  "D991F5C6A4AD56E382DD2FC95C8A033C23BC72364719E659AE533B9145128739",
+    "notes":  "1.0.14：OTA 换源更聪明 + 升级前自动备份配置 ——（1）更新包下载改成「国内优先 Gitee，境外自动切 GitHub」：真正开下之前先花一两秒探一下 Gitee 的速度（只拉 256KB），低于 200 KB/s 或连不上就直接走 GitHub，不再让人对着不动的进度条干等；（2）下载途中也盯着：Gitee 超过 20 秒收不到数据、或平均速度长期低于门槛，立刻判这个源不行并换源重试，换源后照样按 GitHub 官方 SHA256 校验；（3）升级对话框里实时显示当前走的哪个源，例如「Gitee 只有 37 KB/s（像是在境外），自动改用 GitHub 下载」；（4）升级前自动把 data\\config.json 备份成 config.json.bak（安装程序内部也备份一次），万一配置被程序包模板覆盖或被误删，程序启动时会自动从 .bak 恢复，不用重填 API Key。"
 }

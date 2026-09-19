@@ -60,6 +60,12 @@ public sealed class AppConfig
         cfg._path = Path.Combine(dir, "config.json");
         try
         {
+            // 万一配置被升级程序弄丢了（以前踩过：安装包里的空模板把用户的配置覆盖掉），
+            // 用升级前自动留的 config.json.bak 恢复，别让人重填一次 API Key
+            if (!File.Exists(cfg._path) && File.Exists(cfg._path + ".bak"))
+            {
+                try { File.Copy(cfg._path + ".bak", cfg._path, true); } catch { }
+            }
             if (File.Exists(cfg._path))
             {
                 string json = File.ReadAllText(cfg._path);

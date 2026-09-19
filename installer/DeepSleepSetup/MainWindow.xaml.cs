@@ -11,7 +11,7 @@ public partial class MainWindow : Window
 {
     private const string AppName = "deepsleep";
     private const string AppDisplay = "deepsleep AI 助手";
-    private const string AppVersion = "1.0.13";
+    private const string AppVersion = "1.0.14";
     private const string Publisher = "deepsleep";
     private const string ExeName = "deepsleep.exe";
 
@@ -139,6 +139,7 @@ public partial class MainWindow : Window
         if (entries.Count == 0) throw new InvalidOperationException("程序包为空。");
 
         Directory.CreateDirectory(target);
+        BackupUserConfig(target);          // 覆盖安装前先备份 data\config.json → config.json.bak
         int done = 0;
         foreach (var entry in entries)
         {
@@ -161,6 +162,20 @@ public partial class MainWindow : Window
             if (progress != null && (done % 5 == 0 || done == entries.Count))
                 progress.Report((done * 88.0 / entries.Count, $"正在自解压：{rel}"));
         }
+    }
+
+    /// <summary>
+    /// 覆盖安装前把 data\config.json 备份成 data\config.json.bak。里面是 API Key 和各项设置，
+    /// 一旦被程序包里的模板覆盖、或者被误删，靠它还能捞回来（程序启动时发现配置不在会自动恢复）。
+    /// </summary>
+    private static void BackupUserConfig(string target)
+    {
+        try
+        {
+            string src = Path.Combine(target, "data", "config.json");
+            if (File.Exists(src)) File.Copy(src, src + ".bak", true);
+        }
+        catch { /* 备份失败不影响安装 */ }
     }
 
     private static void CreateShortcuts(string target, bool desktopShortcut)

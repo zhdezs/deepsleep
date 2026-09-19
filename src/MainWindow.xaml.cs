@@ -340,11 +340,11 @@ public sealed partial class MainWindow : Window
             bool giteeRoute = !string.IsNullOrWhiteSpace(info.MirrorUrl) || info.PartUrls.Count > 0;
             string route = giteeRoute
                 ? (info.PartUrls.Count > 0
-                    ? "下载走 Gitee 国内源（装不下的安装包在那边切成多片存放，客户端下齐后拼回整包，校验用 GitHub 官方 SHA256）。"
-                    : "下载走 Gitee 国内源（更快），失败会回退 GitHub，校验用 GitHub 官方 SHA256。")
+                    ? "下载优先走 Gitee 国内源（装不下的安装包在那边切成多片，下齐后拼回整包）。开下前会先探一下 Gitee 的速度：太慢或连不上会自动改用 GitHub，全程仍按 GitHub 官方 SHA256 校验。"
+                    : "下载优先走 Gitee 国内源（更快）；太慢或失败会自动改用 GitHub，校验用 GitHub 官方 SHA256。")
                 : info.Source == "gitee"
                     ? "该版本来自 Gitee 国内源。"
-                    : "下载优先走直连，失败或中断会自动切换国内加速镜像接着下（断点续传），下完仍按官方 SHA256 校验。";
+                    : "下载走 GitHub：直连失败或中断会自动切国内加速镜像接着下（断点续传、卡住会换源），下完仍按官方 SHA256 校验。";
             var confirm = new ContentDialog
             {
                 Title = $"发现新版本 v{info.Version}",
@@ -391,12 +391,14 @@ public sealed partial class MainWindow : Window
         bool launching = false;
         try
         {
+            // 下载期间把"走的哪个源 / 有没有自动换源"显示出来（Gitee 探速、切 GitHub 都能看见）
+            string status = "正在下载更新包…";
             var progress = new Progress<double>(p =>
             {
                 bar.Value = p;
-                txt.Text = $"正在下载更新包…{p:0}%";
+                txt.Text = $"{status}\n进度 {p:0}%";
             });
-            string installer = await Updater.DownloadAsync(info, progress, cts.Token);
+            string installer = await Updater.DownloadAsync(info, progress, cts.Token, s => status = s);
             txt.Text = "下载完成，正在启动升级程序…";
             string exePath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "deepsleep.exe");
             string installDir = Path.GetDirectoryName(exePath) ?? AppContext.BaseDirectory;
@@ -2780,7 +2782,7 @@ public sealed partial class MainWindow : Window
         };
         var giteeMirror = new CheckBox
         {
-            Content = "同时用 Gitee 同名仓库加速（同版本优先从 Gitee 下载，仍按 GitHub 官方 SHA256 校验）",
+            Content = "同时用 Gitee 同名仓库加速（同版本先探速再走 Gitee；太慢/连不上自动切回 GitHub，校验始终用 GitHub 官方 SHA256）",
             IsChecked = _config.GiteeMirror,
             Margin = new Thickness(0, 6, 0, 0),
         };

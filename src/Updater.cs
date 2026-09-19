@@ -520,27 +520,63 @@ public static bool IsNewer(string remote, string local)
 
 public static string DownloadDir => Path.Combine(Path.GetTempPath(), "deepsleep-update");
 
+/// <summary>Gitee 探针门槛：低于这个速度就当这个源当前不好用（境外直连常见），直接换 GitHub。</summary>
+private const double GiteeMinKbps = 200;
+/// <summary>Gitee 下载中途"多久没数据"算卡住（秒），超了就换源。</summary>
+private const int GiteeStallSeconds = 20;
+/// <summary>GitHub 直连 / 加速镜像的卡住判定（跨境容易抽风，给宽一点）。</summary>
+private const int HttpStallSeconds = 45;
+
 /// <summary>下载更新包到临时目录，带进度回调；若清单提供 sha256 则校验。</summary>
+/// <param name="onStatus">给界面看的文字状态（走的哪个源、有没有自动换源）。</param>
 public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double>? progress,
-                                               CancellationToken ct = default)
+                                               CancellationToken ct = default, Action<string>? onStatus = null)
 {
     Directory.CreateDirectory(DownloadDir);
     string dest = Path.Combine(DownloadDir, "deepsleep-Setup.exe");
 
-    // Gitee 那边只存得下 <100MB 的分片 → 先把各片下齐再拼回安装包；
-    // 片没下成、或者 Gitee 挂了，就退回下面的整包流程（照样按官方 SHA256 校验）
-    Exception? partsError = null;
-    if (info.PartUrls.Count > 0)
+    // ① 国内优先走 Gitee。但境外直连 Gitee 常常只有几十 KB/s，所以真下载之前先花一两秒探个速：
+    //    慢 / 连不上就不在这儿耗，直接走下面的 GitHub 流程（候选里本来就有直连 + 国内加速镜像）。
+    string? giteeUrl = info.PartUrls.Count > 0
+        ? info.PartUrls[0]
+        : (IsGiteeUrl(info.MirrorUrl) ? info.MirrorUrl : null);
+    bool giteeOnly = giteeUrl != null && info.Url.Equals(giteeUrl, StringComparison.OrdinalIgnoreCase);
+    Exception? giteeError = null;
+    if (giteeUrl != null)
     {
-        bool giteeOnly = info.Url.Equals(info.PartUrls[0], StringComparison.OrdinalIgnoreCase);
-        if (giteeOnly) return await DownloadPartsAsync(info, dest, progress, ct).ConfigureAwait(false);
-        try
+        bool useGitee = true;
+        if (!giteeOnly)
         {
-            return await DownloadPartsAsync(info, dest, progress, ct).ConfigureAwait(false);
+            double kbps = await ProbeSpeedKbpsAsync(giteeUrl, ct).ConfigureAwait(false);
+            useGitee = kbps >= GiteeMinKbps;
+            onStatus?.Invoke(useGitee
+                ? $"Gitee 国内源 {kbps:0} KB/s，走 Gitee 下载（校验仍用 GitHub 官方 SHA256）"
+                : kbps < 0
+                    ? "Gitee 连不上，自动改用 GitHub 下载"
+                    : $"Gitee 只有 {kbps:0} KB/s（像是在境外），自动改用 GitHub 下载");
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        if (useGitee)
         {
-            partsError = ex;
+            try
+            {
+                // Gitee 单附件放不下整包时那边切成 part1/part2…：逐片下齐再拼回整包；
+                // 片没下成、或者中途卡住/太慢，就退回下面的 GitHub 流程（照样按官方 SHA256 校验）
+                if (info.PartUrls.Count > 0)
+                {
+                    onStatus?.Invoke($"正在从 Gitee 下载分片（{info.PartUrls.Count} 片，下齐后拼回整包）…");
+                    return await DownloadPartsAsync(info, dest, progress, ct, onStatus).ConfigureAwait(false);
+                }
+                onStatus?.Invoke("正在从 Gitee 下载整包…");
+                return await DownloadOnceAsync(info, info.MirrorUrl, dest, progress, ct, true,
+                                               GiteeStallSeconds, GiteeMinKbps).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                giteeError = ex;
+                if (giteeOnly) throw;                 // 更新源只填了 Gitee：没有别的路可退
+                CleanParts(dest);
+                onStatus?.Invoke("Gitee 没下成，自动改用 GitHub：" + ex.Message);
+            }
         }
     }
 
@@ -569,17 +605,22 @@ public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double
         return dest;
     }
 
-    // 跨境下载又慢又容易被截断：直连失败就自动换国内镜像，而且能从断点接着下
+    // ② GitHub：直连 → 国内加速镜像，都支持断点续传；Gitee 上面已经试过，不再重复放进来
     Exception? lastError = null;
     int tries = 0;
     foreach (string candidate in BuildCandidates(info))
     {
+        if (IsGiteeUrl(candidate)) continue;
         for (int attempt = 1; attempt <= 2; attempt++)
         {
             tries++;
             try
             {
-                return await DownloadOnceAsync(info, candidate, dest, progress, ct).ConfigureAwait(false);
+                onStatus?.Invoke(tries == 1
+                    ? "正在从 GitHub 下载更新包…"
+                    : $"正在重试（{CandidateName(candidate)}，第 {tries} 次）…");
+                return await DownloadOnceAsync(info, candidate, dest, progress, ct, true,
+                                               HttpStallSeconds, 0).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -589,13 +630,87 @@ public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double
                     // 内容本身不对（下回来是 JSON、或者哈希对不上）：残件不能续传，删掉重来
                     try { if (File.Exists(dest)) File.Delete(dest); } catch { }
                 }
+                onStatus?.Invoke("这一路没成，换下一个源重试：" + ex.Message);
                 await Task.Delay(TimeSpan.FromSeconds(1.5 * attempt), ct).ConfigureAwait(false);
             }
         }
     }
-    string partsNote = partsError == null ? "" : $"\nGitee 分片包也没下成：{partsError.Message}";
+    string giteeNote = giteeError == null ? "" : $"\nGitee 那边也没下成：{giteeError.Message}";
     throw new InvalidDataException(
-        $"更新包下载失败（直连 + {Mirrors.Count} 个国内镜像共试了 {tries} 次）：{lastError?.Message}{partsNote}", lastError);
+        $"更新包下载失败（直连 + {Mirrors.Count} 个国内镜像共试了 {tries} 次）：{lastError?.Message}{giteeNote}", lastError);
+}
+
+/// <summary>是不是 Gitee 上的地址（国内源，境外可能很慢）。</summary>
+private static bool IsGiteeUrl(string url) =>
+    url.Contains("gitee.com/", StringComparison.OrdinalIgnoreCase);
+
+/// <summary>给状态文案用的源名字。</summary>
+private static string CandidateName(string url)
+{
+    try
+    {
+        string host = new Uri(url).Host;
+        return host.Contains("github", StringComparison.OrdinalIgnoreCase) ? "GitHub 直连" : "国内加速镜像 " + host;
+    }
+    catch { return "候选地址"; }
+}
+
+/// <summary>清掉 Gitee 分片留下的临时文件（deepsleep-Setup.exe.part1、.part2…）。</summary>
+private static void CleanParts(string dest)
+{
+    try
+    {
+        string dir = Path.GetDirectoryName(dest)!;
+        foreach (string f in Directory.GetFiles(dir, Path.GetFileName(dest) + ".part*"))
+            try { File.Delete(f); } catch { }
+    }
+    catch { }
+}
+
+/// <summary>
+/// 探一下这个地址有多快：只拉前 256KB，6 秒还拉不满就算太慢（返回的 KB/s 会很低）。
+/// 连不上 / 超时返回 -1 —— 境外直连 Gitee 就是这个结果，那就别走 Gitee 了。
+/// </summary>
+private static async Task<double> ProbeSpeedKbpsAsync(string url, CancellationToken ct)
+{
+    const int want = 262144;
+    try
+    {
+        using var hc = NewClient(TimeSpan.FromSeconds(8));
+        using var req = new HttpRequestMessage(HttpMethod.Get, url);
+        req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, want - 1);
+        var clock = Stopwatch.StartNew();
+        using var resp = await hc.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+        if (!resp.IsSuccessStatusCode) return -1;
+        using var src = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+        var buf = new byte[65536];
+        long got = 0;
+        while (got < want)
+        {
+            int n = await src.ReadAsync(buf.AsMemory(0, (int)Math.Min(buf.Length, want - got)), ct).ConfigureAwait(false);
+            if (n <= 0) break;
+            got += n;
+            if (clock.Elapsed.TotalSeconds > 6) break;    // 6 秒都没拉满 256KB → 不用再等了
+        }
+        return got / 1024.0 / Math.Max(0.05, clock.Elapsed.TotalSeconds);
+    }
+    catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+    catch { return -1; }
+}
+
+/// <summary>带「卡住检测」的读取：超过 stallSeconds 一个字节都没来，就当这个源不行（抛 TimeoutException）。</summary>
+private static async Task<int> ReadWithStallAsync(Stream src, byte[] buffer, CancellationToken userCt,
+                                                 CancellationTokenSource stallCts, int stallSeconds)
+{
+    stallCts.CancelAfter(TimeSpan.FromSeconds(stallSeconds));
+    try
+    {
+        return await src.ReadAsync(buffer, stallCts.Token).ConfigureAwait(false);
+    }
+    catch (OperationCanceledException) when (!userCt.IsCancellationRequested)
+    {
+        throw new TimeoutException($"{stallSeconds} 秒没收到数据（连接像是卡住了）");
+    }
 }
 
 /// <summary>
@@ -632,9 +747,11 @@ private static List<string> BuildCandidates(UpdateInfo info)
 
 /// <summary>下载一次（支持断点续传）：网络中断留下的残件下次接着下，内容不对才算失败。</summary>
 /// <param name="jsonProbe">开头像 JSON 就判失败（防止把 API 元数据当成安装包下回来）；分片用不上。</param>
+/// <param name="stallSeconds">超过这么多秒没数据就判失败（0 = 不检测）。</param>
+/// <param name="minKbps">下载满 15 秒后平均速度低于这个值就判失败换源（0 = 不设门槛）。</param>
 private static async Task<string> DownloadOnceAsync(UpdateInfo info, string url, string dest,
                                                    IProgress<double>? progress, CancellationToken ct,
-                                                   bool jsonProbe = true)
+                                                   bool jsonProbe = true, int stallSeconds = 0, double minKbps = 0)
 {
     long have = File.Exists(dest) ? new FileInfo(dest).Length : 0;
     if (info.Size > 0 && have >= info.Size) have = 0;   // 已经下满却仍被判失败 → 从头重下
@@ -664,12 +781,24 @@ private static async Task<string> DownloadOnceAsync(UpdateInfo info, string url,
         {
             var buffer = new byte[262144];
             long read = start;
-            int n;
-            while ((n = await src.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
+            using var stallCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var clock = Stopwatch.StartNew();
+            while (true)
             {
+                int n = stallSeconds > 0
+                    ? await ReadWithStallAsync(src, buffer, ct, stallCts, stallSeconds).ConfigureAwait(false)
+                    : await src.ReadAsync(buffer, ct).ConfigureAwait(false);
+                if (n <= 0) break;
                 await dst.WriteAsync(buffer.AsMemory(0, n), ct).ConfigureAwait(false);
                 read += n;
                 if (goal > 0) progress?.Report(Math.Min(99.9, read * 100.0 / goal));
+                // 平均速度太低（境外连国内源就是这样）→ 早点判失败换源，别让人干等着
+                if (minKbps > 0 && clock.Elapsed.TotalSeconds >= 15)
+                {
+                    double kbps = (read - start) / 1024.0 / clock.Elapsed.TotalSeconds;
+                    if (kbps < minKbps)
+                        throw new TimeoutException($"实际速度只有 {kbps:0} KB/s（低于 {minKbps:0} KB/s 门槛）");
+                }
             }
         }
     }
@@ -695,7 +824,8 @@ private static async Task<string> DownloadOnceAsync(UpdateInfo info, string url,
 /// 每片单独重试、支持断点续传，拼完按官方 SHA256 校验 —— 所以和从 GitHub 下整包完全等价。
 /// </summary>
 private static async Task<string> DownloadPartsAsync(UpdateInfo info, string dest,
-                                                     IProgress<double>? progress, CancellationToken ct)
+                                                     IProgress<double>? progress, CancellationToken ct,
+                                                     Action<string>? onStatus = null)
 {
     int count = info.PartUrls.Count;
     long total = info.PartSizes.Sum();
@@ -724,7 +854,8 @@ private static async Task<string> DownloadPartsAsync(UpdateInfo info, string des
             });
             try
             {
-                await DownloadOnceAsync(partInfo, partInfo.Url, parts[index], partProgress, ct, false)
+                await DownloadOnceAsync(partInfo, partInfo.Url, parts[index], partProgress, ct, false,
+                                        GiteeStallSeconds, GiteeMinKbps)
                     .ConfigureAwait(false);
                 lastError = null;
                 break;
@@ -732,7 +863,12 @@ private static async Task<string> DownloadPartsAsync(UpdateInfo info, string des
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 lastError = ex;
-                try { if (File.Exists(parts[index])) File.Delete(parts[index]); } catch { }
+                // 卡住 / 太慢 → 留着残片下次续传；内容不对才删掉重下
+                if (ex is not TimeoutException)
+                {
+                    try { if (File.Exists(parts[index])) File.Delete(parts[index]); } catch { }
+                }
+                onStatus?.Invoke($"Gitee 分片 {index + 1}/{count} 第 {attempt} 次没成：{ex.Message}");
                 await Task.Delay(TimeSpan.FromSeconds(1.5 * attempt), ct).ConfigureAwait(false);
             }
         }
@@ -781,6 +917,7 @@ private static void VerifyHash(string file, string expectedHex)
 /// </summary>
 public static void ApplyAndRestart(string installerPath, string installDir, string exePath)
 {
+    BackupUserConfig(installDir);      // 升级前先把 data\config.json 备份一份
     Directory.CreateDirectory(DownloadDir);
     string script = Path.Combine(DownloadDir, "apply-update.cmd");
     var sb = new StringBuilder();
@@ -801,5 +938,23 @@ public static void ApplyAndRestart(string installerPath, string installDir, stri
         CreateNoWindow = true,
         WindowStyle = ProcessWindowStyle.Hidden,
     });
+}
+
+/// <summary>
+/// 升级前把 data\config.json 备份成 data\config.json.bak。
+/// 里面是 API Key 和各项设置，一旦被安装包模板覆盖、或者手抖删掉，靠它就能捞回来
+/// （程序启动时发现配置不在会自动从 .bak 恢复）。
+/// </summary>
+public static string? BackupUserConfig(string installDir)
+{
+    try
+    {
+        string src = Path.Combine(installDir, "data", "config.json");
+        if (!File.Exists(src)) return null;
+        string bak = src + ".bak";
+        File.Copy(src, bak, true);
+        return bak;
+    }
+    catch { return null; }
 }
 }
