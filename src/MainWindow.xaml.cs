@@ -454,8 +454,8 @@ public sealed partial class MainWindow : Window
             bool giteeRoute = !string.IsNullOrWhiteSpace(info.MirrorUrl) || info.PartUrls.Count > 0;
             string route = giteeRoute
                 ? (info.PartUrls.Count > 0
-                    ? "下载优先走 Gitee 国内源（装不下的安装包在那边切成多片，下齐后拼回整包）。开下前会先探一下 Gitee 的速度：太慢或连不上会自动改用 GitHub，全程仍按 GitHub 官方 SHA256 校验。"
-                    : "下载优先走 Gitee 国内源（更快）；太慢或失败会自动改用 GitHub，校验用 GitHub 官方 SHA256。")
+                    ? "下载走 Gitee 国内源（装不下的安装包在那边切成多片，下齐后拼回整包）。开下前 Gitee 与 GitHub 各探一次速、谁快用谁：国内基本都走 Gitee，只有 Gitee 确实更慢时才自动换 GitHub；全程仍按 GitHub 官方 SHA256 校验。"
+                    : "下载走 Gitee 国内源（国内实测快一个数量级）；Gitee 确实更慢或下不动时才自动换 GitHub，校验用 GitHub 官方 SHA256。")
                 : info.Source == "gitee"
                     ? "该版本来自 Gitee 国内源。"
                     : "下载走 GitHub：直连失败或中断会自动切国内加速镜像接着下（断点续传、卡住会换源），下完仍按官方 SHA256 校验。";

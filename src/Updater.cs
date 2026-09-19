@@ -520,8 +520,8 @@ public static bool IsNewer(string remote, string local)
 
 public static string DownloadDir => Path.Combine(Path.GetTempPath(), "deepsleep-update");
 
-/// <summary>Gitee 探针门槛：低于这个速度就当这个源当前不好用（境外直连常见），直接换 GitHub。</summary>
-private const double GiteeMinKbps = 200;
+/// <summary>走 Gitee 时的最低速度兜底（KB/s）：跟探针实测速度的三分之一取大者。</summary>
+private const double GiteeMinKbpsFloor = 60;
 /// <summary>Gitee 下载中途"多久没数据"算卡住（秒），超了就换源。</summary>
 private const int GiteeStallSeconds = 20;
 /// <summary>GitHub 直连 / 加速镜像的卡住判定（跨境容易抽风，给宽一点）。</summary>
@@ -535,8 +535,9 @@ public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double
     Directory.CreateDirectory(DownloadDir);
     string dest = Path.Combine(DownloadDir, "deepsleep-Setup.exe");
 
-    // ① 国内优先走 Gitee。但境外直连 Gitee 常常只有几十 KB/s，所以真下载之前先花一两秒探个速：
-    //    慢 / 连不上就不在这儿耗，直接走下面的 GitHub 流程（候选里本来就有直连 + 国内加速镜像）。
+    // ① 优先走 Gitee（国内实测 2 MB/s 上下，比 GitHub 直连快一个数量级）。
+    //    只有**实测确实比 GitHub 慢**（境外直连 Gitee 常见）或干脆连不上，才换 GitHub：
+    //    两边各探一次速，谁的快用谁 —— 不再拿一个拍脑袋的绝对值当门槛（那个坑见 ProbeSpeedKbpsAsync）。
     string? giteeUrl = info.PartUrls.Count > 0
         ? info.PartUrls[0]
         : (IsGiteeUrl(info.MirrorUrl) ? info.MirrorUrl : null);
@@ -545,15 +546,26 @@ public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double
     if (giteeUrl != null)
     {
         bool useGitee = true;
+        double minKbps = 0;      // Gitee 这条路的最低速度门槛：按实测值的 1/3，防它中途掉到龟速
         if (!giteeOnly)
         {
-            double kbps = await ProbeSpeedKbpsAsync(giteeUrl, ct).ConfigureAwait(false);
-            useGitee = kbps >= GiteeMinKbps;
-            onStatus?.Invoke(useGitee
-                ? $"Gitee 国内源 {kbps:0} KB/s，走 Gitee 下载（校验仍用 GitHub 官方 SHA256）"
-                : kbps < 0
-                    ? "Gitee 连不上，自动改用 GitHub 下载"
-                    : $"Gitee 只有 {kbps:0} KB/s（像是在境外），自动改用 GitHub 下载");
+            double giteeKbps = await ProbeSpeedKbpsAsync(giteeUrl, ct).ConfigureAwait(false);
+            if (giteeKbps < 0)
+            {
+                useGitee = false;
+                onStatus?.Invoke("Gitee 连不上，自动改用 GitHub 下载");
+            }
+            else
+            {
+                double githubKbps = await ProbeSpeedKbpsAsync(info.Url, ct).ConfigureAwait(false);
+                useGitee = githubKbps < 0 || giteeKbps >= githubKbps * 0.8;   // 差不多快也选 Gitee
+                minKbps = Math.Max(GiteeMinKbpsFloor, giteeKbps / 3.0);
+                onStatus?.Invoke(useGitee
+                    ? githubKbps < 0
+                        ? $"Gitee 国内源 {giteeKbps:0} KB/s（GitHub 直连不通），走 Gitee 下载（校验仍用 GitHub 官方 SHA256）"
+                        : $"Gitee {giteeKbps:0} KB/s、GitHub 直连 {githubKbps:0} KB/s → 走 Gitee 下载（校验仍用 GitHub 官方 SHA256）"
+                    : $"GitHub 直连 {githubKbps:0} KB/s 比 Gitee 的 {giteeKbps:0} KB/s 快 → 走 GitHub 下载");
+            }
         }
         if (useGitee)
         {
@@ -564,11 +576,11 @@ public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double
                 if (info.PartUrls.Count > 0)
                 {
                     onStatus?.Invoke($"正在从 Gitee 下载分片（{info.PartUrls.Count} 片，下齐后拼回整包）…");
-                    return await DownloadPartsAsync(info, dest, progress, ct, onStatus).ConfigureAwait(false);
+                    return await DownloadPartsAsync(info, dest, progress, ct, onStatus, minKbps).ConfigureAwait(false);
                 }
                 onStatus?.Invoke("正在从 Gitee 下载整包…");
                 return await DownloadOnceAsync(info, info.MirrorUrl, dest, progress, ct, true,
-                                               GiteeStallSeconds, GiteeMinKbps).ConfigureAwait(false);
+                                               GiteeStallSeconds, minKbps).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -668,31 +680,37 @@ private static void CleanParts(string dest)
 }
 
 /// <summary>
-/// 探一下这个地址有多快：只拉前 256KB，6 秒还拉不满就算太慢（返回的 KB/s 会很低）。
-/// 连不上 / 超时返回 -1 —— 境外直连 Gitee 就是这个结果，那就别走 Gitee 了。
+/// 探一下这个地址实际能跑多快：只拉前 512KB。
+/// 计时**从收到第一个字节才开始**，不算 TLS 握手 / 302 跳转的固定开销 ——
+/// 踩过的坑：把固定开销算进去，实测 2 MB/s 的 Gitee 会被量成 160 KB/s，
+/// 于是"自动改用 GitHub"，而 GitHub 直连当时只有 45 KB/s，白白慢十几倍。
+/// 连不上 / 一个字节都没来返回 -1。
 /// </summary>
 private static async Task<double> ProbeSpeedKbpsAsync(string url, CancellationToken ct)
 {
-    const int want = 262144;
+    const int want = 524288;
+    const double maxSeconds = 5;
     try
     {
-        using var hc = NewClient(TimeSpan.FromSeconds(8));
+        using var hc = NewClient(TimeSpan.FromSeconds(12));
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, want - 1);
-        var clock = Stopwatch.StartNew();
         using var resp = await hc.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
         if (!resp.IsSuccessStatusCode) return -1;
         using var src = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
         var buf = new byte[65536];
         long got = 0;
+        var clock = Stopwatch.StartNew();
         while (got < want)
         {
             int n = await src.ReadAsync(buf.AsMemory(0, (int)Math.Min(buf.Length, want - got)), ct).ConfigureAwait(false);
             if (n <= 0) break;
+            if (got == 0) clock.Restart();      // 首个字节到手，这才是"开始下载"的时刻
             got += n;
-            if (clock.Elapsed.TotalSeconds > 6) break;    // 6 秒都没拉满 256KB → 不用再等了
+            if (clock.Elapsed.TotalSeconds > maxSeconds) break;
         }
-        return got / 1024.0 / Math.Max(0.05, clock.Elapsed.TotalSeconds);
+        if (got <= 0) return -1;
+        return got / 1024.0 / Math.Max(0.1, clock.Elapsed.TotalSeconds);
     }
     catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
     catch { return -1; }
@@ -825,7 +843,7 @@ private static async Task<string> DownloadOnceAsync(UpdateInfo info, string url,
 /// </summary>
 private static async Task<string> DownloadPartsAsync(UpdateInfo info, string dest,
                                                      IProgress<double>? progress, CancellationToken ct,
-                                                     Action<string>? onStatus = null)
+                                                     Action<string>? onStatus = null, double minKbps = 0)
 {
     int count = info.PartUrls.Count;
     long total = info.PartSizes.Sum();
@@ -855,7 +873,7 @@ private static async Task<string> DownloadPartsAsync(UpdateInfo info, string des
             try
             {
                 await DownloadOnceAsync(partInfo, partInfo.Url, parts[index], partProgress, ct, false,
-                                        GiteeStallSeconds, GiteeMinKbps)
+                                        GiteeStallSeconds, minKbps)
                     .ConfigureAwait(false);
                 lastError = null;
                 break;

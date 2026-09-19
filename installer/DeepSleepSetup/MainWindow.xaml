@@ -17,7 +17,7 @@
             <StackPanel>
                 <TextBlock Text="deepsleep AI 助手" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}"/>
                 <TextBlock x:Name="SubTitle" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"
-                           Text="版本 1.0.15  ·  AI 助手（工具调用链 / 技能 / Agent 集群 / 长期记忆 / GitHub+Gitee 双源秒更）"/>
+                           Text="版本 1.1.0  ·  AI 助手（工具调用链 / 技能 / Agent 集群 / 长期记忆 / GitHub+Gitee 双源秒更）"/>
             </StackPanel>
         </Border>
 

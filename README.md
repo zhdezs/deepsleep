@@ -6,7 +6,7 @@
 
 | | |
 | --- | --- |
-| 当前版本 | **1.0.15** |
+| 当前版本 | **1.1.0** |
 | 系统要求 | Windows 10 1809+ / x64（推荐 Windows 11，可享亚克力毛玻璃界面） |
 | 下载 | [Releases](https://github.com/zhdezs/deepsleep/releases/latest) → `deepsleep-Setup.exe` |
 | OTA 更新源 | `zhdezs/deepsleep`（GitHub + Gitee 双源，在 ⚙ 设置里填这个即可一键升级） |
@@ -80,11 +80,15 @@ deepsleep-Setup.exe --silent --dir "D:\Apps\deepsleep" --no-desktop --no-launch
 （国内源）、`https://.../update.json` 直链、本地/局域网路径 `D:\release\update.json` 或
 `\\服务器\共享\update.json`。
 
-**Gitee 国内源（推荐开）**：填 GitHub 仓库时会自动同时看同名 Gitee 仓库（`zhdezs/deepsleep`），
-同一个版本优先从 Gitee 下载（实测约 8 MB/s，比跨境直连快一个数量级），**校验值仍然用 GitHub
-官方摘要**，所以镜像搬不了假货。Gitee 单个附件上限 100MB，装不下的大安装包在那边切成
-`deepsleep-Setup.exe.part1` / `.part2` 存放，客户端逐片下载、支持断点续传，拼回整包后再校验。
-设置里有「同时用 Gitee 同名仓库加速」开关（默认开）；Gitee 那边下不成会自动回退 GitHub 整包。
+**Gitee 国内源（默认开，强烈建议留着）**：填 GitHub 仓库时会自动同时看同名 Gitee 仓库
+（`zhdezs/deepsleep`），同一个版本优先从 Gitee 下载（实测 **2 MB/s** 上下，同一时刻 GitHub 直连只有
+**45 KB/s**，差 40 多倍），**校验值仍然用 GitHub 官方摘要**，所以镜像搬不了假货。Gitee 单个附件上限
+100MB，装不下的大安装包在那边切成 `deepsleep-Setup.exe.part1` / `.part2` 存放，客户端逐片下载、
+支持断点续传，拼回整包后再校验。
+
+开下前会**给两个源各探一次速（各拉约 512KB，计时从首字节开始，不算握手开销）**，谁快用谁，
+所以国内基本永远走 Gitee、境外才自动换 GitHub；Gitee 中途卡住（20 秒没数据）或掉到实测速度的
+三分之一以下，也会立刻换 GitHub 接着下。设置里有「同时用 Gitee 同名仓库加速」开关（默认开）。
 
 **国内下载慢 / 断线**：客户端先走直连，失败或中断时自动按顺序切换国内加速镜像
 （`ghproxy.net` / `gh-proxy.com` / `hub.gitmirror.com`）**断点续传**接着下；下完仍然用 GitHub

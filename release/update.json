@@ -1,6 +1,6 @@
 {
-    "version":  "1.0.15",
-    "url":  "https://github.com/zhdezs/deepsleep/releases/download/v1.0.15/deepsleep-Setup.exe",
-    "sha256":  "8CE383F63EFB633B7A9D37AF2D94052296F67024D8284529EFDCC6BD88A1E2DC",
-    "notes":  "1.0.15：界面改成 macOS 风格 ——（1）顶部换成自绘标题栏：左边窗口标题（可拖动），右边是 macOS 那种「分段控件」切换 AI 助手 / Agent 集群，原来占一整条的标签页横条去掉；（2）侧边栏与工具栏改成半透明灰、加发丝分隔线，对话选中项改成圆角灰底，窗口按钮跟随深浅色；（3）聊天气泡换成 iMessage 风：自己发的是系统蓝底白字、对方浅灰/深灰底，圆角加大，输入框与按钮圆角统一，强调色从微信绿改成 macOS 系统蓝，深浅色两套配色；（4）桌宠浮窗同步新配色。功能与 1.0.14 完全一致。"
+    "version":  "1.1.0",
+    "url":  "https://github.com/zhdezs/deepsleep/releases/download/v1.1.0/deepsleep-Setup.exe",
+    "sha256":  "4F777F57027E16AFEBDF37EBCD91C25830E74DFD1DF7791ADAAF9A9B69133BB3",
+    "notes":  "1.1.0：修好 OTA 的 Gitee 下载 + macOS 风格界面 ——（1）以前探速把手握/跳转的固定开销也算进下载计时、样本只有 256KB，实测 2 MB/s 的 Gitee 被误判成 160 KB/s，于是自动换到当时只有 45 KB/s 的 GitHub；现在计时从首字节开始、样本 512KB，并且 Gitee 与 GitHub 直连各探一次速、谁快用谁（差不多快也优先 Gitee），国内基本永远走 Gitee，升级框里直接写明两边实测速度；（2）下载中途的兜底门槛改成按实测速度推算（三分之一、不低于 60 KB/s），不再用固定 200 KB/s 误杀；（3）界面 macOS 风格：自绘标题栏 + 顶部分段控件切换 AI 助手 / Agent 集群、半透明侧边栏与发丝分隔线、iMessage 风大圆角气泡、系统蓝强调色，深浅色两套配色；桌宠浮窗同步新配色。功能与 1.0.14 一致。"
 }
