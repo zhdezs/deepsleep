@@ -271,8 +271,16 @@ public sealed partial class MainWindow : Window
             () => AgentBusyText?.Text ?? "",
             text =>
             {
-                // 桌宠浮窗发消息：直接启动 Agent（MessageAdded 事件会自动添加用户气泡）
-                _ = RunAgentAsync(_agentCur.Sid, text);
+                // 桌宠浮窗发消息：直接启动 Agent（MessageAdded 事件会自动添加用户气泡）。
+                // 上一轮是被中止的（状态 Stopped）时，先砍掉那半截残留上下文 —— 否则历史里会留着
+                // 没有结果的 tool_call，接口那边会直接报错。这里和主界面 AgentControlAsync 的处理保持一致。
+                int sid = _agentCur.Sid;
+                if (GetAgentState(sid) == AgentRunState.Stopped)
+                {
+                    SetAgentState(sid, AgentRunState.Idle);
+                    _agent.TruncateToLastUser(sid);
+                }
+                _ = RunAgentAsync(sid, text);
             },
             () => StopAgent(_agentCur.Sid),
             () => { try { AppWindow.Show(); Activate(); } catch { } },
