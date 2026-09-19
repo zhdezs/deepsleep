@@ -6,7 +6,7 @@
 
 | | |
 | --- | --- |
-| 当前版本 | **1.0.11** |
+| 当前版本 | **1.0.12** |
 | 系统要求 | Windows 10 1809+ / x64（推荐 Windows 11，可享亚克力毛玻璃界面） |
 | 下载 | [Releases](https://github.com/zhdezs/deepsleep/releases/latest) → `deepsleep-Setup.exe` |
 | OTA 更新源 | `zhdezs/deepsleep`（GitHub + Gitee 双源，在 ⚙ 设置里填这个即可一键升级） |
@@ -43,7 +43,7 @@
 | **长期记忆** | 跨会话记住偏好与事实，超长自动压缩（`data/memory.json`） |
 | **断点恢复** | 任务被中断、程序被杀甚至断电，重启后仍可从未完成处继续（`data/runtime_state.json`） |
 | **沙箱与确认** | 危险命令/脚本执行前确认（含「打开文件」碰到 exe/脚本时）；可整体收紧权限 |
-| **桌面桌宠** | 透明鲸鱼桌宠（Win32 分层窗口，真透明）：可拖动、单击唤出主界面、右键菜单；⚙ 设置里可开关，隐藏后会被记住 |
+| **桌面桌宠** | 透明鲸鱼桌宠（Win32 分层窗口，真透明，按原图 45% 显示）：**单击弹出桌宠专属聊天窗**（与主界面同一条会话，不切主界面也能聊）、**按住拖动**摆位置并记住坐标、右键菜单（聊天 / 打开主界面 / 隐藏 / 退出）；⚙ 设置里可开关，隐藏后会被记住 |
 | **界面** | 毛玻璃（DesktopAcrylic）、线条风圆形按钮、思考中/正在执行 的呼吸动效气泡、滚动到底部 |
 
 ---
@@ -102,7 +102,8 @@ src/                      WinUI 3 客户端全部源码（.NET 10）
   ├─ OllamaClient.cs      本机 Ollama
   ├─ TokenVault.cs        GitHub 令牌保险箱（多层加密）
   ├─ Updater.cs           OTA 自动更新（GitHub + Gitee Releases / 直链 / 本地，含分片与镜像回退）
-  ├─ DesktopPet.cs        桌面鲸鱼桌宠（Win32 分层窗口，真透明）
+  ├─ DesktopPet.cs        桌面鲸鱼桌宠（Win32 分层窗口，真透明，45% 缩放 + 拖拽）
+  ├─ PetChatWindow.cs     桌宠专属聊天浮窗（与主界面同一条会话）
   ├─ Sandbox.cs           命令与脚本沙箱
   ├─ SkillStore.cs        技能库
   ├─ MemoryStore.cs       长期记忆

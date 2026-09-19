@@ -1,6 +1,6 @@
 {
-    "version":  "1.0.11",
-    "url":  "https://github.com/zhdezs/deepsleep/releases/download/v1.0.11/deepsleep-Setup.exe",
-    "sha256":  "A1B16002BDF012DEB318501845D28AEAEB06F2F4152EEB4EB49F3FED35A61699",
-    "notes":  "1.0.11：加 Gitee 国内更新源——填 GitHub 仓库（zhdezs/deepsleep）会自动同时看同名 Gitee 仓库，同一个版本优先从 Gitee 下载（国内实测约 8 MB/s，比跨境直连快一个数量级），校验值仍然用 GitHub 官方 SHA256；Gitee 单个附件上限 100MB，装不下的大安装包在那边切成 deepsleep-Setup.exe.part1 / .part2，客户端逐片下载（每片都能断点续传、单独重试）后拼回整包再校验，片下不来自动回退 GitHub 整包；更新源也可以直接填 gitee.com/owner/repo。"
+    "version":  "1.0.12",
+    "url":  "https://github.com/zhdezs/deepsleep/releases/download/v1.0.12/deepsleep-Setup.exe",
+    "sha256":  "CA8016E8F4DBF4DCBFFF437642E7C48D4ED8CFA26B10CB70B492BC8C6FF913D0",
+    "notes":  "1.0.12：桌宠能聊天了，也变小了 ——（1）桌宠尺寸改成原图的 45%（之前是原样大小），四周仍是真透明；（2）单击桌宠弹出「桌宠专属聊天窗」：不切主界面就能跟 AI 说话，消息与主界面共用同一条会话、两边流式同步，Enter 发送 / Shift+Enter 换行 / Esc 或 ✕ 关闭；（3）按住拖动可以摆位置，单击与拖动不会互相误触发，松手记住坐标，下次启动还在原地；（4）右键菜单：跟桌宠聊天 / 打开主界面 / 隐藏桌宠 / 退出 deepsleep；（5）桌宠那边发起的命令如果到了 work 模式需要确认，浮窗会提示你回主界面点「允许」，主界面被收起来时自动叫到前面，不会默默卡在「思考中」；（6）顺手修掉两个 bug：新装用户桌宠会跑到屏幕左上角（配置里的 -1 没被当成「用默认右下角」）、隐藏桌宠的开关重启后不生效（PetEnabled 以前只写不读）。"
 }

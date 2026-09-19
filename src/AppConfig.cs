@@ -40,6 +40,9 @@ public sealed class AppConfig
     public bool GiteeMirror { get; set; } = true;
     /// <summary>是否显示桌面鲸鱼桌宠。</summary>
     public bool PetEnabled { get; set; } = true;
+    /// <summary>桌宠左上角坐标（拖到哪记到哪）；-1 表示用默认的右下角位置。</summary>
+    public int PetX { get; set; } = -1;
+    public int PetY { get; set; } = -1;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -93,6 +96,17 @@ public sealed class AppConfig
                     if (uo.ValueKind == JsonValueKind.True || uo.ValueKind == JsonValueKind.False)
                         cfg.UseOllama = uo.GetBoolean();
                 if ((v = GetStr(root, "theme", "Theme")) != null) cfg.Theme = v;
+                // 下面几项早先只有写、没有读：隐藏了桌宠 / 关了 Gitee 加速，重启就白设了
+                if (root.TryGetProperty("petEnabled", out var pe) || root.TryGetProperty("PetEnabled", out pe))
+                    if (pe.ValueKind == JsonValueKind.True || pe.ValueKind == JsonValueKind.False)
+                        cfg.PetEnabled = pe.GetBoolean();
+                if (root.TryGetProperty("giteeMirror", out var gm) || root.TryGetProperty("GiteeMirror", out gm))
+                    if (gm.ValueKind == JsonValueKind.True || gm.ValueKind == JsonValueKind.False)
+                        cfg.GiteeMirror = gm.GetBoolean();
+                if (root.TryGetProperty("petX", out var px) || root.TryGetProperty("PetX", out px))
+                    if (px.ValueKind == JsonValueKind.Number && px.TryGetInt32(out int pxv)) cfg.PetX = pxv;
+                if (root.TryGetProperty("petY", out var py) || root.TryGetProperty("PetY", out py))
+                    if (py.ValueKind == JsonValueKind.Number && py.TryGetInt32(out int pyv)) cfg.PetY = pyv;
             }
         }
         catch

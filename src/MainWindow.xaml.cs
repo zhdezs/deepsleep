@@ -189,6 +189,9 @@ public sealed partial class MainWindow : Window
         {
             _engine.SaveModels();
             SaveConversations();
+            _petChat?.Hide();
+            _pet?.Dispose();
+            _pet = null;
         };
 
         // 后台探测本地大模型（Ollama）是否在线
@@ -212,23 +215,69 @@ public sealed partial class MainWindow : Window
             {
                 _pet?.Dispose();
                 _pet = null;
+                _petChat?.Hide();     // 桌宠关了，独立交互窗口也一起收起来
                 return;
             }
             if (_pet != null) { _pet.Show(); return; }
             string petRaw = Path.Combine(AppContext.BaseDirectory, "pet.raw");
             if (!File.Exists(petRaw)) return;
-            _pet = new DesktopPet(petRaw, () =>
-            {
-                try { AppWindow.Show(); Activate(); }
-                catch { /* 打不开就忽略 */ }
-            }, visible =>
-            {
-                // 右键「隐藏桌宠」：记进配置并落盘，下次启动不会再自己冒出来
-                _config.PetEnabled = visible;
-                _config.Save();
-            });
+
+            _pet = new DesktopPet(petRaw,
+                onChat: () =>
+                {
+                    // 单击鲸鱼 → 弹出聊天浮窗，贴在桌宠旁边（被 ✕ 关掉过就重新建一个）
+                    EnsurePetChat();
+                    _petChat?.SetAnchor(_pet!.Bounds.X, _pet.Bounds.Y, _pet.Bounds.W, _pet.Bounds.H);
+                    _petChat?.Toggle();
+                },
+                onOpenMain: () =>
+                {
+                    // 右键菜单「打开主界面」
+                    try { AppWindow.Show(); Activate(); } catch { }
+                },
+                onVisible: visible =>
+                {
+                    // 右键「隐藏桌宠」：记进配置并落盘，下次启动不再出现
+                    _config.PetEnabled = visible;
+                    _config.Save();
+                },
+                onMoved: (x, y) =>
+                {
+                    // 拖拽结束：记住位置，下次启动还在那儿
+                    _config.PetX = x;
+                    _config.PetY = y;
+                    _config.Save();
+                    // 聊天窗口如果开着，跟着挪
+                    if (_petChat != null && _petChat.IsVisible)
+                        _petChat.SetAnchor(x, y, _pet!.Bounds.W, _pet!.Bounds.H);
+                },
+                startX: _config.PetX < 0 ? int.MinValue : _config.PetX,   // 负数 = 还没拖过 → 用右下角默认位
+                startY: _config.PetY < 0 ? int.MinValue : _config.PetY
+            );
         }
         catch { _pet = null; }
+    }
+
+    /// <summary>
+    /// 确保桌宠的独立交互窗口存在（单击鲸鱼弹出；被用户 ✕ 关掉后下次会重新建一个）。
+    /// 消息集合与主界面共用同一条会话，所以在哪边说话都连贯。
+    /// </summary>
+    private void EnsurePetChat()
+    {
+        if (_petChat != null) return;
+        _petChat = new PetChatWindow(
+            () => AgentItems,
+            () => GetAgentState(_agentCur.Sid) == AgentRunState.Running,
+            () => AgentBusyText?.Text ?? "",
+            text =>
+            {
+                // 桌宠浮窗发消息：直接启动 Agent（MessageAdded 事件会自动添加用户气泡）
+                _ = RunAgentAsync(_agentCur.Sid, text);
+            },
+            () => StopAgent(_agentCur.Sid),
+            () => { try { AppWindow.Show(); Activate(); } catch { } },
+            () => _petChat = null
+        );
     }
 
     // ------------------------------------------------------------------
@@ -643,6 +692,7 @@ public sealed partial class MainWindow : Window
     };
 
     private DesktopPet? _pet;
+    private PetChatWindow? _petChat;
 
     private AgentRunState GetAgentState(int sid)
         => _agentStates.TryGetValue(sid, out var s) ? s : AgentRunState.Idle;
@@ -2428,6 +2478,18 @@ public sealed partial class MainWindow : Window
         var conv = _agentConvs.FirstOrDefault(c => c.Sid == sid);
         if (conv?.AutoApprove == true) return true;   // 已提权：本对话内直接放行
 
+        // 确认框画在主界面里（XamlRoot = RootGrid.XamlRoot）。桌宠浮窗开着的时候用户很可能没看主界面，
+        // 不提示就会一直卡在「思考中」等确认 —— 所以浮窗提醒一句，主界面藏起来了就一并叫到前面。
+        try
+        {
+            bool mainHidden = AppWindow == null || !AppWindow.IsVisible;
+            if (mainHidden) AppWindow?.Show();
+            if (_petChat is { IsVisible: true })
+                _petChat.Notify(mainHidden ? "有命令需要确认：已叫出主界面，请点「允许」" : "有命令需要确认：请到主界面点「允许」");
+            if (mainHidden) Activate();
+        }
+        catch { }
+
         var chk = new CheckBox
         {
             Content = "本次对话内始终允许执行命令/脚本（提高权限）",
@@ -2740,14 +2802,16 @@ public sealed partial class MainWindow : Window
         panel.Children.Add(lblPet);
         var petToggle = new CheckBox
         {
-            Content = "显示桌面鲸鱼桌宠（透明窗口、可拖动、单击打开主界面、右键有菜单）",
+            Content = "显示桌面鲸鱼桌宠（透明窗口、可拖拽；单击弹出桌宠聊天窗、右键有菜单）",
             IsChecked = _config.PetEnabled,
             Margin = new Thickness(0, 6, 0, 0),
         };
         panel.Children.Add(petToggle);
         var petHint = new TextBlock
         {
-            Text = "在桌宠上点右键选「隐藏桌宠」也会关掉这里的开关，下次启动不再出现。",
+            Text = "桌宠按原图 45% 显示：单击弹出桌宠专属聊天浮窗（与主界面同一条会话）、按住拖动摆位置、" +
+                   "右键菜单可聊天 / 打开主界面 / 隐藏 / 退出；拖到的位置会记住，下次启动还在那儿。" +
+                   "在桌宠上点右键选「隐藏桌宠」也会关掉这里的开关。",
             FontSize = 11,
             TextWrapping = TextWrapping.Wrap,
             Foreground = new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Gray),
