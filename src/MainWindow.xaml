@@ -12,6 +12,10 @@
             <ColumnDefinition Width="240"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="32"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
 
         <Grid.Resources>
             <!-- 聊天气泡模板：AI 助手与 Agent 集群共用 -->
@@ -71,10 +75,10 @@
                             <Border Style="{ThemeResource SelfBubble}">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <ProgressRing IsActive="True" Width="16" Height="16"
-                                                  Foreground="{ThemeResource AccentBrush}"
+                                                  Foreground="{ThemeResource BubbleSelfTextBrush}"
                                                   Visibility="{x:Bind ThinkingVisibility, Mode=OneWay}"/>
                                     <TextBlock Text="{x:Bind DisplayText, Mode=OneWay}" TextWrapping="Wrap" FontSize="14"
-                                               Foreground="{ThemeResource TextBrush}" VerticalAlignment="Center"
+                                               Foreground="{ThemeResource BubbleSelfTextBrush}" VerticalAlignment="Center"
                                                Opacity="{x:Bind ThinkingOpacity, Mode=OneWay}"/>
                                 </StackPanel>
                             </Border>
@@ -95,28 +99,70 @@
             </DataTemplate>
         </Grid.Resources>
 
+        <!-- ══════════════ 自绘标题栏（macOS 风格：左侧拖拽区 + 分段控件） ══════════════ -->
+        <Grid x:Name="TitleBarDrag" Grid.Row="0" Grid.Column="0" Background="Transparent">
+            <TextBlock Text="deepsleep" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center"
+                       Margin="16,0,0,0" Foreground="{ThemeResource TextBrush}"/>
+        </Grid>
+        <Grid x:Name="ToolbarStrip" Grid.Row="0" Grid.Column="1" Background="Transparent" Padding="16,0,0,0">
+            <Border x:Name="SegmentTrack" HorizontalAlignment="Left" VerticalAlignment="Center"
+                    Background="{ThemeResource SoftBgBrush}" CornerRadius="9" Padding="3"
+                    BorderBrush="{ThemeResource BorderBrush}" BorderThickness="1">
+                <StackPanel Orientation="Horizontal" Spacing="2">
+                    <Button x:Name="AgentTabBtn" Style="{ThemeResource SegmentButton}" Content="AI 助手" Click="MainTabClick"/>
+                    <Button x:Name="ClusterTabBtn" Style="{ThemeResource SegmentButton}" Content="Agent 集群" Click="MainTabClick"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
         <!-- ══════════════ 左侧对话栏 ══════════════ -->
-        <Grid Grid.Column="0" Background="{ThemeResource PanelBrush}">
+        <Grid Grid.Column="0" Grid.Row="1" Background="{ThemeResource PanelBrush}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <StackPanel Grid.Row="0" Padding="16,16,16,12">
-                <TextBlock Text="deepsleep" FontSize="22" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}"/>
-                <TextBlock Text="AI 全能助手" FontSize="12" Foreground="{ThemeResource MutedBrush}"/>
-                <TextBox x:Name="ConvSearchBox" Margin="0,12,0,0" FontSize="13" MinHeight="36"
+            <StackPanel Grid.Row="0" Padding="12,10,12,6">
+                <TextBox x:Name="ConvSearchBox" FontSize="13" MinHeight="32" CornerRadius="9"
                          Style="{ThemeResource RoundTextBox}"
                          PlaceholderText="🔍 搜索对话…" TextChanged="ConvSearchBox_TextChanged"/>
             </StackPanel>
 
             <ListView x:Name="ConvList" Grid.Row="1" SelectionChanged="ConvList_SelectionChanged"
                       RightTapped="ConvList_RightTapped" DoubleTapped="ConvList_DoubleTapped"
-                      Padding="8,0" SelectionMode="Single">
+                      Padding="6,0" SelectionMode="Single" Background="Transparent">
+                <ListView.Resources>
+                    <ResourceDictionary>
+                        <ResourceDictionary.ThemeDictionaries>
+                            <ResourceDictionary x:Key="Light">
+                                <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="#FFDCDCDE"/>
+                                <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="#FFD2D2D6"/>
+                                <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed" Color="#FFCACACE"/>
+                                <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="#14000000"/>
+                                <SolidColorBrush x:Key="ListViewItemForegroundSelected" Color="#FF1D1D1F"/>
+                            </ResourceDictionary>
+                            <ResourceDictionary x:Key="Dark">
+                                <SolidColorBrush x:Key="ListViewItemBackgroundSelected" Color="#FF48484C"/>
+                                <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver" Color="#FF525257"/>
+                                <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed" Color="#FF5A5A60"/>
+                                <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver" Color="#1AFFFFFF"/>
+                                <SolidColorBrush x:Key="ListViewItemForegroundSelected" Color="#FFF2F2F7"/>
+                            </ResourceDictionary>
+                        </ResourceDictionary.ThemeDictionaries>
+                    </ResourceDictionary>
+                </ListView.Resources>
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <Setter Property="CornerRadius" Value="8"/>
+                        <Setter Property="Margin" Value="4,1"/>
+                        <Setter Property="Padding" Value="10,8"/>
+                        <Setter Property="MinHeight" Value="40"/>
+                    </Style>
+                </ListView.ItemContainerStyle>
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="local:Conversation">
-                        <StackPanel Padding="12,11" Margin="2,2">
+                        <StackPanel Padding="0">
                             <TextBlock Text="{x:Bind Title, Mode=OneWay}" FontSize="14" FontWeight="SemiBold"
                                        Foreground="{ThemeResource TextBrush}"
                                        TextTrimming="CharacterEllipsis"/>
@@ -129,27 +175,29 @@
                 </ListView.ItemTemplate>
             </ListView>
 
-            <StackPanel Grid.Row="2" Padding="12" Spacing="8">
+            <StackPanel Grid.Row="2" Padding="12,8,12,12" Spacing="6">
                 <Button Content="＋ 新建对话" Click="NewConversationClick"
                         Background="{ThemeResource AccentBrush}" Foreground="White"
                         FontWeight="SemiBold" HorizontalAlignment="Stretch"
-                        CornerRadius="10" Height="40"/>
+                        CornerRadius="9" Height="36" FontSize="13"/>
                 <ToggleButton x:Name="ThemeToggle" Content="🌙 深色" Click="ThemeToggleClick" HorizontalAlignment="Stretch"
-                              CornerRadius="10"/>
+                              CornerRadius="9" Height="32" FontSize="13"/>
                 <Button x:Name="UpdateBtn" Content="⬆ 检查更新" Click="UpdateClick" HorizontalAlignment="Stretch"
-                        CornerRadius="10" ToolTipService.ToolTip="检查并安装新版本（自动下载、静默升级、自动重启）"/>
+                        CornerRadius="9" Height="32" FontSize="13"
+                        ToolTipService.ToolTip="检查并安装新版本（自动下载、静默升级、自动重启）"/>
                 <TextBlock x:Name="UpdateStatusText" FontSize="11" Foreground="{ThemeResource MutedBrush}"
                            TextWrapping="Wrap" Visibility="Collapsed"/>
-                <Button Content="⚙ 设置" Click="SettingsClick" HorizontalAlignment="Stretch" CornerRadius="10"/>
+                <Button Content="⚙ 设置" Click="SettingsClick" HorizontalAlignment="Stretch"
+                        CornerRadius="9" Height="32" FontSize="13"/>
             </StackPanel>
         </Grid>
 
         <!-- ══════════════ 右侧主区 ══════════════ -->
-        <Grid Grid.Column="1">
-            <Pivot x:Name="MainPivot" SelectionChanged="Pivot_SelectionChanged">
+        <Grid Grid.Column="1" Grid.Row="1">
+            <Grid x:Name="PageHost">
 
                 <!-- AI 助手 -->
-                <PivotItem Header="AI 助手">
+                <Grid x:Name="AgentPage">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -157,15 +205,15 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
-                        <Grid Grid.Row="0" Background="{ThemeResource PanelBrush}" Padding="16,10">
+                        <Grid Grid.Row="0" Background="{ThemeResource PanelBrush}" Padding="16,8">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0">
-                                <TextBlock Text="AI 助手" FontSize="18" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}"/>
+                                <TextBlock Text="AI 助手" FontSize="16" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}"/>
                                 <TextBlock x:Name="AgentStatusText" Text="后端：待配置" FontSize="12" Foreground="{ThemeResource MutedBrush}"/>
-                                <TextBlock x:Name="AgentBusyText" FontSize="12" Foreground="#07C160" Margin="0,2,0,0"/>
+                                <TextBlock x:Name="AgentBusyText" FontSize="12" Foreground="{ThemeResource AccentBrush}" Margin="0,2,0,0"/>
                             </StackPanel>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                 <ComboBox x:Name="AgentModeBox" Width="130" SelectedIndex="1" SelectionChanged="AgentModeChanged"
@@ -216,7 +264,8 @@
                         </Button>
 
                         <!-- 底部输入区：＋ / 🔍 / 发送按钮内嵌在输入框右下角 -->
-                        <Grid Grid.Row="2" Background="{ThemeResource PanelBrush}" Padding="14,12">
+                        <Border Grid.Row="2" Background="{ThemeResource PanelBrush}" Padding="14,10"
+                                BorderBrush="{ThemeResource SeparatorBrush}" BorderThickness="0,1,0,0">
                             <Grid>
                                 <TextBox x:Name="AgentInput"
                                          Style="{ThemeResource RoundTextBox}"
@@ -244,12 +293,12 @@
                                             FontWeight="SemiBold" Padding="14,0" Click="AgentSendClick"/>
                                 </StackPanel>
                             </Grid>
-                        </Grid>
+                        </Border>
                     </Grid>
-                </PivotItem>
+                </Grid>
 
                 <!-- Agent 集群 -->
-                <PivotItem Header="Agent 集群">
+                <Grid x:Name="ClusterPage" Visibility="Collapsed">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -257,15 +306,15 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
 
-                        <Grid Grid.Row="0" Background="{ThemeResource PanelBrush}" Padding="16,10">
+                        <Grid Grid.Row="0" Background="{ThemeResource PanelBrush}" Padding="16,8">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0">
-                                <TextBlock Text="Agent 集群" FontSize="18" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}"/>
+                                <TextBlock Text="Agent 集群" FontSize="16" FontWeight="SemiBold" Foreground="{ThemeResource TextBrush}"/>
                                 <TextBlock x:Name="ClusterStatusText" Text="后端：待配置" FontSize="12" Foreground="{ThemeResource MutedBrush}"/>
-                                <TextBlock x:Name="ClusterBusyText" FontSize="12" Foreground="#07C160" Margin="0,2,0,0"/>
+                                <TextBlock x:Name="ClusterBusyText" FontSize="12" Foreground="{ThemeResource AccentBrush}" Margin="0,2,0,0"/>
                             </StackPanel>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                 <ToggleButton x:Name="ClusterFastToggle" Style="{ThemeResource LineIconToggle}" Click="ClusterFastToggleClick"
@@ -302,7 +351,8 @@
                         </Button>
 
                         <!-- 底部输入区：＋ / 🔍 / 发送按钮内嵌在输入框右下角 -->
-                        <Grid Grid.Row="2" Background="{ThemeResource PanelBrush}" Padding="14,12">
+                        <Border Grid.Row="2" Background="{ThemeResource PanelBrush}" Padding="14,10"
+                                BorderBrush="{ThemeResource SeparatorBrush}" BorderThickness="0,1,0,0">
                             <Grid>
                                 <TextBox x:Name="ClusterInput"
                                          Style="{ThemeResource RoundTextBox}"
@@ -326,11 +376,15 @@
                                             FontWeight="SemiBold" Padding="14,0" Click="ClusterSendClick"/>
                                 </StackPanel>
                             </Grid>
-                        </Grid>
+                        </Border>
                     </Grid>
-                </PivotItem>
+                </Grid>
 
-            </Pivot>
+            </Grid>
         </Grid>
+
+        <!-- 侧边栏与主区之间的发丝分隔线（macOS 味） -->
+        <Border Grid.Row="1" Grid.Column="1" Width="1" HorizontalAlignment="Left"
+                Background="{ThemeResource SeparatorBrush}" IsHitTestVisible="False"/>
     </Grid>
 </Window>

@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Net.Http;
 using System.Text;
+using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -38,6 +39,8 @@ public sealed partial class MainWindow : Window
     private DispatcherTimer? _clusterThinkingTimer;
     private int _clusterThinkingDots;
     private UpdateInfo? _pendingUpdate;
+    private Microsoft.UI.Windowing.AppWindow? _appWindow;
+    private int _mainTab;   // 0 = AI 助手，1 = Agent 集群（顶部 macOS 分段控件）
     private readonly Agent _clusterAgent;
 
     /// <summary>集群分工模板：一键创建多个不同角色的成员。</summary>
@@ -96,6 +99,7 @@ public sealed partial class MainWindow : Window
         var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
         var appWindow = Microsoft.UI.Windowing.AppWindow.GetFromWindowId(windowId);
         appWindow.Resize(new Windows.Graphics.SizeInt32(1500, 960));
+        SetupMacTitleBar(appWindow);
 
         // 模型持久化目录：exe 同级的 data 目录（越用越强，重启继续累积）
         var baseDir = AppContext.BaseDirectory;
@@ -117,6 +121,7 @@ public sealed partial class MainWindow : Window
             ThemeToggle.IsChecked = dark;
             ThemeToggle.Content = dark ? "☀️ 浅色" : "🌙 深色";
         }
+        UpdateSegmentVisual(dark);
 
         // AI 助手（以理服人引擎保留为自训练后端，暂不开放）
         _agent = new Agent(_engine);
@@ -204,6 +209,115 @@ public sealed partial class MainWindow : Window
 
         // 桌宠：透明分层窗口，只有鲸鱼本体显示在桌面上（右键可隐藏/退出）
         ApplyPetVisibility();
+    }
+
+    // ------------------------------------------------------------------
+    // macOS 风格外观：自绘标题栏 + 顶部分段控件
+    // ------------------------------------------------------------------
+
+    /// <summary>macOS 风格标题栏：隐藏系统标题栏、系统按钮透明，左侧留出拖拽区。</summary>
+    private void SetupMacTitleBar(Microsoft.UI.Windowing.AppWindow appWindow)
+    {
+        _appWindow = appWindow;
+        try
+        {
+            ExtendsContentIntoTitleBar = true;
+            SetTitleBar(TitleBarDrag);
+            ApplyTitleBarTheme(_config.Theme == "dark");
+        }
+        catch { }
+    }
+
+    /// <summary>系统窗口按钮（最小化/最大化/关闭）跟随深浅色，且背景透明。</summary>
+    private void ApplyTitleBarTheme(bool dark)
+    {
+        if (_appWindow == null) return;
+        try
+        {
+            var tb = _appWindow.TitleBar;
+            tb.PreferredHeightOption = Microsoft.UI.Windowing.TitleBarHeightOption.Standard;
+            tb.ButtonBackgroundColor = Colors.Transparent;
+            tb.ButtonInactiveBackgroundColor = Colors.Transparent;
+            tb.ButtonHoverBackgroundColor = Color.FromArgb(0x33, 0x80, 0x80, 0x80);
+            tb.ButtonPressedBackgroundColor = Color.FromArgb(0x55, 0x80, 0x80, 0x80);
+            var fg = dark ? Colors.White : Color.FromArgb(255, 0x33, 0x33, 0x33);
+            tb.ButtonForegroundColor = fg;
+            tb.ButtonHoverForegroundColor = fg;
+            tb.ButtonInactiveForegroundColor = Color.FromArgb(0x80, fg.R, fg.G, fg.B);
+        }
+        catch { }
+    }
+
+    /// <summary>把标题栏空白处也变成拖拽区（分段控件所占矩形除外，保证还能点）。</summary>
+    private void UpdateMacCaptionRegions()
+    {
+        if (_appWindow == null) return;
+        try
+        {
+            if (!ExtendsContentIntoTitleBar) return;
+            double w = RootGrid.ActualWidth;
+            if (w <= 8) return;
+            double scale = RootGrid.XamlRoot?.RasterizationScale ?? 1.0;
+            if (scale <= 0) scale = 1.0;
+            double cutL = 240, cutR = 240;
+            try
+            {
+                var seg = SegmentTrack.TransformToVisual(null).TransformBounds(
+                    new Windows.Foundation.Rect(0, 0, SegmentTrack.ActualWidth, SegmentTrack.ActualHeight));
+                cutL = seg.X - 8;
+                cutR = seg.X + seg.Width + 8;
+            }
+            catch { }
+            int hh = (int)Math.Round(32 * scale);
+            var rects = new List<Windows.Graphics.RectInt32>();
+            if (cutL > 0)
+                rects.Add(new Windows.Graphics.RectInt32(0, 0, (int)Math.Round(cutL * scale), hh));
+            if (cutR < w)
+                rects.Add(new Windows.Graphics.RectInt32((int)Math.Round(cutR * scale), 0,
+                                                         (int)Math.Round((w - cutR) * scale), hh));
+            var src = Microsoft.UI.Input.InputNonClientPointerSource.GetForWindowId(_appWindow.Id);
+            src.SetRegionRects(Microsoft.UI.Input.NonClientRegionKind.Caption, rects.ToArray());
+        }
+        catch { }
+    }
+
+    /// <summary>顶部分段控件点击（AI 助手 / Agent 集群）。</summary>
+    private void MainTabClick(object sender, RoutedEventArgs e)
+        => SelectMainTab(ReferenceEquals(sender, ClusterTabBtn) ? 1 : 0);
+
+    /// <summary>切换主区页面，并同步分段控件与左侧会话列表。</summary>
+    private void SelectMainTab(int index)
+    {
+        _mainTab = index == 1 ? 1 : 0;
+        if (AgentPage != null)
+            AgentPage.Visibility = _mainTab == 0 ? Visibility.Visible : Visibility.Collapsed;
+        if (ClusterPage != null)
+            ClusterPage.Visibility = _mainTab == 1 ? Visibility.Visible : Visibility.Collapsed;
+        UpdateSegmentVisual();
+        RefreshConvList();
+    }
+
+    private void UpdateSegmentVisual() => UpdateSegmentVisual(RootGrid.ActualTheme == ElementTheme.Dark);
+
+    /// <summary>分段控件选中态：白底药丸 + 加粗（照 macOS 系统外观，随深浅色切换）。</summary>
+    private void UpdateSegmentVisual(bool dark)
+    {
+        if (AgentTabBtn == null || ClusterTabBtn == null) return;
+        ApplySegment(AgentTabBtn, _mainTab == 0, dark);
+        ApplySegment(ClusterTabBtn, _mainTab == 1, dark);
+    }
+
+    private static void ApplySegment(Button b, bool active, bool dark)
+    {
+        b.Background = active
+            ? new SolidColorBrush(dark ? Color.FromArgb(255, 0x63, 0x63, 0x68) : Colors.White)
+            : new SolidColorBrush(Colors.Transparent);
+        b.Foreground = new SolidColorBrush(dark ? Colors.White : Color.FromArgb(255, 0x1D, 0x1D, 0x1F));
+        b.BorderBrush = active
+            ? new SolidColorBrush(dark ? Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x1A, 0x00, 0x00, 0x00))
+            : new SolidColorBrush(Colors.Transparent);
+        b.FontWeight = active ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal;
+        b.Opacity = active ? 1.0 : 0.72;
     }
 
     /// <summary>按配置显示 / 关闭桌面桌宠（设置里改了开关立即生效，不必重启）。</summary>
@@ -480,6 +594,7 @@ public sealed partial class MainWindow : Window
     /// <summary>气泡最大宽度随窗口大小自适应（智能缩放）。</summary>
     private void OnRootSizeChanged(object sender, SizeChangedEventArgs e)
     {
+        UpdateMacCaptionRegions();
         if (_counterCur == null) return;
         double usable = Math.Max(280, e.NewSize.Width - 240 - 28);   // 侧边栏 240 + 主区左右 padding
         _bubbleMaxWidth = Math.Clamp(usable * 0.72, 200, 560);
@@ -1132,6 +1247,8 @@ public sealed partial class MainWindow : Window
         bool dark = ThemeToggle.IsChecked == true;
         RootGrid.RequestedTheme = dark ? ElementTheme.Dark : ElementTheme.Light;
         ThemeToggle.Content = dark ? "☀️ 浅色" : "🌙 深色";
+        UpdateSegmentVisual(dark);
+        ApplyTitleBarTheme(dark);
         _config.Theme = dark ? "dark" : "light";
         _config.Save();
     }
@@ -1334,7 +1451,7 @@ public sealed partial class MainWindow : Window
 
     private void NewConversationClick(object sender, RoutedEventArgs e)
     {
-        int kind = MainPivot.SelectedIndex == 0 ? 0 : 2;
+        int kind = _mainTab == 0 ? 0 : 2;
         Conversation conv = CreateConversation(kind);
         if (kind == 0)
         {
@@ -1365,7 +1482,7 @@ public sealed partial class MainWindow : Window
     private void RefreshConvList()
     {
         if (ConvList == null || _agentCur == null) return;   // InitializeComponent 阶段
-        int kind = MainPivot.SelectedIndex == 0 ? 0 : 2;
+        int kind = _mainTab == 0 ? 0 : 2;
         var full = kind == 0 ? _agentConvs : _clusterConvs;
         string q = ConvSearchBox?.Text?.Trim() ?? "";
         List<Conversation> items = string.IsNullOrEmpty(q)
@@ -1383,13 +1500,10 @@ public sealed partial class MainWindow : Window
     private void ConvSearchBox_TextChanged(object sender, TextChangedEventArgs e)
         => RefreshConvList();
 
-    private void Pivot_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        => RefreshConvList();
-
     private void ConvList_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         if (ConvList.SelectedItem is not Conversation conv) return;
-        int kind = MainPivot.SelectedIndex == 0 ? 0 : 2;
+        int kind = _mainTab == 0 ? 0 : 2;
         if (kind == 0 && conv != _agentCur)
         {
             _agentCur = conv;
@@ -1732,7 +1846,7 @@ public sealed partial class MainWindow : Window
 
     private async void UploadClick(object sender, RoutedEventArgs e)
     {
-        int kind = MainPivot.SelectedIndex switch { 0 => 0, 1 => 1, _ => 2 };
+        int kind = _mainTab == 0 ? 0 : 2;
         if (kind == 1) return;
         var conv = kind == 0 ? _agentCur : _clusterCur;
         var picker = new FileOpenPicker

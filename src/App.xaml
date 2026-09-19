@@ -9,54 +9,59 @@
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
 
-            <!-- 主题色（浅色 / 深色） -->
+            <!-- macOS 风格配色（浅色 / 深色两套） -->
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="BgBrush" Color="#B8F0F2F5"/>
-                    <SolidColorBrush x:Key="PanelBrush" Color="#BFF7F8FA"/>
-                    <SolidColorBrush x:Key="BubbleSelfBrush" Color="#C095EC69"/>
-                    <SolidColorBrush x:Key="BubbleOtherBrush" Color="#D9FFFFFF"/>
-                    <SolidColorBrush x:Key="TextBrush" Color="#1A1A1A"/>
-                    <SolidColorBrush x:Key="MutedBrush" Color="#9AA0A6"/>
-                    <SolidColorBrush x:Key="CardBrush" Color="#CCFFFFFF"/>
-                    <SolidColorBrush x:Key="AttachBgBrush" Color="#CCEAF6EC"/>
-                    <SolidColorBrush x:Key="SoftBgBrush" Color="#B8F5F5F5"/>
-                    <SolidColorBrush x:Key="BorderBrush" Color="#66E4E7EB"/>
-                    <SolidColorBrush x:Key="InputBgBrush" Color="#B8FFFFFF"/>
-                    <SolidColorBrush x:Key="HoverBrush" Color="#66EFF2F5"/>
-                    <SolidColorBrush x:Key="SelectedBrush" Color="#B8E6F5EA"/>
+                    <SolidColorBrush x:Key="BgBrush" Color="#FFEDEDF0"/>
+                    <SolidColorBrush x:Key="PanelBrush" Color="#C6F7F7F9"/>
+                    <SolidColorBrush x:Key="BubbleSelfBrush" Color="#FF007AFF"/>
+                    <SolidColorBrush x:Key="BubbleSelfTextBrush" Color="#FFFFFFFF"/>
+                    <SolidColorBrush x:Key="BubbleOtherBrush" Color="#FFE9E9EB"/>
+                    <SolidColorBrush x:Key="TextBrush" Color="#FF1D1D1F"/>
+                    <SolidColorBrush x:Key="MutedBrush" Color="#FF86868B"/>
+                    <SolidColorBrush x:Key="CardBrush" Color="#FFFFFFFF"/>
+                    <SolidColorBrush x:Key="AttachBgBrush" Color="#FFEAF2FF"/>
+                    <SolidColorBrush x:Key="SoftBgBrush" Color="#FFE6E6EA"/>
+                    <SolidColorBrush x:Key="BorderBrush" Color="#26000000"/>
+                    <SolidColorBrush x:Key="InputBgBrush" Color="#FFFFFFFF"/>
+                    <SolidColorBrush x:Key="HoverBrush" Color="#14000000"/>
+                    <SolidColorBrush x:Key="SelectedBrush" Color="#FFDCDCDE"/>
+                    <SolidColorBrush x:Key="SeparatorBrush" Color="#1F000000"/>
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
-                    <SolidColorBrush x:Key="BgBrush" Color="#A816181C"/>
-                    <SolidColorBrush x:Key="PanelBrush" Color="#B01E2024"/>
-                    <SolidColorBrush x:Key="BubbleSelfBrush" Color="#B02E7D45"/>
-                    <SolidColorBrush x:Key="BubbleOtherBrush" Color="#C02A2D33"/>
-                    <SolidColorBrush x:Key="TextBrush" Color="#E8E8E8"/>
-                    <SolidColorBrush x:Key="MutedBrush" Color="#8A9099"/>
-                    <SolidColorBrush x:Key="CardBrush" Color="#C026292F"/>
-                    <SolidColorBrush x:Key="AttachBgBrush" Color="#B01E3A2A"/>
-                    <SolidColorBrush x:Key="SoftBgBrush" Color="#B023262B"/>
-                    <SolidColorBrush x:Key="BorderBrush" Color="#66353A42"/>
-                    <SolidColorBrush x:Key="InputBgBrush" Color="#B023262B"/>
-                    <SolidColorBrush x:Key="HoverBrush" Color="#66323840"/>
-                    <SolidColorBrush x:Key="SelectedBrush" Color="#B01E3A2A"/>
+                    <SolidColorBrush x:Key="BgBrush" Color="#FF1C1C1E"/>
+                    <SolidColorBrush x:Key="PanelBrush" Color="#C62C2C2E"/>
+                    <SolidColorBrush x:Key="BubbleSelfBrush" Color="#FF0A84FF"/>
+                    <SolidColorBrush x:Key="BubbleSelfTextBrush" Color="#FFFFFFFF"/>
+                    <SolidColorBrush x:Key="BubbleOtherBrush" Color="#FF3A3A3C"/>
+                    <SolidColorBrush x:Key="TextBrush" Color="#FFF2F2F7"/>
+                    <SolidColorBrush x:Key="MutedBrush" Color="#FF98989D"/>
+                    <SolidColorBrush x:Key="CardBrush" Color="#FF2C2C2E"/>
+                    <SolidColorBrush x:Key="AttachBgBrush" Color="#FF1E3A5F"/>
+                    <SolidColorBrush x:Key="SoftBgBrush" Color="#FF3A3A3C"/>
+                    <SolidColorBrush x:Key="BorderBrush" Color="#26FFFFFF"/>
+                    <SolidColorBrush x:Key="InputBgBrush" Color="#FF3A3A3C"/>
+                    <SolidColorBrush x:Key="HoverBrush" Color="#1AFFFFFF"/>
+                    <SolidColorBrush x:Key="SelectedBrush" Color="#FF48484C"/>
+                    <SolidColorBrush x:Key="SeparatorBrush" Color="#26FFFFFF"/>
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
 
-            <SolidColorBrush x:Key="AccentBrush" Color="#07C160"/>
-            <SolidColorBrush x:Key="AccentDarkBrush" Color="#06AD56"/>
+            <!-- macOS 系统蓝 -->
+            <SolidColorBrush x:Key="AccentBrush" Color="#FF007AFF"/>
+            <SolidColorBrush x:Key="AccentDarkBrush" Color="#FF0062CC"/>
 
-            <!-- 气泡样式 -->
+            <!-- 气泡样式（iMessage 风：大圆角 + 尖角） -->
             <Style x:Key="SelfBubble" TargetType="Border">
                 <Setter Property="Background" Value="{ThemeResource BubbleSelfBrush}"/>
-                <Setter Property="CornerRadius" Value="12,3,12,12"/>
-                <Setter Property="Padding" Value="12,9"/>
+                <Setter Property="CornerRadius" Value="18,5,18,18"/>
+                <Setter Property="Padding" Value="14,10"/>
                 <Setter Property="Margin" Value="0,2"/>
             </Style>
             <Style x:Key="OtherBubble" TargetType="Border">
                 <Setter Property="Background" Value="{ThemeResource BubbleOtherBrush}"/>
-                <Setter Property="CornerRadius" Value="3,12,12,12"/>
-                <Setter Property="Padding" Value="12,9"/>
+                <Setter Property="CornerRadius" Value="5,18,18,18"/>
+                <Setter Property="Padding" Value="14,10"/>
                 <Setter Property="Margin" Value="0,2"/>
             </Style>
 
@@ -77,48 +82,60 @@
                 <Setter Property="Background" Value="{ThemeResource InputBgBrush}"/>
                 <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}"/>
                 <Setter Property="BorderThickness" Value="1"/>
-                <Setter Property="CornerRadius" Value="10"/>
+                <Setter Property="CornerRadius" Value="12"/>
             </Style>
 
             <!-- 圆角幽灵按钮（工具栏通用） -->
             <Style x:Key="GhostButton" TargetType="Button">
-                <Setter Property="CornerRadius" Value="8"/>
+                <Setter Property="CornerRadius" Value="9"/>
                 <Setter Property="Padding" Value="12,6"/>
                 <Setter Property="Background" Value="Transparent"/>
             </Style>
 
             <!-- 圆角幽灵开关（工具栏通用） -->
             <Style x:Key="GhostToggle" TargetType="ToggleButton">
-                <Setter Property="CornerRadius" Value="8"/>
+                <Setter Property="CornerRadius" Value="9"/>
                 <Setter Property="Padding" Value="12,6"/>
             </Style>
 
-            <!-- 简洁线条风圆形图标按钮 -->
+            <!-- 简洁线条风圆角图标按钮（macOS 工具栏按钮） -->
             <Style x:Key="LineIconButton" TargetType="Button">
-                <Setter Property="Width" Value="36"/>
-                <Setter Property="Height" Value="36"/>
+                <Setter Property="Width" Value="34"/>
+                <Setter Property="Height" Value="34"/>
                 <Setter Property="Padding" Value="0"/>
-                <Setter Property="CornerRadius" Value="18"/>
+                <Setter Property="CornerRadius" Value="9"/>
                 <Setter Property="Background" Value="Transparent"/>
                 <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}"/>
                 <Setter Property="BorderThickness" Value="1"/>
-                <Setter Property="FontSize" Value="15"/>
+                <Setter Property="FontSize" Value="14"/>
             </Style>
             <Style x:Key="LineIconToggle" TargetType="ToggleButton">
-                <Setter Property="Width" Value="36"/>
-                <Setter Property="Height" Value="36"/>
+                <Setter Property="Width" Value="34"/>
+                <Setter Property="Height" Value="34"/>
                 <Setter Property="Padding" Value="0"/>
-                <Setter Property="CornerRadius" Value="18"/>
+                <Setter Property="CornerRadius" Value="9"/>
                 <Setter Property="Background" Value="Transparent"/>
                 <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}"/>
                 <Setter Property="BorderThickness" Value="1"/>
-                <Setter Property="FontSize" Value="15"/>
+                <Setter Property="FontSize" Value="14"/>
+            </Style>
+
+            <!-- macOS 分段控件（Segmented Control）里的单个分段 -->
+            <Style x:Key="SegmentButton" TargetType="Button">
+                <Setter Property="MinWidth" Value="96"/>
+                <Setter Property="Height" Value="26"/>
+                <Setter Property="Padding" Value="14,0"/>
+                <Setter Property="CornerRadius" Value="7"/>
+                <Setter Property="FontSize" Value="13"/>
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="BorderBrush" Value="Transparent"/>
             </Style>
 
             <!-- 卡片 -->
             <Style x:Key="Card" TargetType="Border">
                 <Setter Property="Background" Value="{ThemeResource CardBrush}"/>
-                <Setter Property="CornerRadius" Value="12"/>
+                <Setter Property="CornerRadius" Value="14"/>
                 <Setter Property="BorderBrush" Value="{ThemeResource BorderBrush}"/>
                 <Setter Property="BorderThickness" Value="1"/>
             </Style>

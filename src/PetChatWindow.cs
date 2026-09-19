@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Runtime.InteropServices;
+using Microsoft.UI;
 using Microsoft.UI.Input;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -83,7 +84,7 @@ public sealed class PetChatWindow
 
         _win.Title = "deepsleep 桌宠";
 
-        var root = new Grid { Background = Res("PanelBrush", Color.FromArgb(255, 30, 32, 36)) };
+        var root = new Grid { Background = Res("PanelBrush", Color.FromArgb(255, 44, 44, 46)) };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                       // 标题栏
         root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // 消息
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });                       // 提示
@@ -99,24 +100,24 @@ public sealed class PetChatWindow
         header.Children.Add(new TextBlock
         {
             Text = "🐳 桌宠", FontSize = 13, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Foreground = Res("TextBrush", Color.FromArgb(255, 232, 232, 232)),
+            Foreground = Res("TextBrush", Color.FromArgb(255, 242, 242, 247)),
             VerticalAlignment = VerticalAlignment.Center,
         });
 
         _state = new TextBlock
         {
-            FontSize = 11, Foreground = Res("MutedBrush", Color.FromArgb(255, 138, 144, 153)),
+            FontSize = 11, Foreground = Res("MutedBrush", Color.FromArgb(255, 152, 152, 157)),
             VerticalAlignment = VerticalAlignment.Center, TextTrimming = TextTrimming.CharacterEllipsis,
         };
         Grid.SetColumn(_state, 1);
         header.Children.Add(_state);
 
-        var mainBtn = new Button { Content = "主界面", FontSize = 11, Padding = new Thickness(9, 2, 9, 2), VerticalAlignment = VerticalAlignment.Center };
+        var mainBtn = new Button { Content = "主界面", FontSize = 11, Padding = new Thickness(10, 3, 10, 3), CornerRadius = new CornerRadius(7), VerticalAlignment = VerticalAlignment.Center };
         mainBtn.Click += (_, _) => { try { _onOpenMain(); } catch { } };
         Grid.SetColumn(mainBtn, 2);
         header.Children.Add(mainBtn);
 
-        var closeBtn = new Button { Content = "✕", FontSize = 11, Padding = new Thickness(9, 2, 9, 2), VerticalAlignment = VerticalAlignment.Center };
+        var closeBtn = new Button { Content = "✕", FontSize = 11, Padding = new Thickness(10, 3, 10, 3), CornerRadius = new CornerRadius(7), VerticalAlignment = VerticalAlignment.Center };
         closeBtn.Click += (_, _) => Hide();
         Grid.SetColumn(closeBtn, 3);
         header.Children.Add(closeBtn);
@@ -128,7 +129,7 @@ public sealed class PetChatWindow
         {
             Text = "还什么都没聊。直接跟鲸鱼说句话吧 —— 这里的消息和主界面是同一条会话。",
             FontSize = 12, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(14, 30, 14, 0),
-            Foreground = Res("MutedBrush", Color.FromArgb(255, 138, 144, 153)),
+            Foreground = Res("MutedBrush", Color.FromArgb(255, 152, 152, 157)),
         };
         var listHost = new Grid();
         listHost.Children.Add(_empty);
@@ -150,10 +151,21 @@ public sealed class PetChatWindow
         var inputRow = new Grid { Padding = new Thickness(10, 0, 10, 10), ColumnSpacing = 8 };
         inputRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         inputRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        _input = new TextBox { PlaceholderText = "跟桌宠说点什么…（回车发送）", FontSize = 13 };
+        _input = new TextBox
+        {
+            PlaceholderText = "跟桌宠说点什么…（回车发送）", FontSize = 13,
+            CornerRadius = new CornerRadius(9),
+            Background = Res("InputBgBrush", Color.FromArgb(255, 58, 58, 60)),
+        };
         _input.KeyDown += OnInputKeyDown;
         inputRow.Children.Add(_input);
-        _send = new Button { Content = "发送", FontSize = 13, MinWidth = 72 };
+        _send = new Button
+        {
+            Content = "发送", FontSize = 13, MinWidth = 72, Height = 32,
+            CornerRadius = new CornerRadius(16),
+            Background = Res("AccentBrush", Color.FromArgb(255, 0, 122, 255)),
+            Foreground = new SolidColorBrush(Colors.White),
+        };
         _send.Click += (_, _) => { if (_isRunning()) _onStop(); else DoSend(); };
         Grid.SetColumn(_send, 1);
         inputRow.Children.Add(_send);
@@ -357,7 +369,7 @@ public sealed class PetChatWindow
         var text = new TextBlock
         {
             Text = item.DisplayText, TextWrapping = TextWrapping.Wrap, FontSize = 13,
-            Foreground = Res("TextBrush", Color.FromArgb(255, 232, 232, 232)),
+            Foreground = Res("TextBrush", Color.FromArgb(255, 242, 242, 247)),
             IsTextSelectionEnabled = true,
         };
         var bubble = new Bubble { Text = text };
@@ -365,7 +377,7 @@ public sealed class PetChatWindow
         if (item.IsSys)                          // 系统提示：居中小灰字
         {
             text.FontSize = 11.5;
-            text.Foreground = Res("MutedBrush", Color.FromArgb(255, 138, 144, 153));
+            text.Foreground = Res("MutedBrush", Color.FromArgb(255, 152, 152, 157));
             text.TextAlignment = TextAlignment.Center;
             text.HorizontalAlignment = HorizontalAlignment.Center;
             bubble.Root = text;
@@ -378,15 +390,17 @@ public sealed class PetChatWindow
             bubble.Image = img;
             stack.Children.Add(img);
             stack.Children.Add(text);
+            if (item.IsSelf)
+                text.Foreground = Res("BubbleSelfTextBrush", Colors.White);
             bubble.Root = new Border
             {
                 Child = stack,
-                CornerRadius = new CornerRadius(10),
-                Padding = new Thickness(10, 7, 10, 7),
+                CornerRadius = new CornerRadius(14),
+                Padding = new Thickness(12, 8, 12, 8),
                 MaxWidth = 300,
                 Background = item.IsSelf
-                    ? new SolidColorBrush(Color.FromArgb(255, 46, 125, 69))
-                    : Res("CardBrush", Color.FromArgb(255, 42, 45, 51)),
+                    ? Res("BubbleSelfBrush", Color.FromArgb(255, 0, 122, 255))
+                    : Res("BubbleOtherBrush", Color.FromArgb(255, 58, 58, 60)),
                 HorizontalAlignment = item.IsSelf ? HorizontalAlignment.Right : HorizontalAlignment.Left,
             };
         }
