@@ -51,7 +51,7 @@ def sha256(path):
 
 
 def source_files():
-    """按仓库范围收集源码：src / installer / release + 根目录 README.md 与 .gitignore。
+    """按仓库范围收集源码：src / ui / installer / release + 根目录 README.md 与 .gitignore。
 
     注意：AGENTS.md **不进仓库**（只留本地，属于 AI 的开发约定），别加回来。
     """
@@ -60,7 +60,7 @@ def source_files():
         p = os.path.join(ROOT, rel)
         if os.path.isfile(p):
             out[rel] = p
-    for top in ("src", "installer", "release"):
+    for top in ("src", "ui", "installer", "release"):
         for dirpath, dirnames, filenames in os.walk(os.path.join(ROOT, top)):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
             for fn in filenames:

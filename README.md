@@ -6,10 +6,21 @@
 
 | | |
 | --- | --- |
-| 当前版本 | **1.1.0** |
+| 当前版本 | **2.0.0**（内核与界面分离：界面改用 HTML + WebView2 渲染） |
 | 系统要求 | Windows 10 1809+ / x64（推荐 Windows 11，可享亚克力毛玻璃界面） |
 | 下载 | [Releases](https://github.com/zhdezs/deepsleep/releases/latest) → `deepsleep-Setup.exe` |
 | OTA 更新源 | `zhdezs/deepsleep`（GitHub + Gitee 双源，在 ⚙ 设置里填这个即可一键升级） |
+### 架构：内核与界面分离（2.0.0 起）
+
+```
+Deepsleep.Core（内核类库，.NET 10，零界面依赖）
+   ▲ 上行 {"id":1,"cmd":"send",...}      ▼ 下行 {"ev":"delta","text":"..."}
+WinUI 3 外壳（窗口 + 自绘标题栏 + 桌宠）→ WebView2 加载 ui/（纯 HTML/CSS/JS，本地跑）
+```
+
+- 内核只管逻辑：模型调用、工具调用链、技能库、长期记忆、Agent 集群、OTA 更新，**不引用任何界面类型**
+- 界面是纯前端：`ui/index.html` + `ui/style.css` + `ui/app.js`，由外壳映射成虚拟站点 `app.local` 在 WebView2 里加载，**改界面不用碰 C#**
+- 外壳只做三件事：开窗、把 `ui/` 挂成虚拟站点、转发消息（文件选择器 / 打开链接 / 窗口操作这类系统能力由外壳实现）
 
 ---
 
@@ -99,24 +110,30 @@ deepsleep-Setup.exe --silent --dir "D:\Apps\deepsleep" --no-desktop --no-launch
 ## 四、目录结构
 
 ```
-src/                      WinUI 3 客户端全部源码（.NET 10）
-  ├─ MainWindow.xaml(.cs) 主界面（AI 助手 / Agent 集群 / 会话侧栏 / 设置）
+src/Deepsleep.Core/       内核类库（.NET 10，零界面依赖，可单独构建）
+  ├─ Kernel.cs            协议层：JSON 命令派发 + 事件推送 + 运行状态
+  ├─ Kernel.Agent.cs      AI 助手：三态 / 流式输出 / 思考占位 / 权限确认
+  ├─ Kernel.Cluster.cs    Agent 集群：拆解 → 并行 → 汇总 / 恢复 / 模板
+  ├─ Kernel.Conv.cs       对话管理、持久化、记忆、技能、设置、上传
+  ├─ Kernel.Ota.cs        OTA 自动更新 + Ollama 探测
+  ├─ Kernel.Templates.cs  预置提示词 / 集群模板
   ├─ Agent.cs             智能体主循环 + 工具调用链 + 11 项工具实现
-  ├─ ApiClient.cs         在线 API（OpenAI 兼容 / Claude / Gemini / Responses）
-  ├─ OllamaClient.cs      本机 Ollama
+  ├─ ApiClient.cs / OllamaClient.cs / ImageGenClient.cs / VisionClient.cs
+  ├─ Sandbox.cs / SkillStore.cs / MemoryStore.cs / ClusterStore.cs / RuntimeState.cs
+  ├─ Updater.cs           OTA 更新（GitHub + Gitee Releases / 直链 / 本地，含分片与镜像回退）
   ├─ TokenVault.cs        GitHub 令牌保险箱（多层加密）
-  ├─ Updater.cs           OTA 自动更新（GitHub + Gitee Releases / 直链 / 本地，含分片与镜像回退）
+  └─ Engine.cs / NgramModel.cs / NaiveBayes.cs   内置自训练小模型
+
+src/                      WinUI 3 外壳（.NET 10）
+  ├─ MainWindow.xaml(.cs) 外壳窗口：WebView2 宿主 + 自绘标题栏 + 兜底面板
   ├─ DesktopPet.cs        桌面鲸鱼桌宠（Win32 分层窗口，真透明，45% 缩放 + 拖拽）
-  ├─ PetChatWindow.cs     桌宠专属聊天浮窗（与主界面同一条会话）
-  ├─ Sandbox.cs           命令与脚本沙箱
-  ├─ SkillStore.cs        技能库
-  ├─ MemoryStore.cs       长期记忆
-  ├─ ClusterStore.cs      Agent 集群
-  ├─ RuntimeState.cs      断点恢复
-  ├─ ImageGenClient.cs    图片生成
-  ├─ VisionClient.cs      看图
-  ├─ Engine.cs / NgramModel.cs / NaiveBayes.cs   内置自训练小模型
+  ├─ PetChatWindow.cs     桌宠专属聊天浮窗（HTML，与主界面同一条会话）
   └─ tools/               set-github-token.ps1、publish-github-release.ps1、download-update.ps1
+
+ui/                       界面（纯 HTML/CSS/JS，由外壳在 WebView2 里本地加载）
+  ├─ index.html           结构（`?pet=1` 为桌宠精简模式）
+  ├─ style.css            macOS 风格样式（深浅色两套 + 分段控件 + iMessage 气泡）
+  └─ app.js               渲染与交互 + 与内核的消息通信（cmd 上行 / ev 下行）
 
 installer/DeepSleepSetup/ WPF 图形安装程序（单文件，内嵌 payload.zip）
 release/                  发布脚本与说明（make-update.ps1、tools/、使用说明.txt）

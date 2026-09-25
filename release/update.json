@@ -1,6 +1,6 @@
 {
-    "version":  "1.1.0",
-    "url":  "https://github.com/zhdezs/deepsleep/releases/download/v1.1.0/deepsleep-Setup.exe",
-    "sha256":  "4F777F57027E16AFEBDF37EBCD91C25830E74DFD1DF7791ADAAF9A9B69133BB3",
-    "notes":  "1.1.0：修好 OTA 的 Gitee 下载 + macOS 风格界面 ——（1）以前探速把手握/跳转的固定开销也算进下载计时、样本只有 256KB，实测 2 MB/s 的 Gitee 被误判成 160 KB/s，于是自动换到当时只有 45 KB/s 的 GitHub；现在计时从首字节开始、样本 512KB，并且 Gitee 与 GitHub 直连各探一次速、谁快用谁（差不多快也优先 Gitee），国内基本永远走 Gitee，升级框里直接写明两边实测速度；（2）下载中途的兜底门槛改成按实测速度推算（三分之一、不低于 60 KB/s），不再用固定 200 KB/s 误杀；（3）界面 macOS 风格：自绘标题栏 + 顶部分段控件切换 AI 助手 / Agent 集群、半透明侧边栏与发丝分隔线、iMessage 风大圆角气泡、系统蓝强调色，深浅色两套配色；桌宠浮窗同步新配色。功能与 1.0.14 一致。"
+    "version":  "2.0.0",
+    "url":  "https://github.com/zhdezs/deepsleep/releases/download/v2.0.0/deepsleep-Setup.exe",
+    "sha256":  "3D204F8FA8DBE7915D9596BEC751726F76F946495978818E8E58B632AE088BED",
+    "notes":  "2.0.0：内核与界面分离，界面改用 HTML 重写（仍在客户端本地运行）——（1）程序拆成两块：内核 Deepsleep.Core（模型调用 / 工具调用链 / 技能库 / 长期记忆 / Agent 集群 / 断点恢复 / OTA，零界面依赖）+ 界面 ui\\（纯 HTML+CSS+JS，由客户端内嵌的 WebView2 本地加载，不联外网），以后改界面不用再编译 C#；（2）外壳只做三件事：开窗口、把 ui 目录挂成虚拟站点 app.local（data 目录挂成 data.local）、在内核与界面之间转发消息；文件选择器、打开链接、开关桌宠这类系统操作仍由外壳实现；（3）界面依旧是 macOS 风格（自绘标题栏 + 分段控件 + iMessage 风格气泡 + 系统蓝强调色 + 深浅色两套），Markdown 渲染、代码块一键复制、设置 / 记忆 / 技能 / 模板弹窗都搬到了前端；桌宠照旧 45% 缩放、真透明、单击弹出 HTML 聊天浮窗、按住拖动并记住位置；（4）首次启动若界面没渲染出来（系统缺 WebView2 运行时或被安全软件拦），窗口会直接给中文提示 + 「重试」「打开数据目录」，不会只留白窗口；（5）用户数据（Key、对话、记忆、技能、桌宠位置）与 1.x 完全通用，升级安装不会覆盖。"
 }

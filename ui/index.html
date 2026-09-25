@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>deepsleep</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="light">
+<div id="app">
+
+  <!-- 自绘标题栏（36px）之上是客户端区域，这里画 macOS 顶部工具条 -->
+  <header id="topbar">
+    <div class="seg" id="seg">
+      <button data-tab="0" class="on">AI 助手</button>
+      <button data-tab="1">Agent 集群</button>
+    </div>
+    <div class="tb-right">
+      <button id="btnUpdate" class="pill hidden">⬆ <span id="updateText">检查更新</span></button>
+      <button id="btnTheme" class="icon" title="深浅色">🌙</button>
+      <button id="btnSettings" class="icon" title="设置">⚙</button>
+    </div>
+  </header>
+
+  <div id="main">
+    <aside id="sidebar">
+      <div class="side-top">
+        <input id="convSearch" type="text" placeholder="搜索对话">
+        <button id="btnNew" class="round" title="新建对话">＋</button>
+      </div>
+      <div id="convList" class="scroll"></div>
+      <div class="side-bottom">
+        <button id="btnMemory" class="chip-btn" title="长期记忆">🧠 记忆</button>
+        <button id="btnSkills" class="chip-btn" title="技能管理">🧩 技能</button>
+      </div>
+    </aside>
+
+    <main id="chat">
+      <div id="msgs" class="scroll"></div>
+      <button id="btnBottom" class="fab hidden" title="回到底部">↓</button>
+
+      <div id="composer">
+        <div class="compose-row">
+          <button id="btnAttach" class="icon" title="上传文件">📎</button>
+          <button id="btnTpl" class="icon" title="快捷指令">💬</button>
+          <button id="btnClusterTpl" class="icon hidden" title="分工模板">👥</button>
+          <select id="mode" title="工具权限模式">
+            <option value="chat">chat · 纯聊天</option>
+            <option value="work">work · 命令需确认</option>
+            <option value="boom">boom · 全自动</option>
+          </select>
+          <label class="chip"><input type="checkbox" id="tgFast"><span>⚡ 极速</span></label>
+          <label class="chip"><input type="checkbox" id="tgLocal"><span>🧠 本地</span></label>
+          <label class="chip"><input type="checkbox" id="tgSearch"><span>🌐 联网</span></label>
+        </div>
+        <div class="input-row">
+          <textarea id="input" rows="1" placeholder="说点什么…（Enter 发送 / Shift+Enter 换行 / Esc 停止）"></textarea>
+          <div class="compose-actions">
+            <button id="btnRegen" class="icon" title="重新生成">↻</button>
+            <button id="btnClear" class="icon" title="清空当前对话">🗑</button>
+            <button id="btnSend" class="send">发送</button>
+          </div>
+        </div>
+        <div class="compose-foot">
+          <span id="busy" class="busy"></span>
+          <span id="statusLine" class="status"></span>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div id="toasts"></div>
+<div id="modalRoot"></div>
+<script src="app.js"></script>
+</body>
+</html>

@@ -41,6 +41,9 @@ public sealed class AppConfig
     /// <summary>是否显示桌面鲸鱼桌宠。</summary>
     public bool PetEnabled { get; set; } = true;
     /// <summary>桌宠左上角坐标（拖到哪记到哪）；-1 表示用默认的右下角位置。</summary>
+    /// <summary>WebView2 兼容模式：界面渲染进程崩溃过就记住，下次直接用兼容参数启动。</summary>
+    public bool WebCompat { get; set; } = false;
+
     public int PetX { get; set; } = -1;
     public int PetY { get; set; } = -1;
 
