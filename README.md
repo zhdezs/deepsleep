@@ -1,4 +1,4 @@
-# deepsleep · Windows AI 助手
+﻿# deepsleep · Windows AI 助手
 
 **本地优先**的 Windows 桌面 AI 助手（WinUI 3），能力对标 Claude Code / Codex：
 对话、工具调用、技能库、Agent 集群、长期记忆、断点恢复，外加**安装程序**与 **OTA 自动更新**。
@@ -6,7 +6,7 @@
 
 | | |
 | --- | --- |
-| 当前版本 | **2.1.1**（界面精修：多选胶囊栏、聚焦光晕、iMessage 气泡；内核与界面分离，HTML + WebView2 渲染；更新线路默认 Gitee、可切 GitHub） |
+| 当前版本 | **2.1.2**（联网搜索改为内置爬虫脚本：多引擎直接抓取结果页，无需 API Key；搜索开关默认开启并记忆；界面沿用 2.1.0 精修版） |
 | 系统要求 | Windows 10 1809+ / x64（推荐 Windows 11，可享亚克力毛玻璃界面） |
 | 下载 | [Releases](https://github.com/zhdezs/deepsleep/releases/latest) → `deepsleep-Setup.exe` |
 | OTA 更新源 | `zhdezs/deepsleep`（GitHub + Gitee 双源，⚙ 设置里可切换线路，默认 Gitee） |

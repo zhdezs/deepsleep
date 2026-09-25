@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -123,6 +123,8 @@ public sealed partial class Kernel
     {
         _agent.WebSearchEnabled = on;
         _clusterAgent.WebSearchEnabled = on;
+        _config.WebSearch = on;
+        _config.Save();
         Emit(new { ev = "search", on });
         EmitStatus(0);
         EmitStatus(2);

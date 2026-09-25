@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
 using System.Reflection;
@@ -11,7 +11,7 @@ public partial class MainWindow : Window
 {
     private const string AppName = "deepsleep";
     private const string AppDisplay = "deepsleep AI 助手";
-    private const string AppVersion = "2.1.1";
+    private const string AppVersion = "2.1.2";
     private const string Publisher = "deepsleep";
     private const string ExeName = "deepsleep.exe";
 

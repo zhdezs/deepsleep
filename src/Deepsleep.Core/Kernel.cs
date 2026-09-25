@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -121,6 +121,7 @@ public sealed partial class Kernel
         _agent.ApplyConfig(_config);
         if (_config.UseOllama) _agent.Backend = "llm";
         _agent.MultimodalMain = _config.MultimodalMain;
+        _agent.WebSearchEnabled = _config.WebSearch;
         _agent.MessageAdded += OnAgentMessage;
         _agent.DeltaAdded += OnAgentDelta;
         _agent.ToolStarted += OnAgentToolStarted;
@@ -135,6 +136,7 @@ public sealed partial class Kernel
         _clusterAgent.ApplyConfig(_config);
         if (_config.UseOllama) _clusterAgent.Backend = "llm";
         _clusterAgent.MultimodalMain = _config.MultimodalMain;
+        _clusterAgent.WebSearchEnabled = _config.WebSearch;
         _clusterAgent.MessageAdded += OnClusterMessage;
         _clusterAgent.DeltaAdded += OnClusterDelta;
         _clusterAgent.SkillUsed += OnSkillUsed;

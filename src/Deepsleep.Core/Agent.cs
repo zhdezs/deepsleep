@@ -1,4 +1,4 @@
-using System;
+﻿﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -77,7 +77,7 @@ public sealed class Agent
     public string RunMode { get; set; } = "work";
 
     /// <summary>是否启用联网搜索工具（界面上的 🌐 开关控制）。</summary>
-    public bool WebSearchEnabled { get; set; } = false;
+    public bool WebSearchEnabled { get; set; } = true;
 
     /// <summary>是否启用真·流式输出（逐 token 实时显示）。</summary>
     public bool Streaming { get; set; } = true;
@@ -682,7 +682,7 @@ public sealed class Agent
             _ => SystemPrompt + "\n\n当前是 work（工作）模式：执行「运行命令」前系统会自动请求用户确认，确认结果会以工具结果返回给你；其余工具可直接使用。",
         };
         if (RunMode != "chat")
-            prompt += "\n- 联网搜索：参数 {\"关键词\":\"搜索词\"}。用百度（失败自动切换 DuckDuckGo）搜索网页，返回标题/链接/摘要。用户要求搜索、查价格、查资料、找最新信息时优先使用；若工具提示已关闭，请提醒用户打开 🌐 开关，不要用命令行代替。";
+            prompt += "\n- 联网搜索：参数 {\"关键词\":\"搜索词\"}。由内置爬虫脚本直接抓取搜索结果页（Bing → 搜狗 → 360 → DuckDuckGo 依次尝试），返回标题/链接/摘要，无需 API Key。用户要求搜索、查价格、查资料、找最新信息时优先使用；若工具提示已关闭，请提醒用户打开 🌐 开关，不要用命令行代替。";
             prompt += "\n- 抓取网页：参数 {\"网址\":\"https://...\"}。用内置爬虫抓取网页正文（自动去标签、限长 8000 字）。搜索得到链接后需要看原文时使用；若网页抓不到正文，如实说明，不要假装成功。";
             prompt += "\n- 打开文件：参数 {\"路径\":\"绝对路径\"}。用系统默认程序打开本地文件；" +
                       "可执行文件/脚本也允许打开（打开就是运行它，work 模式下会先请用户确认）。";
@@ -1823,7 +1823,79 @@ public sealed class Agent
         return $"图片：{path}\n识别结果：\n{result}";
     }
 
-    /// <summary>联网搜索：用 DuckDuckGo（无需 Key）抓取标题/链接/摘要。</summary>
+    /// <summary>
+    /// 调用随程序分发的爬虫脚本 tools\websearch.py 搜索（多引擎，无需 API Key）。
+    /// 脚本不存在 / 本机无 Python 3 / 脚本失败时返回 null，由内置爬虫兜底。
+    /// </summary>
+    private static async Task<List<SearchHit>?> SearchViaScriptAsync(string query, CancellationToken ct)
+    {
+        try
+        {
+            string script = Path.Combine(AppContext.BaseDirectory, "tools", "websearch.py");
+            if (!File.Exists(script)) return null;
+            string? py = await FindPython3Async();
+            if (string.IsNullOrWhiteSpace(py)) return null;
+
+            var psi = new ProcessStartInfo(py)
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8,
+            };
+            psi.ArgumentList.Add(script);
+            psi.ArgumentList.Add("--json");
+            psi.ArgumentList.Add("--limit");
+            psi.ArgumentList.Add("8");
+            psi.ArgumentList.Add(query);
+            psi.Environment["PYTHONIOENCODING"] = "utf-8";
+
+            using var proc = Process.Start(psi);
+            if (proc == null) return null;
+            var outTask = proc.StandardOutput.ReadToEndAsync(ct);
+            var errTask = proc.StandardError.ReadToEndAsync(ct);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(60));
+            try
+            {
+                await proc.WaitForExitAsync(timeout.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                try { proc.Kill(true); } catch { }
+                if (ct.IsCancellationRequested) return null;
+                return null;
+            }
+            string json = await outTask;
+            _ = errTask;
+            if (proc.ExitCode != 0 || string.IsNullOrWhiteSpace(json)) return null;
+
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+            string engine = root.TryGetProperty("engine", out var eng) ? eng.GetString() ?? "" : "";
+            if (!root.TryGetProperty("results", out var arr) || arr.ValueKind != JsonValueKind.Array)
+                return null;
+
+            var hits = new List<SearchHit>();
+            foreach (var it in arr.EnumerateArray())
+            {
+                string title = it.TryGetProperty("title", out var t) ? t.GetString() ?? "" : "";
+                string url = it.TryGetProperty("url", out var u) ? u.GetString() ?? "" : "";
+                string snippet = it.TryGetProperty("snippet", out var s) ? s.GetString() ?? "" : "";
+                if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(url)) continue;
+                hits.Add(new SearchHit { Title = title, Url = url, Snippet = snippet, Engine = engine });
+            }
+            return hits.Count > 0 ? hits : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>联网搜索：内置多引擎爬虫（Bing → 搜狗 → 360 → DuckDuckGo），无需 API Key。</summary>
     private async Task<string> WebSearchTool(JsonElement args, CancellationToken ct)
     {
         if (!WebSearchEnabled)
@@ -1832,65 +1904,22 @@ public sealed class Agent
         if (string.IsNullOrWhiteSpace(q))
             return "参数错误：缺少「关键词」。";
 
-        using var hc = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
-        hc.DefaultRequestHeaders.UserAgent.ParseAdd(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36");
+        var hits = await SearchViaScriptAsync(q, ct);
+        string engine = hits?.FirstOrDefault()?.Engine ?? "";
+        if (hits == null || hits.Count == 0)
+            (engine, hits) = await WebCrawler.SearchAsync(q, ct);
+        hits ??= new List<SearchHit>();
+        if (hits.Count == 0)
+            return $"搜索「{q}」失败：Bing / 搜狗 / 360 / DuckDuckGo 都没能返回结果，" +
+                   "可能是网络不可达或全部被风控拦截。请如实告知用户搜索失败，不要编造结果。";
 
-        // 首选百度（国内可达）；失败再退 DuckDuckGo
-        string html = "";
-        var results = new List<(string title, string url, string snippet)>();
-        try
+        var sb = new StringBuilder($"搜索结果（{q}｜来源：{engine}）：\n");
+        for (int i = 0; i < hits.Count; i++)
         {
-            html = await hc.GetStringAsync(
-                "https://www.baidu.com/s?wd=" + Uri.EscapeDataString(q), ct);
-            results = ParseBaidu(html);
-        }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
-        {
-            return "联网搜索已停止。";
-        }
-        catch { /* 百度失败 → 退 DuckDuckGo lite */ }
-
-        if (results.Count == 0)
-        {
-            try
-            {
-                html = await hc.GetStringAsync(
-                    "https://lite.duckduckgo.com/lite/?q=" + Uri.EscapeDataString(q), ct);
-                results = ParseDdgLite(html);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                return "联网搜索已停止。";
-            }
-            catch { /* 再退 DuckDuckGo html */ }
-        }
-        if (results.Count == 0)
-        {
-            try
-            {
-                html = await hc.GetStringAsync(
-                    "https://html.duckduckgo.com/html/?q=" + Uri.EscapeDataString(q), ct);
-                results = ParseDdgHtml(html);
-            }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
-            {
-                return "联网搜索已停止。";
-            }
-            catch { /* 忽略 */ }
-        }
-
-        if (results.Count == 0)
-            return $"搜索「{q}」失败：请求超时或网络不可达，未能获取结果。";
-
-        var sb = new StringBuilder($"搜索结果（{q}）：\n");
-        for (int i = 0; i < Math.Min(8, results.Count); i++)
-        {
-            var (title, url, snippet) = results[i];
-            sb.AppendLine($"{i + 1}. {title}");
-            sb.AppendLine($"   {url}");
-            if (!string.IsNullOrEmpty(snippet))
-                sb.AppendLine($"   {Truncate(CleanHtml(snippet), 160)}");
+            sb.AppendLine($"{i + 1}. {hits[i].Title}");
+            sb.AppendLine($"   {hits[i].Url}");
+            if (!string.IsNullOrEmpty(hits[i].Snippet))
+                sb.AppendLine($"   {Truncate(hits[i].Snippet, 160)}");
         }
         return Truncate(sb.ToString(), MaxToolOutput);
     }
@@ -1906,13 +1935,7 @@ public sealed class Agent
             return "参数错误：网址必须以 http:// 或 https:// 开头。";
         try
         {
-            using var hc = new HttpClient { Timeout = TimeSpan.FromSeconds(25) };
-            hc.DefaultRequestHeaders.UserAgent.ParseAdd(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36");
-            hc.DefaultRequestHeaders.Accept.ParseAdd("text/html,application/xhtml+xml;q=0.9,*/*;q=0.8");
-            hc.DefaultRequestHeaders.AcceptLanguage.ParseAdd("zh-CN,zh;q=0.9,en;q=0.8");
-            string html = await hc.GetStringAsync(url, ct);
-            string text = Truncate(CleanHtml(html), 8000);
+            string text = await WebCrawler.FetchTextAsync(url, ct, 8000);
             if (string.IsNullOrWhiteSpace(text))
                 return $"抓取「{url}」成功，但未能提取到可见文本（可能是 JS 渲染页面或非 HTML 内容）。";
             return $"网页内容（{url}）：\n{text}";
@@ -1925,77 +1948,6 @@ public sealed class Agent
         {
             return $"抓取「{url}」失败：{ex.Message}";
         }
-    }
-
-    /// <summary>解析百度搜索结果页（标题 + 链接 + 摘要）。</summary>
-    private static List<(string title, string url, string snippet)> ParseBaidu(string html)
-    {
-        var list = new List<(string, string, string)>();
-        var titles = Regex.Matches(html,
-            @"<h3[^>]*>\s*<a[^>]*href=""([^""]+)""[^>]*>(.*?)</a>",
-            RegexOptions.Singleline | RegexOptions.IgnoreCase);
-        var snips = Regex.Matches(html,
-            @"class=""c-abstract[^""]*""[^>]*>(.*?)</",
-            RegexOptions.Singleline | RegexOptions.IgnoreCase);
-        if (snips.Count == 0)
-            snips = Regex.Matches(html,
-                @"class=""content-right[^""]*""[^>]*>(.*?)</span>",
-                RegexOptions.Singleline | RegexOptions.IgnoreCase);
-        for (int i = 0; i < titles.Count && i < 8; i++)
-        {
-            string title = CleanHtml(titles[i].Groups[2].Value);
-            string url = System.Net.WebUtility.HtmlDecode(titles[i].Groups[1].Value);
-            string snippet = i < snips.Count ? CleanHtml(snips[i].Groups[1].Value) : "";
-            if (string.IsNullOrWhiteSpace(title)) continue;
-            list.Add((title, url, snippet));
-        }
-        return list;
-    }
-
-    private static List<(string title, string url, string snippet)> ParseDdgLite(string html)
-    {
-        var list = new List<(string, string, string)>();
-        var links = Regex.Matches(html, @"<a rel=""nofollow"" href=""([^""]+)"">(.*?)</a>",
-            RegexOptions.Singleline | RegexOptions.IgnoreCase);
-        var snips = Regex.Matches(html, @"<td class='result-snippet'>(.*?)</td>",
-            RegexOptions.Singleline | RegexOptions.IgnoreCase);
-        for (int i = 0; i < links.Count; i++)
-        {
-            string title = CleanHtml(links[i].Groups[2].Value);
-            string url = System.Net.WebUtility.HtmlDecode(links[i].Groups[1].Value);
-            string snippet = i < snips.Count ? CleanHtml(snips[i].Groups[1].Value) : "";
-            if (string.IsNullOrWhiteSpace(title)) continue;
-            list.Add((title, url, snippet));
-        }
-        return list;
-    }
-
-    private static List<(string title, string url, string snippet)> ParseDdgHtml(string html)
-    {
-        var list = new List<(string, string, string)>();
-        var links = Regex.Matches(html,
-            @"<a[^>]*class=""result__a""[^>]*href=""([^""]+)""[^>]*>(.*?)</a>",
-            RegexOptions.Singleline | RegexOptions.IgnoreCase);
-        var snips = Regex.Matches(html,
-            @"<a[^>]*class=""result__snippet""[^>]*>(.*?)</a>",
-            RegexOptions.Singleline | RegexOptions.IgnoreCase);
-        for (int i = 0; i < links.Count; i++)
-        {
-            string title = CleanHtml(links[i].Groups[2].Value);
-            string url = System.Net.WebUtility.HtmlDecode(links[i].Groups[1].Value);
-            if (url.StartsWith("//duckduckgo.com/l/?uddg=", StringComparison.OrdinalIgnoreCase))
-                url = System.Net.WebUtility.UrlDecode(url["//duckduckgo.com/l/?uddg=".Length..]);
-            string snippet = i < snips.Count ? CleanHtml(snips[i].Groups[1].Value) : "";
-            if (string.IsNullOrWhiteSpace(title)) continue;
-            list.Add((title, url, snippet));
-        }
-        return list;
-    }
-
-    private static string CleanHtml(string s)
-    {
-        s = Regex.Replace(s, "<[^>]+>", "");
-        return System.Net.WebUtility.HtmlDecode(s).Trim();
     }
 
     private static string ReadFileTool(JsonElement args)

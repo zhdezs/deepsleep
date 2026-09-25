@@ -1,6 +1,6 @@
 {
-    "version":  "2.1.1",
-    "url":  "https://github.com/zhdezs/deepsleep/releases/download/v2.1.1/deepsleep-Setup.exe",
-    "sha256":  "12BA0279E40E55FC98FD470F0A859D0745227D792BC0BE6B5BE0796F049BD8F2",
-    "notes":  "2.1.1：修「检测不到自己的版本号」——程序自报的版本以前读的是内核程序集（Deepsleep.Core.dll）自己的版本号，而那份版本号一直忘了跟着发布改（停在 2.0.0），所以装到 2.1.0 了界面里还显示 2.0.0；现在改成以安装目录里 deepsleep.exe 的文件版本为准（程序集版本只作兜底），并把外壳与内核的版本号合并到一个 Directory.Build.props 统一管理，以后不会两边不一致。界面外观与 2.1.0 完全一致。"
+    "version":  "2.1.2",
+    "url":  "https://github.com/zhdezs/deepsleep/releases/download/v2.1.2/deepsleep-Setup.exe",
+    "sha256":  "713431D5FEF0B8994BB569A79FF1C694FB2E423361D4024E0CD35FB9B9D906BA",
+    "notes":  "2.1.2：修「联网搜索不管用」——以前内核直接抓百度结果页，百度现在频繁访问会返回「安全验证」跳转页，解析不出结果，搜几次就废；现在联网搜索改成内置爬虫脚本 tools\\websearch.py，多引擎依次尝试 Bing → 搜狗 → 360 → DuckDuckGo，谁先出结果就用谁，不需要任何搜索 API Key，自动处理网页编码、相对链接、跳转链接与结果去重；内核优先调用脚本（本机有 Python 3 时），没装 Python 的机器自动回退内核内置的同款爬虫。🌐 联网搜索开关改为默认开启，并记住你的选择。其余功能与 2.1.1 完全一致。"
 }

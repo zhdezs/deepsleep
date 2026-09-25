@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
@@ -16,7 +16,7 @@
     <ApplicationIcon>deepsleep.ico</ApplicationIcon>
     <AssemblyTitle>deepsleep AI 助手 安装程序</AssemblyTitle>
     <Product>deepsleep AI 助手</Product>
-    <Version>2.1.1</Version>
+    <Version>2.1.2</Version>
     <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
   </PropertyGroup>
 

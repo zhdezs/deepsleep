@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -47,6 +47,8 @@ public sealed class AppConfig
     public bool GiteeFirst => !string.Equals(UpdateSource, "github", StringComparison.OrdinalIgnoreCase);
     /// <summary>是否显示桌面鲸鱼桌宠。</summary>
     public bool PetEnabled { get; set; } = true;
+    /// <summary>联网搜索开关（🌐）。默认开启，设置里可关；会持久化到 config.json。</summary>
+    public bool WebSearch { get; set; } = true;
     /// <summary>桌宠左上角坐标（拖到哪记到哪）；-1 表示用默认的右下角位置。</summary>
     /// <summary>WebView2 兼容模式：界面渲染进程崩溃过就记住，下次直接用兼容参数启动。</summary>
     public bool WebCompat { get; set; } = false;
@@ -116,6 +118,9 @@ public sealed class AppConfig
                 if (root.TryGetProperty("petEnabled", out var pe) || root.TryGetProperty("PetEnabled", out pe))
                     if (pe.ValueKind == JsonValueKind.True || pe.ValueKind == JsonValueKind.False)
                         cfg.PetEnabled = pe.GetBoolean();
+                if (root.TryGetProperty("webSearch", out var ws) || root.TryGetProperty("WebSearch", out ws))
+                    if (ws.ValueKind == JsonValueKind.True || ws.ValueKind == JsonValueKind.False)
+                        cfg.WebSearch = ws.GetBoolean();
                 if ((v = GetStr(root, "updateSource", "UpdateSource")) != null)
                     cfg.UpdateSource = v.Trim().ToLowerInvariant() == "github" ? "github" : "gitee";
                 // 兼容旧版本配置里的布尔开关：giteeMirror=true 就是 Gitee 线路，false 是 GitHub 线路

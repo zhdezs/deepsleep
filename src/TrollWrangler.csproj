@@ -44,6 +44,7 @@
     <Content Include="..\ui\**" CopyToOutputDirectory="PreserveNewest" Link="ui\%(RecursiveDir)%(Filename)%(Extension)" />
     <Content Include="tools\set-github-token.ps1" CopyToOutputDirectory="PreserveNewest" Link="tools\set-github-token.ps1" />
     <Content Include="tools\publish-github-release.ps1" CopyToOutputDirectory="PreserveNewest" Link="tools\publish-github-release.ps1" />
+    <Content Include="tools\websearch.py" CopyToOutputDirectory="PreserveNewest" Link="tools\websearch.py" />
   </ItemGroup>
   <!-- 瘦身：WindowsAppSDK 会带进 Windows ML / ONNX 推理运行时（本程序不使用），发布后剔除 -->
   <Target Name="TrimUnusedAiRuntime" AfterTargets="Publish">
