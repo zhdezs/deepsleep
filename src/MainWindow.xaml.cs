@@ -225,12 +225,30 @@ public sealed partial class MainWindow : Window
     private void OnKernelPush(string json)
     {
         if (_closing) return;
+        if (json.Contains("\"ev\":\"restarting\"", StringComparison.Ordinal)) ArmUpdateExitFallback();
         bool petChanged = json.Contains("\"ev\":\"pet\"", StringComparison.Ordinal);
         DispatcherQueue.TryEnqueue(() =>
         {
             try { _web?.CoreWebView2?.PostWebMessageAsJson(json); } catch { }
             _petChat?.Push(json);
             if (petChanged) ApplyPetVisibility();
+        });
+    }
+
+    /// <summary>
+    /// 升级兜底：装完更新要退出进程，升级脚本才肯往下走。前端若没能发出 quitApp
+    /// （WebView2 异常等），到点由外壳自己退，别让「正在启动升级程序…」一直卡着。
+    /// </summary>
+    private void ArmUpdateExitFallback()
+    {
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(12));
+                DispatcherQueue.TryEnqueue(() => { try { App.ExitApp(); } catch { } });
+            }
+            catch { }
         });
     }
 

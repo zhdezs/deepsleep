@@ -696,6 +696,8 @@ function updateProgress(p, text, done) {
 }
 function restarting() {
   toast('升级程序已启动，deepsleep 即将退出并自动重启…');
+  // 升级脚本要等 deepsleep.exe 退出才会继续安装，所以这里必须真的退（光弹提示会卡死）
+  setTimeout(() => host({ cmd: 'quitApp' }), 900);
 }
 
 /* ---------------- 交互接线 ---------------- */

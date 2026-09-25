@@ -92,7 +92,22 @@ public partial class MainWindow : Window
     public void RunSilent(string? dir, bool desktop, bool launch, bool registry)
     {
         string target = string.IsNullOrWhiteSpace(dir) ? DefaultDir : Path.GetFullPath(dir);
-        InstallCore(target, desktop, registry, null);   // 静默模式：同步执行，不依赖 UI 消息循环
+        try
+        {
+            InstallCore(target, desktop, registry, null);   // 静默模式：同步执行，不依赖 UI 消息循环
+        }
+        catch (Exception ex)
+        {
+            // 静默安装失败要留下线索：外面（升级脚本 / 界面）只看得到"升级失败"，看不到原因
+            try
+            {
+                string log = Path.Combine(Path.GetTempPath(), "deepsleep-update", "install-error.log");
+                Directory.CreateDirectory(Path.GetDirectoryName(log)!);
+                File.AppendAllText(log, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  静默安装失败：" + ex + Environment.NewLine);
+            }
+            catch { }
+            throw;
+        }
         if (launch)
             Process.Start(new ProcessStartInfo(Path.Combine(target, ExeName)) { WorkingDirectory = target, UseShellExecute = true });
     }
@@ -119,6 +134,8 @@ public partial class MainWindow : Window
     private static void InstallCore(string target, bool desktopShortcut, bool registerUninstall,
                                     IProgress<(double Percent, string Text)>? progress)
     {
+        progress?.Report((2, "正在结束正在运行的程序…"));
+        KillRunningApp(target);
         ExtractPayload(target, progress);
         progress?.Report((92, "正在创建快捷方式…"));
         CreateShortcuts(target, desktopShortcut);
@@ -126,6 +143,33 @@ public partial class MainWindow : Window
         progress?.Report((97, "正在登记卸载信息…"));
         if (registerUninstall) RegisterUninstallEntry(target);
         progress?.Report((100, "安装完成"));
+    }
+
+    /// <summary>
+    /// 安装前先把正在跑的 deepsleep 结束掉：exe/dll 还被占用时解压会失败，留下半新半旧的
+    /// 安装目录（以前升级卡住就是这个）。优先只结束安装目录里的那个进程，读不到路径再按名字处理。
+    /// </summary>
+    private static void KillRunningApp(string target)
+    {
+        string exe = Path.Combine(target, ExeName);
+        foreach (var p in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(ExeName)))
+        {
+            try
+            {
+                bool mine = true;
+                try
+                {
+                    string? path = p.MainModule?.FileName;
+                    if (path != null) mine = string.Equals(path, exe, StringComparison.OrdinalIgnoreCase);
+                }
+                catch { }
+                if (!mine) continue;
+                p.Kill();
+                p.WaitForExit(4000);
+            }
+            catch { }
+        }
+        System.Threading.Thread.Sleep(400);      // 给文件句柄一点释放时间
     }
 
     private static void ExtractPayload(string target, IProgress<(double Percent, string Text)>? progress)

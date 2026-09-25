@@ -896,11 +896,37 @@ public static void ApplyAndRestart(string installerPath, string installDir, stri
     var sb = new StringBuilder();
     sb.AppendLine("@echo off");
     sb.AppendLine("chcp 65001 >nul");
-    sb.AppendLine("timeout /t 2 /nobreak >nul");
+    // 别用 timeout：脚本是无窗口跑的，timeout 会报"不支持输入重定向"直接返回，变成忙等；
+    // ping 自己地址是唯一在所有 Windows 上都稳的"睡一会儿"
+    sb.AppendLine("ping -n 3 127.0.0.1 >nul");
+    sb.AppendLine("set /a _ds_wait=0");
     sb.AppendLine(":wait");
     sb.AppendLine("tasklist /fi \"IMAGENAME eq deepsleep.exe\" 2>nul | find /i \"deepsleep.exe\" >nul");
-    sb.AppendLine("if not errorlevel 1 ( timeout /t 1 /nobreak >nul & goto wait )");
+    sb.AppendLine("if errorlevel 1 goto install");
+    // 最多等 30 秒：界面要是没能自己退（WebView2 异常、前端没发 quitApp），
+    // 就强杀掉再来装，绝不能在这干等一整天（2.0.1 的坑）
+    sb.AppendLine("set /a _ds_wait+=1");
+    sb.AppendLine("if %_ds_wait% geq 20 goto kill");
+    sb.AppendLine("ping -n 2 127.0.0.1 >nul");
+    sb.AppendLine("goto wait");
+    sb.AppendLine(":kill");
+    sb.AppendLine("taskkill /f /im deepsleep.exe >nul 2>nul");
+    sb.AppendLine("ping -n 3 127.0.0.1 >nul");
+    sb.AppendLine(":install");
+    sb.AppendLine("set /a _ds_try=0");
+    sb.AppendLine(":try");
+    sb.AppendLine("set /a _ds_try+=1");
     sb.AppendLine("start \"\" /wait \"" + installerPath + "\" --silent --dir \"" + installDir + "\" --no-desktop --no-launch");
+    // 装失败（旧进程还占着 exe/dll，或 tasklist 被安全软件挡住误判）就再试一次，还不行就强杀重装 —— 反正不能停在这
+    sb.AppendLine("if not errorlevel 1 goto ok");
+    sb.AppendLine("if %_ds_try% geq 2 goto force");
+    sb.AppendLine("ping -n 3 127.0.0.1 >nul");
+    sb.AppendLine("goto try");
+    sb.AppendLine(":force");
+    sb.AppendLine("taskkill /f /im deepsleep.exe >nul 2>nul");
+    sb.AppendLine("ping -n 4 127.0.0.1 >nul");
+    sb.AppendLine("start \"\" /wait \"" + installerPath + "\" --silent --dir \"" + installDir + "\" --no-desktop --no-launch");
+    sb.AppendLine(":ok");
     sb.AppendLine("start \"\" \"" + exePath + "\"");
     sb.AppendLine("del \"%~f0\"");
     File.WriteAllText(script, sb.ToString(), new UTF8Encoding(false));
