@@ -22,10 +22,18 @@ SKIP_NAMES = {"payload.zip"}
 
 
 def current_version():
-    csproj = os.path.join(ROOT, "src", "TrollWrangler.csproj")
-    with open(csproj, encoding="utf-8") as f:
-        m = re.search(r"<Version>([^<]+)</Version>", f.read())
-    return m.group(1).strip() if m else "0.0.0"
+    """版本号来源：src/Directory.Build.props（外壳与内核共用同一份，改一处即可）。
+    老仓库没有这个文件时回退到 TrollWrangler.csproj。"""
+    for rel in (os.path.join("src", "Directory.Build.props"),
+                os.path.join("src", "TrollWrangler.csproj")):
+        p = os.path.join(ROOT, rel)
+        if not os.path.isfile(p):
+            continue
+        with open(p, encoding="utf-8") as f:
+            m = re.search(r"<Version>([^<]+)</Version>", f.read())
+        if m:
+            return m.group(1).strip()
+    return "0.0.0"
 
 
 def api(method, url, body=None):
