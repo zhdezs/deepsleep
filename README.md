@@ -6,7 +6,7 @@
 
 | | |
 | --- | --- |
-| 当前版本 | **2.1.0**（界面精修：多选胶囊栏、聚焦光晕、iMessage 气泡；内核与界面分离，HTML + WebView2 渲染；更新线路默认 Gitee、可切 GitHub） |
+| 当前版本 | **2.1.1**（界面精修：多选胶囊栏、聚焦光晕、iMessage 气泡；内核与界面分离，HTML + WebView2 渲染；更新线路默认 Gitee、可切 GitHub） |
 | 系统要求 | Windows 10 1809+ / x64（推荐 Windows 11，可享亚克力毛玻璃界面） |
 | 下载 | [Releases](https://github.com/zhdezs/deepsleep/releases/latest) → `deepsleep-Setup.exe` |
 | OTA 更新源 | `zhdezs/deepsleep`（GitHub + Gitee 双源，⚙ 设置里可切换线路，默认 Gitee） |

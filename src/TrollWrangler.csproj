@@ -19,8 +19,6 @@
     <ApplicationIcon>deepsleep.ico</ApplicationIcon>
     <RootNamespace>TrollWrangler</RootNamespace>
     <ApplicationTitle>deepsleep · AI 助手</ApplicationTitle>
-    <Version>2.1.0</Version>
-    <FileVersion>2.1.0.0</FileVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 

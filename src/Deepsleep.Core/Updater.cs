@@ -140,20 +140,46 @@ private static string DpapiUnprotect(byte[] blob)
     }
 }
 
+/// <summary>
+/// 当前版本号：**以安装目录里 deepsleep.exe 的文件版本为准**，程序集版本只当兜底。
+/// 别再读内核程序集（Deepsleep.Core.dll）自己的版本 —— 它的 &lt;Version&gt; 不随发布同步，
+/// 以前就是读它，结果升到 2.1.0 了还自报 2.0.0（外面看起来像"检测不到自己的版本号"）。
+/// </summary>
 private static string ReadCurrentVersion()
 {
+    try
+    {
+        string exe = Path.Combine(AppContext.BaseDirectory, "deepsleep.exe");
+        if (File.Exists(exe))
+        {
+            var vi = System.Diagnostics.FileVersionInfo.GetVersionInfo(exe);
+            string fromExe = CleanVersion(vi.FileVersion ?? vi.ProductVersion);
+            if (fromExe.Length > 0) return fromExe;
+        }
+    }
+    catch { }
+
     try
     {
         var asm = typeof(Updater).Assembly;
         var attr = (System.Reflection.AssemblyInformationalVersionAttribute?)
             Attribute.GetCustomAttribute(asm, typeof(System.Reflection.AssemblyInformationalVersionAttribute));
-        string v = attr?.InformationalVersion ?? asm.GetName().Version?.ToString() ?? "1.0.0";
-        int plus = v.IndexOf('+');
-        if (plus > 0) v = v[..plus];
-        int dash = v.IndexOf('-');
-        return dash > 0 ? v[..dash] : v;
+        string v = CleanVersion(attr?.InformationalVersion ?? asm.GetName().Version?.ToString());
+        return v.Length > 0 ? v : "1.0.0";
     }
     catch { return "1.0.0"; }
+}
+
+/// <summary>去掉 +构建元数据、-预览后缀，以及尾部多余的 .0（2.1.0.0 → 2.1.0）。</summary>
+private static string CleanVersion(string? v)
+{
+    if (string.IsNullOrWhiteSpace(v)) return "";
+    v = v.Trim();
+    int cut = v.IndexOfAny(new[] { '+', '-' });
+    if (cut > 0) v = v[..cut];
+    var parts = new List<string>(v.Split('.'));
+    while (parts.Count > 3 && parts[^1] == "0") parts.RemoveAt(parts.Count - 1);
+    return string.Join(".", parts).Trim();
 }
 
 /// <summary>统一的 HTTP 客户端：GitHub API 强制要求 User-Agent。</summary>
