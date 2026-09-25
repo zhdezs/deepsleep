@@ -188,7 +188,7 @@ public sealed partial class MainWindow : Window
             if (core == null) { Log("WebView2 未就绪（CoreWebView2 为空）compat=" + compat); return false; }
             Log("WebView2 已创建 compat=" + compat);
             core.Settings.IsZoomControlEnabled = false;
-            core.Settings.AreDefaultContextMenusEnabled = false;
+            core.Settings.AreDefaultContextMenusEnabled = true;   // 保留浏览器自带菜单（输入框右键粘贴用），会话列表等自定义右键菜单仍然先 preventDefault
             core.Settings.AreDevToolsEnabled = false;
             string uiDir = Path.Combine(AppContext.BaseDirectory, "ui");
             core.SetVirtualHostNameToFolderMapping(Kernel.UiHost, uiDir, CoreWebView2HostResourceAccessKind.Allow);

@@ -120,7 +120,7 @@ function renderConvs() {
 
 function itemNodes(it) {
   const nodes = [];
-  if (it.showTime && !it.sys && !it.thinking) {
+  if (it.showTime && !it.thinking) {
     const tl = document.createElement('div');
     tl.className = 'timeline';
     tl.textContent = it.time;
@@ -208,6 +208,7 @@ function findRow(conv, id) {
 }
 
 function updateText(conv, id, text) {
+  if (!S.conv || conv !== S.conv.sid) return;
   const it = S.items.find(x => x.id === id);
   if (it) { it.text = text; it.thinking = false; }
   const row = findRow(conv, id);
@@ -224,6 +225,7 @@ function patchItem(conv, m) {
 }
 
 function removeItem(conv, id) {
+  if (!S.conv || conv !== S.conv.sid) return;
   S.items = S.items.filter(x => x.id !== id);
   const row = findRow(conv, id);
   if (row) {
@@ -294,6 +296,7 @@ function handleEvent(m) {
       renderConvs(); renderItems(); renderStatus(m.status);
       break;
     case 'convs':
+      if (m.tab != null && m.tab !== S.tab) break;
       S.convs = m.convs || []; renderConvs();
       break;
     case 'conv':
@@ -302,11 +305,11 @@ function handleEvent(m) {
       renderConvs(); renderItems();
       if (m.status) renderStatus(m.status);
       break;
-    case 'add': addItem(m.item); break;
+    case 'add': if (m.kind === kind()) addItem(m.item); break;
     case 'delta': updateText(m.conv, m.id, m.text); break;
     case 'msgUpdate': patchItem(m.conv, m); break;
     case 'msgRemove': removeItem(m.conv, m.id); break;
-    case 'status': if (m.kind === kind()) renderStatus(m); break;
+    case 'status': if (m.kind === kind() && (m.conv == null || !S.conv || m.conv === S.conv.sid)) renderStatus(m); break;
     case 'theme': setTheme(m.theme); break;
     case 'mode': $('#mode').value = m.mode; break;
     case 'fast': $('#tgFast').checked = !!m.on; break;
@@ -478,6 +481,7 @@ function openMemory(m) {
 function openSkills(m) {
   const list = (m && m.list) || S.skills || [];
   const body = openModal('skills', '🧩 技能管理', [{ t: '关闭' }]);
+  if (!m) call('skills');
   const intro = document.createElement('div');
   intro.style.cssText = 'font-size:12px;color:var(--muted);margin:8px 0';
   intro.textContent = '已安装技能（AI 识别技能名后会自动套用说明）：共 ' + list.length + ' 个';
@@ -706,14 +710,15 @@ function setInput(text) {
   autosize();
   t.focus();
 }
-async function doSend() {
+function doSend() {
   const t = $('#input');
   const text = t.value.trim();
   const st = S.state;
   if (st === 'idle' && !text) return;
-  if (st === 'stopped' && !text) { await call('send', { kind: kind(), text: '' }); return; }
-  await call('send', { kind: kind(), text, target: petMode ? 'pet' : 'main' });
-  if (st !== 'running') { t.value = ''; autosize(); }
+  const target = petMode ? 'pet' : 'main';
+  if (st === 'running') { call('send', { kind: kind(), text, target }); return; }
+  t.value = ''; autosize();
+  call('send', { kind: kind(), text, target });
 }
 
 function wire() {
@@ -747,6 +752,7 @@ function wire() {
   $('#btnUpdate').onclick = () => onUpdateClick();
   $('#input').oninput = autosize;
   $('#input').onkeydown = e => {
+    if (e.isComposing || e.keyCode === 229) return;   // 输入法组词中，回车/Esc 交给输入法
     if (e.key === 'Escape') { e.preventDefault(); call('stop', { kind: kind() }); return; }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();

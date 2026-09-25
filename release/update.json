@@ -1,6 +1,6 @@
 {
-    "version":  "2.0.1",
-    "url":  "https://github.com/zhdezs/deepsleep/releases/download/v2.0.1/deepsleep-Setup.exe",
-    "sha256":  "4744F9D20657C618D38754F988FCE6265F0D9A804863E864CC7489F17CE7249C",
-    "notes":  "2.0.1：更新线路可在客户端切换，默认 Gitee ——（1）⚙ 设置 → OTA 自动更新里新增「更新线路（下载走哪边）」：Gitee 国内源（默认，推荐）/ GitHub，随时可切；（2）Gitee 线路不再探速，直接从 Gitee 下（Gitee 连不上、卡住或长时间低于 60 KB/s 才回退 GitHub），省掉以前每次更新都要给两个源各量一次速的几秒等待；（3）两条线路下完都按官方 SHA256 校验；Gitee 那条 Release 的说明里也写上了安装包 SHA256，所以走 Gitee 时整条链路连 GitHub API 都不用访问，国内网络下也能顺利更新；（4）老配置自动兼容：以前「同时用 Gitee 同名仓库加速」开着的等于选了 Gitee 线路、关掉的等于选了 GitHub 线路；内核与界面分离、HTML 界面、桌宠等其余功能与 2.0.0 一致。"
+    "version":  "2.0.2",
+    "url":  "https://github.com/zhdezs/deepsleep/releases/download/v2.0.2/deepsleep-Setup.exe",
+    "sha256":  "3F38F44D6B93434131F21A22262E97D339EDAA84210CF4AB1D99184C031B9D86",
+    "notes":  "2.0.2：修了一轮 HTML 界面的移植 bug ——（1）发送后输入框立刻清空，不用等整轮回复；（2）中文输入法选词时的回车不再误发、候选框上的 Esc 不再误触发停止；（3）系统提示（正在思考 / 已停止 / 出错）也带时间线；（4）切换「AI 助手 / Agent 集群」标签或切换会话时，状态栏与消息不再串台；（5）桌宠浮窗里的「恢复」不再发到主窗口；（6）打开技能面板时自动刷新，不再显示旧缓存；（7）消息文字可以选中复制，输入框右键恢复粘贴菜单；另外发布方式改进：Gitee 那条 Release 现在把完整安装包和分片一起上传。功能与 2.0.1 一致，仅修 bug。"
 }

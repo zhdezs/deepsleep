@@ -60,7 +60,7 @@ public sealed class PetChatWindow
             var core = _web.CoreWebView2;
             if (core == null) return;
             core.Settings.IsZoomControlEnabled = false;
-            core.Settings.AreDefaultContextMenusEnabled = false;
+            core.Settings.AreDefaultContextMenusEnabled = true;   // 保留浏览器自带菜单（输入框右键粘贴用），会话列表等自定义右键菜单仍然先 preventDefault
             core.Settings.AreDevToolsEnabled = false;
             core.SetVirtualHostNameToFolderMapping(Kernel.UiHost, uiDir, CoreWebView2HostResourceAccessKind.Allow);
             core.SetVirtualHostNameToFolderMapping(Kernel.DataHost, dataDir, CoreWebView2HostResourceAccessKind.Allow);

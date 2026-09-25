@@ -139,7 +139,10 @@ def planned_assets(version):
     plan = []
     for p in cands:
         if os.path.isfile(p):
-            plan.extend(split_installer(p))
+            plan.append((os.path.basename(p), p, os.path.getsize(p)))   # 整包：和切片一起上传
+            parts = split_installer(p)
+            if len(parts) > 1:
+                plan.extend(parts)                                      # 超限时再补切片（客户端优先用整包）
     return plan
 
 
@@ -320,8 +323,13 @@ def do_release(version, notes):
         print("Gitee Release 已创建：%s" % rel.get("html_url", tag))
 
     ok = True
-    for name, path, _size in plan:
-        ok = upload_asset(rel["id"], path, name) and ok
+    for name, path, size in plan:
+        if not upload_asset(rel["id"], path, name):
+            if size > PART_SIZE and ".part" not in name:
+                # Gitee 单附件上限 100MB：整包可能被拒，切片在就还能更新，不算致命
+                print("  警告：整包 %s（%.1f MB）上传失败，已保留切片" % (name, size / 1048576.0))
+                continue
+            ok = False
     return ok
 
 

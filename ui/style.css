@@ -123,6 +123,7 @@ body.dark .seg button.on { background: #636366; }
 }
 .row.self .bubble { background: var(--self); color: var(--self-text); }
 .row.self .bubble a { color: #fff; text-decoration: underline; }
+.bubble { user-select: text; }
 .bubble .who { font-size: 11px; font-weight: 600; opacity: .7; margin-bottom: 3px; }
 .sysbar {
   font-size: 11.5px; color: var(--muted); background: var(--code);
