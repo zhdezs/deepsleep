@@ -17,7 +17,7 @@
             <StackPanel>
                 <TextBlock Text="deepsleep AI 助手" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}"/>
                 <TextBlock x:Name="SubTitle" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"
-                           Text="版本 2.0.2  ·  内核与界面分离（界面改用 HTML + WebView2 渲染 / 工具调用链 / 技能 / Agent 集群 / 长期记忆 / 更新强制走 Gitee 秒更）"/>
+                           Text="版本 2.1.0  ·  内核与界面分离（界面改用 HTML + WebView2 渲染 / 工具调用链 / 技能 / Agent 集群 / 长期记忆 / 更新强制走 Gitee 秒更）"/>
             </StackPanel>
         </Border>
 
