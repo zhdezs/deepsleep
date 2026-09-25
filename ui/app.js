@@ -602,7 +602,16 @@ function openSettings(fresh) {
   sect('OTA 自动更新');
   body.appendChild(field('更新源（owner/repo 或 update.json 的 URL）', 'updateUrl', s.updateUrl));
   body.appendChild(ck('启动时自动检查更新', 'autoCheckUpdate', s.autoCheckUpdate));
-  body.appendChild(ck('同时用 Gitee 同名仓库加速（同版本先探速；校验始终用 GitHub 官方 SHA256）', 'giteeMirror', s.giteeMirror));
+  const lineBox = document.createElement('div');
+  lineBox.className = 'field';
+  lineBox.innerHTML = '<label>更新线路（下载走哪边）</label>' +
+    '<select id="updateSource">' +
+    '<option value="gitee">Gitee 国内源（默认，推荐）</option>' +
+    '<option value="github">GitHub</option>' +
+    '</select>' +
+    '<div class="hint">默认走 Gitee：不探速、直接从 Gitee 下（实测快一个数量级），只有 Gitee 连不上或下不动才回退 GitHub；两条线路下完都用官方 SHA256 校验，装的是同一个包。</div>';
+  body.appendChild(lineBox);
+  $('#updateSource').value = s.updateSource === 'github' ? 'github' : 'gitee';
   body.appendChild(field('录入 GitHub 令牌（多层加密保存，' + (s.tokenSaved ? '已保存' : '未保存') + '）', 'token', '', 'password', '私有仓库或想提高 GitHub API 限额时录入；用 DPAPI 加密存在 data\\github.token，不进配置文件。'));
   const tk = document.createElement('button');
   tk.className = 'btn'; tk.textContent = '🔑 加密保存令牌';
@@ -623,7 +632,7 @@ function saveSettings() {
     imageApiKey: val('imageApiKey'), imageModel: val('imageModel'),
     visionApiKey: val('visionApiKey'), visionModel: val('visionModel'),
     multimodalMain: chk('multimodalMain'),
-    updateUrl: val('updateUrl'), autoCheckUpdate: chk('autoCheckUpdate'), giteeMirror: chk('giteeMirror'),
+    updateUrl: val('updateUrl'), autoCheckUpdate: chk('autoCheckUpdate'), updateSource: val('updateSource'),
     petEnabled: chk('petEnabled'),
     mode: val('setMode'), fast: chk('setFast'), search: chk('setSearch'),
   }).then(() => toast('设置已保存。'));

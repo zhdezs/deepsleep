@@ -1,6 +1,6 @@
 {
-    "version":  "2.0.0",
-    "url":  "https://github.com/zhdezs/deepsleep/releases/download/v2.0.0/deepsleep-Setup.exe",
-    "sha256":  "3D204F8FA8DBE7915D9596BEC751726F76F946495978818E8E58B632AE088BED",
-    "notes":  "2.0.0：内核与界面分离，界面改用 HTML 重写（仍在客户端本地运行）——（1）程序拆成两块：内核 Deepsleep.Core（模型调用 / 工具调用链 / 技能库 / 长期记忆 / Agent 集群 / 断点恢复 / OTA，零界面依赖）+ 界面 ui\\（纯 HTML+CSS+JS，由客户端内嵌的 WebView2 本地加载，不联外网），以后改界面不用再编译 C#；（2）外壳只做三件事：开窗口、把 ui 目录挂成虚拟站点 app.local（data 目录挂成 data.local）、在内核与界面之间转发消息；文件选择器、打开链接、开关桌宠这类系统操作仍由外壳实现；（3）界面依旧是 macOS 风格（自绘标题栏 + 分段控件 + iMessage 风格气泡 + 系统蓝强调色 + 深浅色两套），Markdown 渲染、代码块一键复制、设置 / 记忆 / 技能 / 模板弹窗都搬到了前端；桌宠照旧 45% 缩放、真透明、单击弹出 HTML 聊天浮窗、按住拖动并记住位置；（4）首次启动若界面没渲染出来（系统缺 WebView2 运行时或被安全软件拦），窗口会直接给中文提示 + 「重试」「打开数据目录」，不会只留白窗口；（5）用户数据（Key、对话、记忆、技能、桌宠位置）与 1.x 完全通用，升级安装不会覆盖。"
+    "version":  "2.0.1",
+    "url":  "https://github.com/zhdezs/deepsleep/releases/download/v2.0.1/deepsleep-Setup.exe",
+    "sha256":  "4744F9D20657C618D38754F988FCE6265F0D9A804863E864CC7489F17CE7249C",
+    "notes":  "2.0.1：更新线路可在客户端切换，默认 Gitee ——（1）⚙ 设置 → OTA 自动更新里新增「更新线路（下载走哪边）」：Gitee 国内源（默认，推荐）/ GitHub，随时可切；（2）Gitee 线路不再探速，直接从 Gitee 下（Gitee 连不上、卡住或长时间低于 60 KB/s 才回退 GitHub），省掉以前每次更新都要给两个源各量一次速的几秒等待；（3）两条线路下完都按官方 SHA256 校验；Gitee 那条 Release 的说明里也写上了安装包 SHA256，所以走 Gitee 时整条链路连 GitHub API 都不用访问，国内网络下也能顺利更新；（4）老配置自动兼容：以前「同时用 Gitee 同名仓库加速」开着的等于选了 Gitee 线路、关掉的等于选了 GitHub 线路；内核与界面分离、HTML 界面、桌宠等其余功能与 2.0.0 一致。"
 }

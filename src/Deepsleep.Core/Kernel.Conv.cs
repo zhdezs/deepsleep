@@ -488,7 +488,8 @@ public sealed partial class Kernel
         if (a.TryGetProperty("useOllama", out _)) _config.UseOllama = GetBool(a, "useOllama");
         _config.UpdateUrl = Str("updateUrl", _config.UpdateUrl);
         if (a.TryGetProperty("autoCheckUpdate", out _)) _config.AutoCheckUpdate = GetBool(a, "autoCheckUpdate");
-        if (a.TryGetProperty("giteeMirror", out _)) _config.GiteeMirror = GetBool(a, "giteeMirror");
+        string? src = GetStr(a, "updateSource");
+        if (src != null) _config.UpdateSource = src.Trim().ToLowerInvariant() == "github" ? "github" : "gitee";
         if (a.TryGetProperty("petEnabled", out _)) _config.PetEnabled = GetBool(a, "petEnabled");
         _config.Save();
 

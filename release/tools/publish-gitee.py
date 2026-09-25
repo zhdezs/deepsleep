@@ -286,6 +286,13 @@ def do_release(version, notes):
         return False
     want = {name for name, _p, _s in plan}
 
+    # 把安装包的 SHA256 写进 Gitee Release 说明：客户端"强制走 Gitee"时靠它自校验，
+    # 整条更新链就不依赖 GitHub API 了（Gitee 的附件 JSON 里没有 size/digest 字段）。
+    installer = os.path.join(ROOT, "release", "deepsleep-Setup.exe")
+    if os.path.isfile(installer):
+        notes = (notes or "").rstrip() + "\n\nSHA256: " + sha256(installer)
+        print("  已把安装包 SHA256 写进 Release 说明（供客户端校验）")
+
     st, rel = api("GET", "/releases/tags/" + tag)
     if st == 200 and isinstance(rel, dict) and rel.get("id"):
         have = [a.get("name") for a in (rel.get("assets") or [])]

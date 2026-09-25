@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace TrollWrangler;
 
@@ -36,8 +37,14 @@ public sealed class AppConfig
     public string UpdateUrl { get; set; } = "";
     /// <summary>启动时自动检查更新。</summary>
     public bool AutoCheckUpdate { get; set; } = true;
-    /// <summary>更新源是 GitHub 时，同时看同名 Gitee 仓库并优先从 Gitee 下载（国内快，校验仍用 GitHub 摘要）。</summary>
-    public bool GiteeMirror { get; set; } = true;
+    /// <summary>
+    /// 更新线路：<c>"gitee"</c>（默认，国内快）或 <c>"github"</c>；客户端 ⚙ 设置里可随时切换。
+    /// Gitee 线路下不探速，直接走 Gitee，只有 Gitee 连不上/下不动才回退 GitHub；校验始终用官方 SHA256。
+    /// </summary>
+    public string UpdateSource { get; set; } = "gitee";
+    /// <summary>是否把 Gitee 当优先线路（UpdateSource != "github"）。只读派生值，不写进配置文件。</summary>
+    [JsonIgnore]
+    public bool GiteeFirst => !string.Equals(UpdateSource, "github", StringComparison.OrdinalIgnoreCase);
     /// <summary>是否显示桌面鲸鱼桌宠。</summary>
     public bool PetEnabled { get; set; } = true;
     /// <summary>桌宠左上角坐标（拖到哪记到哪）；-1 表示用默认的右下角位置。</summary>
@@ -105,13 +112,16 @@ public sealed class AppConfig
                     if (uo.ValueKind == JsonValueKind.True || uo.ValueKind == JsonValueKind.False)
                         cfg.UseOllama = uo.GetBoolean();
                 if ((v = GetStr(root, "theme", "Theme")) != null) cfg.Theme = v;
-                // 下面几项早先只有写、没有读：隐藏了桌宠 / 关了 Gitee 加速，重启就白设了
+                // 下面几项早先只有写、没有读：隐藏了桌宠 / 选了线路，重启就白设了
                 if (root.TryGetProperty("petEnabled", out var pe) || root.TryGetProperty("PetEnabled", out pe))
                     if (pe.ValueKind == JsonValueKind.True || pe.ValueKind == JsonValueKind.False)
                         cfg.PetEnabled = pe.GetBoolean();
-                if (root.TryGetProperty("giteeMirror", out var gm) || root.TryGetProperty("GiteeMirror", out gm))
+                if ((v = GetStr(root, "updateSource", "UpdateSource")) != null)
+                    cfg.UpdateSource = v.Trim().ToLowerInvariant() == "github" ? "github" : "gitee";
+                // 兼容旧版本配置里的布尔开关：giteeMirror=true 就是 Gitee 线路，false 是 GitHub 线路
+                else if (root.TryGetProperty("giteeMirror", out var gm) || root.TryGetProperty("GiteeMirror", out gm))
                     if (gm.ValueKind == JsonValueKind.True || gm.ValueKind == JsonValueKind.False)
-                        cfg.GiteeMirror = gm.GetBoolean();
+                        cfg.UpdateSource = gm.GetBoolean() ? "gitee" : "github";
                 if (root.TryGetProperty("petX", out var px) || root.TryGetProperty("PetX", out px))
                     if (px.ValueKind == JsonValueKind.Number && px.TryGetInt32(out int pxv)) cfg.PetX = pxv;
                 if (root.TryGetProperty("petY", out var py) || root.TryGetProperty("PetY", out py))

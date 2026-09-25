@@ -205,8 +205,8 @@ public static bool TryParseGitHub(string text, out string owner, out string repo
 }
 
 /// <summary>读取更新源，返回比当前版本更新的信息；无更新或失败返回 null。</summary>
-/// <param name="giteeMirror">GitHub 源时是否同时看同名 Gitee 仓库（国内下载快）。</param>
-public static async Task<UpdateInfo?> CheckAsync(string manifestUrl, bool giteeMirror = true,
+/// <param name="giteeFirst">Gitee 优先线路（⚙ 设置里的「更新线路」，默认 Gitee）：GitHub 更新源也会同时看同名 Gitee 仓库并从 Gitee 下载。</param>
+public static async Task<UpdateInfo?> CheckAsync(string manifestUrl, bool giteeFirst = true,
                                                  CancellationToken ct = default)
 {
     if (string.IsNullOrWhiteSpace(manifestUrl)) return null;
@@ -223,7 +223,7 @@ public static async Task<UpdateInfo?> CheckAsync(string manifestUrl, bool giteeM
     if (TryParseGitHub(manifestUrl, out string owner, out string repo))
     {
         var gh = await CheckGitHubAsync(owner, repo, ct).ConfigureAwait(false);
-        var gt = giteeMirror ? await CheckGiteeAsync(owner, repo, ct).ConfigureAwait(false) : null;
+        var gt = giteeFirst ? await CheckGiteeAsync(owner, repo, ct).ConfigureAwait(false) : null;
 
         bool ghNewer = gh != null && IsNewer(gh.Version, CurrentVersion);
         bool gtNewer = gt != null && IsNewer(gt.Version, CurrentVersion);
@@ -396,10 +396,24 @@ private static async Task<UpdateInfo?> CheckGiteeAsync(string owner, string repo
         }
 
         if (string.IsNullOrWhiteSpace(url)) return null;
+
+        // Gitee 那边没有 size/digest 字段，所以发布脚本会把安装包的 SHA256 写进 Release 说明里
+        // （形如 "SHA256: 3d20…"）。有它就自己校验，这样走 Gitee 线路时整条链不依赖 GitHub API。
+        string sha = "";
+        var shaMatch = System.Text.RegularExpressions.Regex.Match(
+            notes ?? "", @"(?i)sha256\s*[:：]\s*([0-9a-f]{64})");
+        if (shaMatch.Success)
+        {
+            sha = shaMatch.Groups[1].Value.ToLowerInvariant();
+            // 校验行不往界面上显示，更新说明只留人话
+            notes = System.Text.RegularExpressions.Regex
+                .Replace(notes ?? "", @"(?im)^\s*sha256\s*[:：].*$", "").Trim();
+        }
+
         return new UpdateInfo
         {
-            Version = NormalizeVersion(tag), Url = url, Notes = notes, Size = size, Source = "gitee",
-            PartUrls = partUrls, PartSizes = partSizes,
+            Version = NormalizeVersion(tag), Url = url, Notes = notes ?? "", Size = size, Source = "gitee",
+            Sha256 = sha, PartUrls = partUrls, PartSizes = partSizes,
         };
     }
     catch { return null; }
@@ -535,9 +549,10 @@ public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double
     Directory.CreateDirectory(DownloadDir);
     string dest = Path.Combine(DownloadDir, "deepsleep-Setup.exe");
 
-    // ① 优先走 Gitee（国内实测 2 MB/s 上下，比 GitHub 直连快一个数量级）。
-    //    只有**实测确实比 GitHub 慢**（境外直连 Gitee 常见）或干脆连不上，才换 GitHub：
-    //    两边各探一次速，谁的快用谁 —— 不再拿一个拍脑袋的绝对值当门槛（那个坑见 ProbeSpeedKbpsAsync）。
+    // ① Gitee 优先线路（默认，⚙ 设置里可切成 GitHub 线路）：只要 Gitee 上有同一个版本，
+    //    就直接从 Gitee 下，不再跟 GitHub 探速比快慢（国内 Gitee 快一个数量级，探速纯属浪费时间）。
+    //    只有 Gitee 连不上、报错、卡住，或长时间低于保底速度，才回退 GitHub 接着下
+    //    —— 回退后照样按官方 SHA256 校验，镜像搬不了假货。
     string? giteeUrl = info.PartUrls.Count > 0
         ? info.PartUrls[0]
         : (IsGiteeUrl(info.MirrorUrl) ? info.MirrorUrl : null);
@@ -545,53 +560,30 @@ public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double
     Exception? giteeError = null;
     if (giteeUrl != null)
     {
-        bool useGitee = true;
-        double minKbps = 0;      // Gitee 这条路的最低速度门槛：按实测值的 1/3，防它中途掉到龟速
-        if (!giteeOnly)
+        // 不探速了，就没有"实测速度的三分之一"可用，只留保底门槛；卡住检测（GiteeStallSeconds）照旧
+        const double minKbps = GiteeMinKbpsFloor;
+        if (!giteeOnly) onStatus?.Invoke("正在从 Gitee 下载（Gitee 优先线路，不探速比快慢）…");
+        try
         {
-            double giteeKbps = await ProbeSpeedKbpsAsync(giteeUrl, ct).ConfigureAwait(false);
-            if (giteeKbps < 0)
+            // Gitee 单附件放不下整包时那边切成 part1/part2…：逐片下齐再拼回整包；
+            // 片没下成、或者中途卡住/太慢，就退回下面的 GitHub 流程（照样按官方 SHA256 校验）
+            if (info.PartUrls.Count > 0)
             {
-                useGitee = false;
-                onStatus?.Invoke("Gitee 连不上，自动改用 GitHub 下载");
+                onStatus?.Invoke($"正在从 Gitee 下载分片（{info.PartUrls.Count} 片，下齐后拼回整包）…");
+                return await DownloadPartsAsync(info, dest, progress, ct, onStatus, minKbps).ConfigureAwait(false);
             }
-            else
-            {
-                double githubKbps = await ProbeSpeedKbpsAsync(info.Url, ct).ConfigureAwait(false);
-                useGitee = githubKbps < 0 || giteeKbps >= githubKbps * 0.8;   // 差不多快也选 Gitee
-                minKbps = Math.Max(GiteeMinKbpsFloor, giteeKbps / 3.0);
-                onStatus?.Invoke(useGitee
-                    ? githubKbps < 0
-                        ? $"Gitee 国内源 {giteeKbps:0} KB/s（GitHub 直连不通），走 Gitee 下载（校验仍用 GitHub 官方 SHA256）"
-                        : $"Gitee {giteeKbps:0} KB/s、GitHub 直连 {githubKbps:0} KB/s → 走 Gitee 下载（校验仍用 GitHub 官方 SHA256）"
-                    : $"GitHub 直连 {githubKbps:0} KB/s 比 Gitee 的 {giteeKbps:0} KB/s 快 → 走 GitHub 下载");
-            }
+            onStatus?.Invoke("正在从 Gitee 下载整包…");
+            return await DownloadOnceAsync(info, info.MirrorUrl, dest, progress, ct, true,
+                                           GiteeStallSeconds, minKbps).ConfigureAwait(false);
         }
-        if (useGitee)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            try
-            {
-                // Gitee 单附件放不下整包时那边切成 part1/part2…：逐片下齐再拼回整包；
-                // 片没下成、或者中途卡住/太慢，就退回下面的 GitHub 流程（照样按官方 SHA256 校验）
-                if (info.PartUrls.Count > 0)
-                {
-                    onStatus?.Invoke($"正在从 Gitee 下载分片（{info.PartUrls.Count} 片，下齐后拼回整包）…");
-                    return await DownloadPartsAsync(info, dest, progress, ct, onStatus, minKbps).ConfigureAwait(false);
-                }
-                onStatus?.Invoke("正在从 Gitee 下载整包…");
-                return await DownloadOnceAsync(info, info.MirrorUrl, dest, progress, ct, true,
-                                               GiteeStallSeconds, minKbps).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                giteeError = ex;
-                if (giteeOnly) throw;                 // 更新源只填了 Gitee：没有别的路可退
-                CleanParts(dest);
-                onStatus?.Invoke("Gitee 没下成，自动改用 GitHub：" + ex.Message);
-            }
+            giteeError = ex;
+            if (giteeOnly) throw;                 // 更新源只填了 Gitee：没有别的路可退
+            CleanParts(dest);
+            onStatus?.Invoke("Gitee 没下成，回退 GitHub：" + ex.Message);
         }
     }
-
     // 本地文件 / 共享盘：直接复制
     if (!info.Url.StartsWith("http", StringComparison.OrdinalIgnoreCase))
     {
@@ -677,43 +669,6 @@ private static void CleanParts(string dest)
             try { File.Delete(f); } catch { }
     }
     catch { }
-}
-
-/// <summary>
-/// 探一下这个地址实际能跑多快：只拉前 512KB。
-/// 计时**从收到第一个字节才开始**，不算 TLS 握手 / 302 跳转的固定开销 ——
-/// 踩过的坑：把固定开销算进去，实测 2 MB/s 的 Gitee 会被量成 160 KB/s，
-/// 于是"自动改用 GitHub"，而 GitHub 直连当时只有 45 KB/s，白白慢十几倍。
-/// 连不上 / 一个字节都没来返回 -1。
-/// </summary>
-private static async Task<double> ProbeSpeedKbpsAsync(string url, CancellationToken ct)
-{
-    const int want = 524288;
-    const double maxSeconds = 5;
-    try
-    {
-        using var hc = NewClient(TimeSpan.FromSeconds(12));
-        using var req = new HttpRequestMessage(HttpMethod.Get, url);
-        req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, want - 1);
-        using var resp = await hc.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-        if (!resp.IsSuccessStatusCode) return -1;
-        using var src = await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-        var buf = new byte[65536];
-        long got = 0;
-        var clock = Stopwatch.StartNew();
-        while (got < want)
-        {
-            int n = await src.ReadAsync(buf.AsMemory(0, (int)Math.Min(buf.Length, want - got)), ct).ConfigureAwait(false);
-            if (n <= 0) break;
-            if (got == 0) clock.Restart();      // 首个字节到手，这才是"开始下载"的时刻
-            got += n;
-            if (clock.Elapsed.TotalSeconds > maxSeconds) break;
-        }
-        if (got <= 0) return -1;
-        return got / 1024.0 / Math.Max(0.1, clock.Elapsed.TotalSeconds);
-    }
-    catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
-    catch { return -1; }
 }
 
 /// <summary>带「卡住检测」的读取：超过 stallSeconds 一个字节都没来，就当这个源不行（抛 TimeoutException）。</summary>

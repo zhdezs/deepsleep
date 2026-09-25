@@ -459,7 +459,7 @@ public sealed partial class Kernel
         ["multimodalMain"] = _config.MultimodalMain,
         ["updateUrl"] = _config.UpdateUrl,
         ["autoCheckUpdate"] = _config.AutoCheckUpdate,
-        ["giteeMirror"] = _config.GiteeMirror,
+        ["updateSource"] = _config.UpdateSource,
         ["petEnabled"] = _config.PetEnabled,
         ["theme"] = _config.Theme,
         ["mode"] = _agent.RunMode,

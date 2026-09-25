@@ -6,10 +6,10 @@
 
 | | |
 | --- | --- |
-| 当前版本 | **2.0.0**（内核与界面分离：界面改用 HTML + WebView2 渲染） |
+| 当前版本 | **2.0.1**（内核与界面分离：界面改用 HTML + WebView2 渲染；更新线路默认 Gitee、可切 GitHub） |
 | 系统要求 | Windows 10 1809+ / x64（推荐 Windows 11，可享亚克力毛玻璃界面） |
 | 下载 | [Releases](https://github.com/zhdezs/deepsleep/releases/latest) → `deepsleep-Setup.exe` |
-| OTA 更新源 | `zhdezs/deepsleep`（GitHub + Gitee 双源，在 ⚙ 设置里填这个即可一键升级） |
+| OTA 更新源 | `zhdezs/deepsleep`（GitHub + Gitee 双源，⚙ 设置里可切换线路，默认 Gitee） |
 ### 架构：内核与界面分离（2.0.0 起）
 
 ```
@@ -91,15 +91,18 @@ deepsleep-Setup.exe --silent --dir "D:\Apps\deepsleep" --no-desktop --no-launch
 （国内源）、`https://.../update.json` 直链、本地/局域网路径 `D:\release\update.json` 或
 `\\服务器\共享\update.json`。
 
-**Gitee 国内源（默认开，强烈建议留着）**：填 GitHub 仓库时会自动同时看同名 Gitee 仓库
-（`zhdezs/deepsleep`），同一个版本优先从 Gitee 下载（实测 **2 MB/s** 上下，同一时刻 GitHub 直连只有
-**45 KB/s**，差 40 多倍），**校验值仍然用 GitHub 官方摘要**，所以镜像搬不了假货。Gitee 单个附件上限
-100MB，装不下的大安装包在那边切成 `deepsleep-Setup.exe.part1` / `.part2` 存放，客户端逐片下载、
-支持断点续传，拼回整包后再校验。
+**更新线路：客户端里可切换，默认 Gitee**（⚙ 设置 → OTA 自动更新 → 更新线路）。填 GitHub 仓库时会
+自动同时看同名 Gitee 仓库（`zhdezs/deepsleep`），同一个版本优先从 Gitee 下载（实测 **2 MB/s** 上下，
+同一时刻 GitHub 直连只有 **45 KB/s**，差 40 多倍），**校验值仍然用官方 SHA256**，所以镜像搬不了假货。
+Gitee 单个附件上限 100MB，装不下的大安装包在那边切成 `deepsleep-Setup.exe.part1` / `.part2` 存放，
+客户端逐片下载、支持断点续传，拼回整包后再校验。
 
-开下前会**给两个源各探一次速（各拉约 512KB，计时从首字节开始，不算握手开销）**，谁快用谁，
-所以国内基本永远走 Gitee、境外才自动换 GitHub；Gitee 中途卡住（20 秒没数据）或掉到实测速度的
-三分之一以下，也会立刻换 GitHub 接着下。设置里有「同时用 Gitee 同名仓库加速」开关（默认开）。
+- **Gitee 国内源（默认）**：**不再探速比快慢**，直接从 Gitee 下；只有 Gitee 连不上、中途卡住（20 秒没数据）
+  或长时间低于 60 KB/s，才回退 GitHub 接着下——回退同样按官方 SHA256 校验。
+- **GitHub**：走 GitHub 直连（失败自动切国内加速镜像、断点续传），想强制走 GitHub 时选它。
+
+Gitee 那条 Release 说明里会带上安装包的 SHA256，所以走 Gitee 时整条链路连 GitHub API 都不用访问
+（国内网络下这点很关键），校验也不打折。
 
 **国内下载慢 / 断线**：客户端先走直连，失败或中断时自动按顺序切换国内加速镜像
 （`ghproxy.net` / `gh-proxy.com` / `hub.gitmirror.com`）**断点续传**接着下；下完仍然用 GitHub
