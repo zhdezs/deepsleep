@@ -154,10 +154,31 @@ function renderConvs() {
     box.appendChild(d);
   }
 }
+/* 贴底跟随：用户自己往上翻之后就不再自动滚到底（否则划不上去） */
+let stickBottom = true;
+let selfScroll = false;
+
+function nearBottom(pad) {
+  const box = $('#msgs');
+  return box.scrollHeight - box.scrollTop - box.clientHeight < pad;
+}
+
+function paintBottomBtn() {
+  $('#btnBottom').classList.toggle('hidden', nearBottom(120));
+}
+
 function scrollBottom(force) {
   const box = $('#msgs');
-  const near = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
-  if (force || near) box.scrollTop = box.scrollHeight;
+  if (force) stickBottom = true;
+  if (!stickBottom) { paintBottomBtn(); return; }
+  const jump = () => {
+    if (!stickBottom) return;
+    const max = box.scrollHeight - box.clientHeight;
+    if (max - box.scrollTop > 1) { selfScroll = true; box.scrollTop = max; }
+    paintBottomBtn();
+  };
+  jump();
+  requestAnimationFrame(jump);   // 图片/字体晚一步把高度撑开时再补一次
 }
 function msgNode(m) {
   const row = document.createElement('div');
@@ -659,9 +680,9 @@ function init() {
     setTimeout(() => { b.textContent = '复制'; }, 1200);
   });
   $('#msgs').addEventListener('scroll', () => {
-    const box = $('#msgs');
-    const near = box.scrollHeight - box.scrollTop - box.clientHeight < 120;
-    $('#btnBottom').classList.toggle('hidden', near);
+    if (selfScroll) { selfScroll = false; paintBottomBtn(); return; }
+    stickBottom = nearBottom(120);
+    paintBottomBtn();
   });
   $('#btnBottom').onclick = () => scrollBottom(true);
   window.addEventListener('beforeunload', () => { try { save(); } catch (e) { } });

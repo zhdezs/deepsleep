@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 /* deepsleep 界面层：只负责画面与交互，逻辑全在内核（通过 JSON 协议调用） */
 
 const $ = s => document.querySelector(s);
@@ -199,7 +199,7 @@ function addItem(it) {
   S.items.push(it);
   const box = $('#msgs');
   for (const n of itemNodes(it)) box.appendChild(n);
-  scrollBottom();
+  scrollBottom(!!it.self);
 }
 
 function findRow(conv, id) {
@@ -235,11 +235,32 @@ function removeItem(conv, id) {
   }
 }
 
+/* 贴底跟随：只有「用户自己没往上翻」时才自动滚到底。
+   以前滚动监听无条件回弹，导致划到底后再往上滑会被立刻拉回去（用户实测的 bug）。 */
+let stickBottom = true;    // 是否跟随新内容自动到底
+let selfScroll = false;    // 这次 scroll 事件是不是我们自己设 scrollTop 触发的
+
+function nearBottom(pad) {
+  const box = $('#msgs');
+  return box.scrollHeight - box.scrollTop - box.clientHeight < pad;
+}
+
+function paintBottomBtn() {
+  $('#btnBottom').classList.toggle('hidden', nearBottom(40));
+}
+
 function scrollBottom(force) {
   const box = $('#msgs');
-  const near = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
-  if (force || near) box.scrollTop = box.scrollHeight;
-  $('#btnBottom').classList.toggle('hidden', box.scrollHeight - box.scrollTop - box.clientHeight < 40);
+  if (force) stickBottom = true;
+  if (!stickBottom) { paintBottomBtn(); return; }   // 用户在翻历史，别抢他的滚动条
+  const jump = () => {
+    if (!stickBottom) return;
+    const max = box.scrollHeight - box.clientHeight;
+    if (max - box.scrollTop > 1) { selfScroll = true; box.scrollTop = max; }
+    paintBottomBtn();
+  };
+  jump();
+  requestAnimationFrame(jump);   // 图片/字体晚一步把高度撑开时再补一次
 }
 
 function renderStatus(st) {
@@ -768,7 +789,11 @@ function wire() {
   $('#btnClear').onclick = () => confirmBox('清空当前对话？',
     '清空后当前对话的消息与上下文都会被删掉，其他对话不受影响。', () => call('clear', { kind: kind() }), '清空');
   $('#btnBottom').onclick = () => scrollBottom(true);
-  $('#msgs').onscroll = () => scrollBottom();
+  $('#msgs').addEventListener('scroll', () => {
+    if (selfScroll) { selfScroll = false; paintBottomBtn(); return; }
+    stickBottom = nearBottom(40);        // 自己滑回底部附近才恢复自动跟随
+    paintBottomBtn();
+  });
   $('#convSearch').oninput = e => call('searchConv', { kind: kind(), q: e.target.value });
   $('#btnUpdate').onclick = () => onUpdateClick();
   $('#input').oninput = autosize;

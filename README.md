@@ -6,7 +6,7 @@
 
 | | |
 | --- | --- |
-| 当前版本 | **2.1.5**（新增 GitHub Pages 官网与免安装网页版，内置免费模型矩阵 Key：GLM-4.7-Flash 聊天 / GLM-4.6V-Flash 看图 / CogView-3-Flash 画图；新增内核版 `deepsleep-core.exe`：只装一个几十 MB 的内核，就能用任意浏览器操控这台电脑） |
+| 当前版本 | **2.1.6**（修复对话区「划到底后往上滑不动」的 bug：以前滚动监听会把视图一直拉回底部，现在只有你自己滑回底部附近（或点右下角「回到底部」）才恢复自动跟随，翻历史时不再被抢滚动条）。新增官网与免安装网页版（内置免费模型矩阵：GLM-4.7-Flash 聊天 / GLM-4.6V-Flash 看图 / CogView-3-Flash 画图）与内核版 `deepsleep-core.exe`：只装一个几十 MB 的内核，就能用任意浏览器操控这台电脑 |
 | 系统要求 | Windows 10 1809+ / x64（推荐 Windows 11，可享亚克力毛玻璃界面） |
 | 下载 | [Releases](https://github.com/zhdezs/deepsleep/releases/latest) → `deepsleep-Setup.exe` |
 | OTA 更新源 | `zhdezs/deepsleep`（GitHub + Gitee 双源，⚙ 设置里可切换线路，默认 Gitee） |
