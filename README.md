@@ -1,6 +1,6 @@
 ﻿﻿# deepsleep · Windows AI 助手
 
-**本地优先**的 Windows 桌面 AI 助手（WinUI 3），能力对标 Claude Code / Codex：
+**本地优先**的 Windows 桌面 AI 助手（html），能力对标 Claude Code / Codex：
 对话、工具调用、技能库、Agent 集群、长期记忆、断点恢复，外加**安装程序**与 **OTA 自动更新**。
 自带 .NET 运行时，单文件安装包，**不需要管理员权限**。
 
