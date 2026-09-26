@@ -386,6 +386,9 @@ public sealed partial class Kernel
         ["attName"] = it.AttachmentName,
         ["attSize"] = it.AttachmentSize,
         ["speaker"] = it.Speaker,
+        ["tool"] = it.ToolName,
+        ["toolSummary"] = it.ToolSummary,
+        ["toolDetail"] = it.ToolDetail,
         ["accepted"] = it.Accepted,
     };
 

@@ -31,6 +31,12 @@ public sealed class ApiClient : IDisposable
     public string? LastError { get; private set; }
 
     /// <summary>
+    /// 最近一次回复是不是被输出长度上限截断了（finish_reason=length）。
+    /// 上层据此自动续写，用户不用自己敲「继续」。
+    /// </summary>
+    public bool LastTruncated { get; internal set; }
+
+    /// <summary>
     /// 规范化后的请求地址。用户容易只填主机名（例如 https://api.deepseek.com/），
     /// 直接 POST 根地址会 404，所以这里按协议自动补全路径。
     /// </summary>
@@ -115,6 +121,8 @@ public sealed class ApiClient : IDisposable
         }
         try
         {
+        LastTruncated = false;
+        LastTruncated = false;
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
@@ -170,6 +178,8 @@ public sealed class ApiClient : IDisposable
                 return null;
             }
             string? text = choices[0].GetProperty("message").GetProperty("content").GetString();
+            if (choices[0].TryGetProperty("finish_reason", out var fr) && fr.ValueKind == JsonValueKind.String)
+                LastTruncated = fr.GetString() == "length";
             LastError = null;
             return text;
         }
@@ -292,6 +302,9 @@ public sealed class ApiClient : IDisposable
                     using var doc = JsonDocument.Parse(data);
                     var choices = doc.RootElement.GetProperty("choices");
                     if (choices.GetArrayLength() == 0) continue;
+                    if (choices[0].TryGetProperty("finish_reason", out var fr) &&
+                        fr.ValueKind == JsonValueKind.String && fr.GetString() == "length")
+                        LastTruncated = true;
                     var delta = choices[0].GetProperty("delta");
                     if (delta.TryGetProperty("content", out var c) && c.ValueKind == JsonValueKind.String)
                     {

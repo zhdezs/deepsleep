@@ -17,7 +17,7 @@
             <StackPanel>
                 <TextBlock Text="deepsleep AI 助手" FontSize="22" FontWeight="SemiBold" Foreground="{StaticResource TextBrush}"/>
                 <TextBlock x:Name="SubTitle" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,4,0,0"
-                           Text="版本 2.1.6  ·  内核与界面分离 / 工具调用链 / 技能 / Agent 集群 / 长期记忆 / 网络搜索 + 深度研究 / AGENT.md 初始提示词 / 官网 + 网页版 + 内核版（浏览器操控本机）/ 修复对话区滚不上去"/>
+                           Text="版本 2.2.0  ·  内核与界面分离 / 工具调用链 / 技能 / Agent 集群 / 长期记忆 / 网络搜索 + 深度研究 / AGENT.md 初始提示词 / 官网 + 网页版 + 内核版（浏览器操控本机）/ 桌宠可交互 + 工具结果可展开 + 摘要截断自动续写"/>
             </StackPanel>
         </Border>
 

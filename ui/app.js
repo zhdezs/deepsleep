@@ -37,10 +37,19 @@ function esc(s) {
     c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 function inline(t) {
-  return t.replace(/`([^`]+)`/g, (m, c) => '<code>' + c + '</code>')
-    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
-    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<i>$2</i>')
-    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2">$1</a>');
+  const keep = [];
+  const stash = html => { keep.push(html); return '\u0001' + (keep.length - 1) + '\u0001'; };
+  let s = t.replace(/`([^`]+)`/g, (m, c) => stash('<code>' + c + '</code>'));
+  s = s.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
+    (m, txt, url) => stash('<a href="' + url + '">' + txt + '</a>'));
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<i>$2</i>');
+  s = s.replace(/https?:\/\/[^\s<>"'\u0001]+/g, m => {
+    const tail = (m.match(/[.,;:!?)\]}，。；：！？）】]+$/) || [''])[0];
+    const url = tail ? m.slice(0, -tail.length) : m;
+    return '<a href="' + url + '">' + url + '</a>' + tail;
+  });
+  return s.replace(/\u0001(\d+)\u0001/g, (m, i) => keep[+i]);
 }
 function mdText(t) {
   const lines = esc(t).split('\n');
@@ -141,7 +150,7 @@ function itemNodes(it) {
     av.textContent = it.self ? (it.selfAvatar || '你') : (it.avatar || 'AI');
     row.appendChild(av);
     const b = document.createElement('div');
-    b.className = 'bubble';
+    b.className = 'bubble' + (it.tool ? ' tool' : '');
     row.appendChild(b);
     const acts = document.createElement('div');
     acts.className = 'acts';
@@ -163,6 +172,7 @@ function paintBubble(row, it) {
   if (!it.sys) {
     const b = row.querySelector('.bubble');
     if (!b) return;
+    if (it.tool) { paintTool(b, it); return; }
     if (it.thinking) {
       b.classList.add('thinking');
       if (b.dataset.think !== it.text) {
@@ -185,6 +195,27 @@ function paintBubble(row, it) {
     const bar = row.querySelector('.sysbar');
     if (bar) bar.textContent = it.text;
   }
+}
+
+function paintTool(b, it) {
+  const detail = it.toolDetail || it.text || '';
+  const sig = (it.tool || '') + '::' + (it.toolSummary || '') + '::' + detail.length + '::' + detail.slice(0, 48);
+  if (b.dataset.tsig === sig) return;
+  const prev = b.querySelector('details.toolcard');
+  const open = !!(prev && prev.open);
+  b.dataset.tsig = sig;
+  const det = document.createElement('details');
+  det.className = 'toolcard';
+  det.open = open;
+  const sum = document.createElement('summary');
+  const nm = document.createElement('span');  nm.className = 'tname'; nm.textContent = it.tool || 'tool';
+  const tx = document.createElement('span');  tx.className = 'tsum';  tx.textContent = it.toolSummary || '';
+  sum.append(nm, tx);
+  const body = document.createElement('div'); body.className = 'tbody';
+  body.innerHTML = md(detail);
+  det.append(sum, body);
+  b.innerHTML = '';
+  b.appendChild(det);
 }
 
 function renderItems() {
@@ -616,7 +647,7 @@ function openSettings(fresh) {
   const modeSel = document.createElement('div');
   modeSel.className = 'field';
   modeSel.innerHTML = '<label>AI 助手模式</label><select id="setMode">' +
-    '<option value="chat">chat · 聊天（可搜索 / 深度研究）</option>' +
+    '<option value="chat">chat · 聊天（不改动电脑）</option>' +
     '<option value="work">work · 命令需确认</option>' +
     '<option value="boom">boom · 全自动（命令免确认）</option></select>';
   body.appendChild(modeSel);

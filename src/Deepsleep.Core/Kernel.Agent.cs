@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -166,13 +167,16 @@ public sealed partial class Kernel
                 visionText = string.IsNullOrWhiteSpace(result) ? m.Content : result;
             }
 
+            bool isToolCard = isTool && !isVisionResult;
             var item = new ChatItem
             {
-                IsSys = isTool && !isVisionResult,
+                IsSys = false,
                 IsSelf = isUser,
                 CanAccept = false,
-                Text = isTool && !isVisionResult
-                    ? $"【工具「{m.Meta}」调用结果】\n{m.Content}"
+                ToolName = isToolCard ? m.Meta : "",
+                ToolSummary = isToolCard ? ToolCardSummary(m.Meta, m.Content) : "",
+                ToolDetail = isToolCard ? m.Content : "",
+                Text = isToolCard ? m.Content
                     : isVisionResult ? visionText
                     : isToolCallNotice ? m.Meta
                     : looksLikeToolJson ? "（AI 的工具调用 JSON 未解析成功，已忽略，正在继续…）"
@@ -277,6 +281,26 @@ public sealed partial class Kernel
             conv.Items.Add(item);
             Emit(new { ev = "add", kind = 0, conv = sid, item = ItemJson(item) });
         }
+    }
+
+    /// <summary>
+    /// 工具结果卡折叠时显示的一句话：搜到几篇 / 第一行是什么。
+    /// 展开后的明细就是工具原始返回，所以折叠态必须短、能一眼看出干了什么。
+    /// </summary>
+    private static string ToolCardSummary(string tool, string result)
+    {
+        if (tool == Agent.ToolSearch)
+        {
+            int n = Regex.Matches(result ?? "", @"(?m)^\s*\d+[.、]\s").Count;
+            return n > 0 ? $"搜到 {n} 篇资料（点开看标题 / 链接 / 摘要）" : "网络搜索 · 没有搜到结果";
+        }
+        if (tool == Agent.ToolResearch)
+            return "深度研究报告已生成（点开看正文与来源）";
+        string first = "";
+        foreach (string ln in (result ?? "").Split('\n'))
+            if (!string.IsNullOrWhiteSpace(ln)) { first = ln.Trim(); break; }
+        if (first.Length > 78) first = first[..78] + "…";
+        return first.Length > 0 ? first : $"已执行「{tool}」";
     }
 
     /// <summary>技能调用链：技能被自动匹配 / 补救启用时，在对应会话里显示一条系统提示。</summary>

@@ -367,7 +367,9 @@ public sealed class Agent
         var injectedSkills = new HashSet<string>();
         int formatFixes = 0;
         bool searched = false;
-        bool userWantsSearch = history.Any(m => m.Role == "user" && IsSearchIntent(m.Content));
+        // 搜索 / 研究意图在所有模式下都要认（深度研究不是 chat 模式的专属）
+        bool userWantsSearch = history.Any(m => m.Role == "user" &&
+            (IsSearchIntent(m.Content) || WantsResearch(m.Content)));
         string lastUserText = history.LastOrDefault(m => m.Role == "user")?.Content ?? "";
         // chat（纯聊天）默认不用工具；只有这一句带搜索/研究意图时才开一个只读工具通道
         bool chatToolTurn = RunMode == "chat" && WantsSearchOrResearch(lastUserText);
@@ -795,7 +797,7 @@ public sealed class Agent
             ? history.Select(m => (m.Role, MaybeAttachImage(m))).ToList()
             : history.Select(m => (m.Role, m.Content)).ToList();
         string sys = SystemPromptForMode() + BuildSkillsPrompt(history, injectedSkills) + FinalAnswerPrompt;
-        return await CallOnceAsync(sys, msgs, ct, onDelta);
+        return await CallOnceAutoContinueAsync(sys, msgs, ct, onDelta);
     }
 
     /// <summary>决策阶段是否明确表示「不需要工具」（{"tool_call":null} 等）。</summary>
@@ -874,7 +876,8 @@ public sealed class Agent
         var msgs = history.Select(m => (m.Role, m.Content)).ToList();
         if (MultimodalMain)
             msgs = history.Select(m => (m.Role, MaybeAttachImage(m))).ToList();
-        return await CallOnceAsync(SystemPromptForMode() + BuildSkillsPrompt(history, injectedSkills), msgs, ct, onDelta);
+        return await CallOnceAutoContinueAsync(SystemPromptForMode() + BuildSkillsPrompt(history, injectedSkills),
+                                               msgs, ct, onDelta);
     }
 
     /// <summary>多模态模式：把用户上传的图片路径转为 IMG|路径|文本 标记，由 API 客户端内联为 image_url。</summary>
@@ -997,12 +1000,42 @@ public sealed class Agent
     private static int AliasBonus(string user, SkillInfo s)
         => s.Aliases.Count(a => a.Length >= 2 && user.Contains(a, StringComparison.OrdinalIgnoreCase)) * 4;
 
+    /// <summary>被输出长度上限截断时最多自动续写几次（用户不用自己敲「继续」）。</summary>
+    private const int MaxContinuations = 4;
+
+    private const string ContinueHint =
+        "【续写】你上一条回复因为长度上限被截断了。请直接从断掉的地方接着往下写，" +
+        "不要重复已经写过的内容、不要重新开头、不要加任何解释或前后缀。";
+
+    /// <summary>
+    /// 调一次 LLM；如果回复因为 max_tokens 被截断（finish_reason=length），
+    /// 自动把已写内容回灌并让它接着写，直到写完或到次数上限。
+    /// 以前被截断就停在那儿，用户得手动说「继续」——现在软件自己续。
+    /// </summary>
+    private async Task<string?> CallOnceAutoContinueAsync(string system,
+        List<(string Role, string Content)> msgs, CancellationToken ct, Action<string>? onDelta)
+    {
+        string? text = await CallOnceAsync(system, msgs, ct, onDelta);
+        for (int i = 0; i < MaxContinuations; i++)
+        {
+            if (string.IsNullOrEmpty(text) || ct.IsCancellationRequested || !_api.LastTruncated) break;
+            Log($"回复被长度上限截断，自动续写第 {i + 1} 次（已 {text.Length} 字）");
+            msgs.Add(("assistant", text));
+            msgs.Add(("user", ContinueHint));
+            string? more = await CallOnceAsync(system, msgs, ct, onDelta);
+            if (string.IsNullOrWhiteSpace(more)) break;
+            text += more;
+        }
+        return text;
+    }
+
     /// <summary>单次 LLM 调用（不跑工具循环）：按后端选择 API / Ollama，429 自动退避重试。</summary>
     private async Task<string?> CallOnceAsync(string system,
         List<(string Role, string Content)> msgs, CancellationToken ct, Action<string>? onDelta)
     {
         if (Backend == "local")
         {
+            _api.LastTruncated = false;
             string user = msgs.Count > 0 ? msgs[^1].Content : "";
             string reply = LocalNormalReply(user);
             Log($"本地自训练 回复长度={reply.Length}");
@@ -1010,6 +1043,7 @@ public sealed class Agent
         }
         if (Backend == "llm")
         {
+            _api.LastTruncated = false;
             string? r = Streaming
                 ? await _ollama.ChatStreamAsync(system, msgs, onDelta, ct: ct)
                 : await _ollama.ChatAsync(system, msgs, ct: ct);
@@ -1549,13 +1583,16 @@ public sealed class Agent
     private bool ToolAllowedInMode(string tool)
         => RunMode != "chat" || tool is ToolSearch or ToolResearch;
 
-    /// <summary>用户这句话是否在要搜索 / 查资料 / 做研究（chat 模式下据此启用工具通道）。</summary>
-    private static bool WantsSearchOrResearch(string? text)
+    /// <summary>用户这句话是否在要「深度研究 / 调研 / 整份资料」。</summary>
+    private static bool WantsResearch(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return false;
-        return IsSearchIntent(text) ||
-               Regex.IsMatch(text, @"研究|调研|深度了解|全面了解|资料汇总|整理一份|帮我查查|查一查");
+        return Regex.IsMatch(text, @"研究|调研|深度了解|全面了解|资料汇总|整理一份|帮我查查|查一查");
     }
+
+    /// <summary>用户这句话是否在要搜索 / 查资料 / 做研究（chat 模式下据此启用工具通道）。</summary>
+    private static bool WantsSearchOrResearch(string? text)
+        => !string.IsNullOrWhiteSpace(text) && (IsSearchIntent(text!) || WantsResearch(text));
 
     /// <summary>搜索一次：优先爬虫脚本，失败回退内核内置爬虫；都没结果返回 null。</summary>
     private async Task<List<SearchHit>?> SearchOnceAsync(string query, CancellationToken ct)

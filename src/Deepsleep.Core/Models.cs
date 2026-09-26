@@ -36,6 +36,13 @@ public sealed class ChatItem
     public int SessionId { get; set; }
     /// <summary>集群成员气泡：显示角色名（"Agent「前端开发」"）。</summary>
     public string Speaker { get; set; } = "";
+
+    /// <summary>工具结果卡：工具名（网络搜索 / 深度研究 / 运行命令 / 写入文件…）。空 = 普通气泡。</summary>
+    public string ToolName { get; set; } = "";
+    /// <summary>折叠时显示的那一句话（「搜到 8 篇资料」/「命令：python a.py」）。</summary>
+    public string ToolSummary { get; set; } = "";
+    /// <summary>展开后的明细（搜索结果列表 / 命令输出 / 文件内容）。</summary>
+    public string ToolDetail { get; set; } = "";
 }
 
 /// <summary>一个对话会话（AI 助手 kind=0 / Agent 集群 kind=2）。</summary>

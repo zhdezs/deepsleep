@@ -1,4 +1,4 @@
-/// <summary>
+﻿/// <summary>
 /// deepsleep 桌面桌宠：Win32 分层窗口（WS_EX_LAYERED + UpdateLayeredWindow），逐像素 alpha，
 /// 完全不用框架窗口装饰 —— 桌面上只有鲸鱼本体，四周是真透明。
 /// 图像由构建期转好的 pet.raw（8 字节头 + 预乘 BGRA）直接喂进去，不依赖任何图像库。
@@ -26,13 +26,18 @@ public sealed class DesktopPet : IDisposable
     private const int WS_EX_LAYERED = 0x00080000, WS_EX_TOOLWINDOW = 0x00000080, WS_EX_TOPMOST = 0x00000008;
     private const int ULW_ALPHA = 0x02, AC_SRC_OVER = 0x00, AC_SRC_ALPHA = 0x01;
     private const int WM_LBUTTONDOWN = 0x0201, WM_MOUSEMOVE = 0x0200, WM_LBUTTONUP = 0x0202,
-                      WM_RBUTTONUP = 0x0205, WM_TIMER = 0x0113, WM_COMMAND = 0x0111;
+                      WM_RBUTTONUP = 0x0205, WM_TIMER = 0x0113, WM_COMMAND = 0x0111,
+                      WM_NCHITTEST = 0x0084, WM_MOUSEACTIVATE = 0x0021;
+    private const int HTCLIENT = 1, HTTRANSPARENT = -1, MA_NOACTIVATE = 3;
+    /// <summary>命中判定：alpha 低于这个值的像素算「空白处」，鼠标直接穿过去（别让透明方框挡住桌面）。</summary>
+    private const byte HitAlphaMin = 24;
     private const int SWP_NOSIZE = 0x0001, SWP_NOZORDER = 0x0004, SWP_NOACTIVATE = 0x0010;
     private const int SW_HIDE = 0, SW_SHOWNOACTIVATE = 4;
     private const uint MF_STRING = 0x0, TPM_RETURNCMD = 0x0100, TPM_RIGHTBUTTON = 0x0002;
 
     [StructLayout(LayoutKind.Sequential)] private struct POINT { public int X, Y; }
     [StructLayout(LayoutKind.Sequential)] private struct SIZE { public int cx, cy; }
+    [StructLayout(LayoutKind.Sequential)] private struct RECT { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] private struct BLENDFUNCTION { public byte BlendOp, BlendFlags, SourceConstantAlpha, AlphaFormat; }
     [StructLayout(LayoutKind.Sequential)]
     private struct BITMAPINFOHEADER
@@ -49,6 +54,7 @@ public sealed class DesktopPet : IDisposable
     [DllImport("user32.dll")] private static extern IntPtr SetWindowLongPtrW(IntPtr h, int i, IntPtr v);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr CallWindowProcW(IntPtr p, IntPtr h, uint m, IntPtr w, IntPtr l);
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT p);
+    [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr h, out RECT r);
     [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint f);
     [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr h, int cmd);
     [DllImport("user32.dll")] private static extern IntPtr SetCapture(IntPtr h);
@@ -77,6 +83,8 @@ public sealed class DesktopPet : IDisposable
     private IntPtr _hwnd = IntPtr.Zero, _prevProc = IntPtr.Zero, _memDC = IntPtr.Zero, _bmp = IntPtr.Zero;
     private WndProcDelegate? _proc;
     private int _w, _h, _x, _y, _phase;
+    /// <summary>缩小后每个像素的 alpha（命中判定用；0/低 = 该点鼠标穿透）。</summary>
+    private byte[] _alpha = Array.Empty<byte>();
     private bool _pressed, _dragging;
     private int _downX, _downY;
     private POINT _grab;
@@ -104,6 +112,8 @@ public sealed class DesktopPet : IDisposable
         _w = Math.Max(1, (int)Math.Round(srcW * PetScale));
         _h = Math.Max(1, (int)Math.Round(srcH * PetScale));
         byte[] pixels = Downscale(blob, srcW, srcH, _w, _h);
+        _alpha = new byte[_w * _h];
+        for (int i = 0; i < _alpha.Length; i++) _alpha[i] = pixels[i * 4 + 3];
 
         if (startX == int.MinValue || startY == int.MinValue)
         {
@@ -176,6 +186,15 @@ public sealed class DesktopPet : IDisposable
         return dst;
     }
 
+    /// <summary>屏幕坐标 (sx,sy) 这一点是不是落在鲸鱼身上（按缩小后的 alpha 判定）。</summary>
+    private bool AlphaHit(IntPtr h, int sx, int sy)
+    {
+        if (_alpha.Length == 0 || !GetWindowRect(h, out RECT r)) return true;
+        int x = sx - r.Left, y = sy - r.Top;
+        if (x < 0 || y < 0 || x >= _w || y >= _h) return false;
+        return _alpha[y * _w + x] >= HitAlphaMin;
+    }
+
     private void ClampToScreen()
     {
         int sw = GetSystemMetrics(0), sh = GetSystemMetrics(1);
@@ -189,6 +208,22 @@ public sealed class DesktopPet : IDisposable
     {
         switch (m)
         {
+            // 【桌宠无法交互的真根因】窗口是照系统的 "STATIC" 类建的，静态控件的窗口过程对
+            // WM_NCHITTEST 一律回 HTTRANSPARENT（静态控件天生「鼠标穿透」）→ 鲸鱼看得见、动画也在动，
+            // 但单击 / 拖拽 / 右键的鼠标消息全被透给了下面的桌面，桌宠等于一块摆设。
+            // 现在自己应答：鲸鱼身上（alpha 够高）回 HTCLIENT，四周真透明的区域回 HTTRANSPARENT，
+            // 既点得到，又不会拿那个透明方框去挡桌面的点击。
+            case WM_NCHITTEST:
+            {
+                long lp = l.ToInt64();
+                int sx = (short)(lp & 0xFFFF), sy = (short)((lp >> 16) & 0xFFFF);
+                return (IntPtr)(AlphaHit(h, sx, sy) ? HTCLIENT : HTTRANSPARENT);
+            }
+
+            // 点桌宠不抢焦点：不然点一下鲸鱼，用户正在打字的窗口就丢了焦点
+            case WM_MOUSEACTIVATE:
+                return (IntPtr)MA_NOACTIVATE;
+
             case WM_LBUTTONDOWN:
                 _pressed = true; _dragging = false;
                 GetCursorPos(out _grab);
