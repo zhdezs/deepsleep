@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>deepsleep 网页版</title>
+<link rel="stylesheet" href="../../ui/style.css">
+<style>
+  /* 网页版专属的一点小样式 */
+  #imgs { display: flex; gap: 8px; flex-wrap: wrap; padding: 0 24px 6px; }
+  #imgs.hidden { display: none; }
+  .imgchip { position: relative; display: flex; align-items: center; gap: 6px; background: var(--hover); border: 1px solid var(--border);
+             border-radius: 10px; padding: 4px 8px 4px 4px; font-size: 11.5px; }
+  .imgchip img { width: 34px; height: 34px; object-fit: cover; border-radius: 7px; }
+  .imgchip b { cursor: pointer; opacity: .55; font-weight: 400; }
+  .imgchip b:hover { opacity: 1; color: #FF453A; }
+  .chip.on { background: var(--chipon, rgba(10,132,255,.16)); color: var(--blue, #0a84ff); border-color: var(--blue, #0a84ff); }
+  .wbanner { margin: 10px 26px 0; padding: 8px 12px; border-radius: 10px; font-size: 12px; background: var(--hover);
+             color: var(--muted); display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+  .wbanner a { color: var(--blue, #0a84ff); text-decoration: none; }
+  .wbanner.hidden { display: none; }
+  .bubble img.genimg { max-height: 420px; border-radius: 12px; }
+</style>
+</head>
+<body class="light">
+<div id="app">
+
+  <header id="topbar">
+    <div class="seg" id="seg">
+      <button data-tab="0" class="on">deepsleep 网页版</button>
+    </div>
+    <div class="tb-right">
+      <a class="pill" href="../../" style="text-decoration:none">← 官网</a>
+      <a class="pill" href="../core/" style="text-decoration:none">🖥 连本机内核</a>
+      <button id="btnTheme" class="icon" title="深浅色">🌙</button>
+      <button id="btnSettings" class="icon" title="设置">⚙</button>
+    </div>
+  </header>
+
+  <div id="main">
+    <aside id="sidebar">
+      <div class="side-top">
+        <input id="convSearch" type="text" placeholder="搜索对话">
+        <button id="btnNew" class="round" title="新建对话">＋</button>
+      </div>
+      <div id="convList" class="scroll"></div>
+      <div class="side-bottom">
+        <button id="btnExport" class="chip-btn" title="导出对话（不含 Key）">⬇ 导出</button>
+        <button id="btnClear" class="chip-btn" title="清空当前对话">🗑 清空</button>
+      </div>
+    </aside>
+
+    <main id="chat">
+      <div class="wbanner" id="keyHint">
+        <span>内置免费模型矩阵：GLM-4.7-Flash 聊天 / GLM-4.6V-Flash 看图 / CogView-3-Flash 画图。人多了会被限流，可在 ⚙ 里填自己的 Key。</span>
+      </div>
+      <div id="msgs" class="scroll"></div>
+      <div id="imgs" class="hidden"></div>
+      <button id="btnBottom" class="fab hidden" title="回到底部">↓</button>
+
+      <div id="composer">
+        <div class="compose-row">
+          <button id="btnAttach" class="icon" title="发图片给 AI 看（GLM-4.6V-Flash）">🖼</button>
+          <button id="btnDraw" class="chip" title="画图模式（CogView-3-Flash）"><i>🎨</i><span>画图</span></button>
+          <a class="chip" href="../core/" style="text-decoration:none" title="联网 / 文件 / 命令等完整能力需要本机内核版"><i>🌐</i><span>联网（内核版）</span></a>
+        </div>
+        <div class="input-row">
+          <textarea id="input" rows="1" placeholder="说点什么…（Enter 发送 / Shift+Enter 换行）"></textarea>
+          <div class="compose-actions">
+            <button id="btnRegen" class="icon" title="重新生成">↻</button>
+            <button id="btnSend" class="send">发送</button>
+          </div>
+        </div>
+        <div class="compose-foot">
+          <span id="busy" class="busy"></span>
+          <span id="statusLine" class="status">纯前端 · 会话只存在你自己的浏览器里</span>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div id="toasts"></div>
+<div id="modalRoot"></div>
+<script src="../web.js"></script>
+</body>
+</html>

@@ -96,11 +96,11 @@ def source_files():
     注意：AGENTS.md **不进仓库**（只留本地，属于 AI 的开发约定），别加回来。
     """
     out = {}
-    for rel in ("README.md", ".gitignore"):
+    for rel in ("README.md", ".gitignore", "index.html"):
         p = os.path.join(ROOT, rel)
         if os.path.isfile(p):
             out[rel] = p
-    for top in ("src", "ui", "installer", "release"):
+    for top in ("src", "ui", "installer", "release", "web"):
         for dirpath, dirnames, filenames in os.walk(os.path.join(ROOT, top)):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
             for fn in filenames:
@@ -112,7 +112,8 @@ def source_files():
 
 
 def tracked(rel):
-    return rel in ("README.md", ".gitignore") or rel.split("/")[0] in ("src", "ui", "installer", "release")
+    return (rel in ("README.md", ".gitignore", "index.html")
+            or rel.split("/")[0] in ("src", "ui", "installer", "release", "web"))
 
 
 def split_installer(path):
@@ -143,7 +144,8 @@ def split_installer(path):
 
 def planned_assets(version):
     cands = [os.path.join(ROOT, "release", "deepsleep-Setup.exe"),
-             os.path.join(ROOT, "release", "deepsleep-%s-win-x64.zip" % version)]
+             os.path.join(ROOT, "release", "deepsleep-%s-win-x64.zip" % version),
+             os.path.join(ROOT, "release", "deepsleep-core-%s-win-x64.zip" % version)]
     plan = []
     for p in cands:
         if os.path.isfile(p):

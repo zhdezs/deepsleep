@@ -30,6 +30,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- 内核版（src\DeepSleepCore）是独立可执行程序，外壳不编译它 -->
+    <Compile Remove="DeepSleepCore\**" />
+    <Content Remove="DeepSleepCore\**" />
+    <None Remove="DeepSleepCore\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="Deepsleep.Core\Deepsleep.Core.csproj" />
   </ItemGroup>
 
@@ -42,6 +49,7 @@
     <Content Include="pet.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="pet.raw" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\ui\**" CopyToOutputDirectory="PreserveNewest" Link="ui\%(RecursiveDir)%(Filename)%(Extension)" />
+    <Content Include="..\web\**" CopyToOutputDirectory="PreserveNewest" Link="web\%(RecursiveDir)%(Filename)%(Extension)" />
     <Content Include="tools\set-github-token.ps1" CopyToOutputDirectory="PreserveNewest" Link="tools\set-github-token.ps1" />
     <Content Include="tools\publish-github-release.ps1" CopyToOutputDirectory="PreserveNewest" Link="tools\publish-github-release.ps1" />
     <Content Include="tools\websearch.py" CopyToOutputDirectory="PreserveNewest" Link="tools\websearch.py" />

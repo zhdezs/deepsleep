@@ -6,10 +6,25 @@
 
 | | |
 | --- | --- |
-| 当前版本 | **2.1.4**（新增 `AGENT.md` 全局初始提示词：所有对话共享、会话里改不了，只能在 ⚙ 设置里改；修桌宠浮窗不刷数据导致点不动的 bug） |
+| 当前版本 | **2.1.5**（新增 GitHub Pages 官网与免安装网页版，内置免费模型矩阵 Key：GLM-4.7-Flash 聊天 / GLM-4.6V-Flash 看图 / CogView-3-Flash 画图；新增内核版 `deepsleep-core.exe`：只装一个几十 MB 的内核，就能用任意浏览器操控这台电脑） |
 | 系统要求 | Windows 10 1809+ / x64（推荐 Windows 11，可享亚克力毛玻璃界面） |
 | 下载 | [Releases](https://github.com/zhdezs/deepsleep/releases/latest) → `deepsleep-Setup.exe` |
 | OTA 更新源 | `zhdezs/deepsleep`（GitHub + Gitee 双源，⚙ 设置里可切换线路，默认 Gitee） |
+| 官网 / 网页版 | <https://zhdezs.github.io/deepsleep/>（网页版免安装，内置免费模型矩阵：GLM-4.7-Flash 聊天 / GLM-4.6V-Flash 看图 / CogView-3-Flash 画图） |
+| 内核版 | `deepsleep-core-<版本>-win-x64.zip`：解压即用，浏览器连上就能用完整能力操控本机 |
+
+### 三种用法
+
+| 用法 | 入口 | 能力 |
+| --- | --- | --- |
+| 桌面客户端 | `deepsleep-Setup.exe` / 便携包 | 全功能：工具调用、文件/命令、技能、记忆、Agent 集群、桌宠、OTA |
+| 网页版 | 官网 → 网页版（`web/app/`） | 纯前端：聊天 / 看图 / 画图，会话只存在浏览器里；不能碰本机文件与命令 |
+| 内核版 + 网页 | `deepsleep-core.exe`（`src/DeepSleepCore`） | 本机只跑内核，用任意浏览器（含外网打开的官网内核页）操控这台电脑 |
+
+内核版只监听 `127.0.0.1`、所有接口要配对令牌（`data/core-token.txt`，窗口里会打印）、
+跨域只放行官网与本机页面；令牌等于这台电脑的钥匙，别外传，用完关掉窗口即停。
+换令牌 `deepsleep-core.exe --new-token`，换端口 `--port 8888`。
+
 ### 架构：内核与界面分离（2.0.0 起）
 
 ```
@@ -133,10 +148,24 @@ src/                      WinUI 3 外壳（.NET 10）
   ├─ PetChatWindow.cs     桌宠专属聊天浮窗（HTML，与主界面同一条会话）
   └─ tools/               set-github-token.ps1、publish-github-release.ps1、download-update.ps1
 
+src/DeepSleepCore/        内核版宿主（自带 HTTP/SSE 服务，供浏览器连接；零界面依赖）
+  ├─ Program.cs           启动参数（--port / --data / --token / --new-token）+ 令牌管理
+  ├─ Http.cs / Server.cs  手写 HTTP/1.1 解析 + 路由（/api/* /data/ /web/ /ui/）
+  ├─ ServerCors.cs        CORS 白名单（官网 / 本机）+ 配对令牌校验
+  ├─ Home.cs              本机首页（端口、令牌、一键打开）
+  └─ ServerCmd.cs         把网页命令转给内核 InvokeAsync，并广播 SSE 事件
+
 ui/                       界面（纯 HTML/CSS/JS，由外壳在 WebView2 里本地加载）
   ├─ index.html           结构（`?pet=1` 为桌宠精简模式）
   ├─ style.css            macOS 风格样式（深浅色两套 + 分段控件 + iMessage 气泡）
   └─ app.js               渲染与交互 + 与内核的消息通信（cmd 上行 / ev 下行）
+
+web/                      官网 + 网页版（GitHub Pages 直接托管，根目录 index.html 跳转到 web/）
+  ├─ index.html           官网首页（介绍 / 免费模型矩阵 / 下载 / 内核版说明）
+  ├─ app/index.html       免安装网页版（纯前端聊天 + 看图 + 画图）
+  ├─ core/index.html      内核版网页端（core-bridge.js 把客户端的 webview 协议搬到 HTTP+SSE）
+  ├─ web.js               网页版逻辑（localStorage 会话、SSE 流式、设置里的 AGENT.md / 记忆）
+  └─ assets/              官网截图
 
 installer/DeepSleepSetup/ WPF 图形安装程序（单文件，内嵌 payload.zip）
 release/                  发布脚本与说明（make-update.ps1、tools/、使用说明.txt）
@@ -170,8 +199,14 @@ cd installer\DeepSleepSetup
 dotnet publish -c Release -r win-x64 --self-contained true
 ```
 
-发版由维护脚本一体化完成：改版本号 → 编译 → 打包 → 生成 update.json →
-推送 GitHub Release 与源码（`release\tools\publish-via-api.py`，需自备 GitHub 令牌）。
+内核版（免安装，配合网页端）：
+
+```powershell
+dotnet publish src\DeepSleepCore\DeepSleepCore.csproj -c Release -o src\DeepSleepCore\dist\core
+```
+
+发版由维护脚本一体化完成：改版本号 → 编译 → 打包（安装版 / 便携版 / 内核版）→ 生成 update.json →
+推送 GitHub + Gitee Release、源码与官网（`release\tools\publish-via-api.py` / `publish-gitee.py`，需自备令牌）。
 
 ---
 
