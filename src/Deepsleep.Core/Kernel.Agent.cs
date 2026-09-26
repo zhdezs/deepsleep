@@ -50,14 +50,14 @@ public sealed partial class Kernel
         };
         string runMode = _agent.RunMode switch
         {
-            "chat" => "chat · 纯聊天（工具禁用）",
+            "chat" => "chat · 聊天（可用网络搜索 / 深度研究）",
             "boom" => "boom · 全自动（命令免确认）",
             _ => "work · 命令需确认",
         };
         string tools = _agent.RunMode == "chat"
-            ? "工具：无"
-            : "工具：命令 / Python / 生成图片 / 看图 / 抓取网页 / 联网搜索 / 读写文件";
-        string search = _agent.WebSearchEnabled ? "🌐 联网开" : "联网关";
+            ? "工具：网络搜索 / 深度研究"
+            : "工具：命令 / Python / 生成图片 / 看图 / 抓取网页 / 网络搜索 / 深度研究 / 读写文件";
+        string search = _agent.WebSearchEnabled ? "🌐 网络搜索开" : "网络搜索关";
         string fast = _agent.FastMode ? "⚡ 极速" : "";
         return $"模式：{runMode}　后端：{backend}　{search}　🧠 记忆开　{fast}　{tools}";
     }
@@ -240,13 +240,17 @@ public sealed partial class Kernel
             var conv = _agentConvs.FirstOrDefault(c => c.Sid == sid);
             if (conv == null) return;
             RemoveAgentWorking(sid);
-            string label = tool switch
+            // 「深度研究·正在搜索 2/4」这类带进度的工具名：直接把进度文字当状态显示
+            string label = tool.StartsWith(Agent.ToolResearch + "·", StringComparison.Ordinal)
+                ? tool[(Agent.ToolResearch.Length + 1)..]
+                : tool switch
             {
                 Agent.ToolRunCommand => "正在运行命令",
                 Agent.ToolPython => "正在执行 Python 脚本",
                 Agent.ToolImage => "正在生成图片",
                 Agent.ToolVision => "正在识别图片",
-                Agent.ToolSearch => "正在联网搜索",
+                Agent.ToolSearch => "正在网络搜索",
+                Agent.ToolResearch => "正在进行深度研究",
                 Agent.ToolFetch => "正在抓取网页",
                 Agent.ToolOpenFile => "正在打开文件",
                 Agent.ToolReadFile => "正在读取文件",

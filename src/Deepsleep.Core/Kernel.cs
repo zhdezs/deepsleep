@@ -151,14 +151,14 @@ public sealed partial class Kernel
         _agentCur.Items.Add(new ChatItem
         {
             IsSys = true,
-            Text = $"deepsleep v{Updater.CurrentVersion} 已就绪。可以直接提任务，我会在需要时调用工具：运行命令、Python、读写文件、联网搜索、看图、生成图片。",
+            Text = $"deepsleep v{Updater.CurrentVersion} 已就绪。可以直接提任务，我会在需要时调用工具：运行命令、Python、读写文件、网络搜索、深度研究、看图、生成图片。",
             TimeStr = Now(),
             ShowTime = true,
         });
         _clusterCur.Items.Add(new ChatItem
         {
             IsSys = true,
-            Text = "Agent 集群已就绪：一句话指挥，会自动拆解成多个 Agent 并行执行（命令 / Python / 读写文件 / 生成图片 / 看图 / 联网搜索，boom 全自动免确认），最后指挥官汇总结果。",
+            Text = "Agent 集群已就绪：一句话指挥，会自动拆解成多个 Agent 并行执行（命令 / Python / 读写文件 / 生成图片 / 看图 / 网络搜索 / 深度研究，boom 全自动免确认），最后指挥官汇总结果。",
             TimeStr = Now(),
             ShowTime = true,
         });

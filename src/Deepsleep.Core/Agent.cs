@@ -1,4 +1,4 @@
-﻿﻿using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -32,7 +32,8 @@ public sealed class Agent
     public const string ToolPython = "运行Python脚本";
     public const string ToolImage = "生成图片";
     public const string ToolVision = "看图";
-    public const string ToolSearch = "联网搜索";
+    public const string ToolSearch = "网络搜索";
+    public const string ToolResearch = "深度研究";
     public const string ToolFetch = "抓取网页";
     public const string ToolOpenFile = "打开文件";
     public const string ToolReadFile = "读取文件";
@@ -68,6 +69,8 @@ public sealed class Agent
     private readonly Dictionary<int, List<AgentMessage>> _sessions = new();
     private int _counterSid = 900001;
     private string? _lastImagePath;
+    /// <summary>chat 模式下这一轮是否允许调用「网络搜索 / 深度研究」（用户消息带搜索/研究意图时开启）。</summary>
+    private bool _chatToolMode;
     private SemaphoreSlim? _callGate;
 
     /// <summary>后端：auto（已配置 API 则走 API，否则 Ollama）/ api / llm / local。</summary>
@@ -76,7 +79,7 @@ public sealed class Agent
     /// <summary>运行模式：chat（纯聊天，禁用工具）/ work（工作，执行命令需确认）/ boom（爆破，全自动）。</summary>
     public string RunMode { get; set; } = "work";
 
-    /// <summary>是否启用联网搜索工具（界面上的 🌐 开关控制）。</summary>
+    /// <summary>是否启用网络搜索 / 深度研究工具（界面上的 🌐 开关控制）。</summary>
     public bool WebSearchEnabled { get; set; } = true;
 
     /// <summary>是否启用真·流式输出（逐 token 实时显示）。</summary>
@@ -362,6 +365,10 @@ public sealed class Agent
         int formatFixes = 0;
         bool searched = false;
         bool userWantsSearch = history.Any(m => m.Role == "user" && IsSearchIntent(m.Content));
+        string lastUserText = history.LastOrDefault(m => m.Role == "user")?.Content ?? "";
+        // chat（纯聊天）默认不用工具；只有这一句带搜索/研究意图时才开一个只读工具通道
+        bool chatToolTurn = RunMode == "chat" && WantsSearchOrResearch(lastUserText);
+        bool useDecision = RunMode != "chat" || chatToolTurn;
         for (int turn = 0; turn < MaxTurns; turn++)
         {
             if (ct.IsCancellationRequested)
@@ -371,8 +378,9 @@ public sealed class Agent
             }
 
             // 本地自训练模式（非 chat）：用启发式识别工具指令并直接执行，让模型也能真正干活
-            if (Backend == "local" && RunMode != "chat" && history.Count > 0 && history[^1].Role == "user" &&
-                TryLocalToolCall(history[^1].Content, out string ltool, out JsonElement largs))
+            if (Backend == "local" && history.Count > 0 && history[^1].Role == "user" &&
+                TryLocalToolCall(history[^1].Content, out string ltool, out JsonElement largs) &&
+                (RunMode != "chat" || ltool is ToolSearch or ToolResearch))
             {
                 ToolStarted?.Invoke(sid, ltool);
                 string lresult = await ExecuteToolAsync(ltool, largs, sid, ct);
@@ -381,7 +389,7 @@ public sealed class Agent
                     LastRunStopped = true;
                     return "（已停止）";
                 }
-                if (ltool == ToolSearch) searched = true;
+                if (ltool is ToolSearch or ToolResearch) searched = true;
                 history.Add(new AgentMessage { Role = "tool", Content = lresult, Meta = ltool });
                 TrimHistory(history);
                 MessageAdded?.Invoke(sid, history[^1]);
@@ -418,7 +426,8 @@ public sealed class Agent
             }
             // 工具决策阶段：软件先发请求，模型这一轮只准输出 JSON（或用「完成」给最终回答），
             // 不流式、不进气泡；软件解析 → 执行工具 → 结果塞回上下文 → 让模型继续决策。
-            string? reply = RunMode != "chat"
+            _chatToolMode = useDecision && RunMode == "chat";
+            string? reply = useDecision
                 ? await CallLlmForDecisionAsync(history, ct, injectedSkills)
                 : await CallLlmAsync(history, ct, sink, injectedSkills);
             Log($"RunLoop 回复长度={reply?.Length ?? 0} 已流式显示={streamed}");
@@ -445,18 +454,26 @@ public sealed class Agent
 
             string tool = "";
             JsonElement args = default;
-            bool isToolCall = RunMode != "chat" && TryParseToolCall(reply, out tool, out args);
+            bool isToolCall = useDecision && TryParseToolCall(reply, out tool, out args);
+            if (isToolCall) tool = NormalizeToolName(tool);
+            // chat 模式只准用网络搜索 / 深度研究：别的工具直接当成"该直接回答"处理
+            bool blockedToolInChat = isToolCall && !ToolAllowedInMode(tool);
+            if (blockedToolInChat) isToolCall = false;
             // 决策阶段判定「不需要工具 / 已完成」→ 进入【生成最终回复】阶段：
             // 工具结果已经在上下文里，这一轮让模型用自然语言回答（流式），决策用的 JSON 不进历史也不进气泡。
-            bool decisionDone = RunMode != "chat" &&
-                ((isToolCall && IsFinalTool(tool)) || IsNoToolDecision(reply));
+            bool decisionDone = useDecision &&
+                (blockedToolInChat ||
+                 (isToolCall && IsFinalTool(tool)) || IsNoToolDecision(reply));
             if (decisionDone)
             {
                 string keep = ExtractFinalText(reply, args);      // 模型若顺手写了答案，作为兜底
                 if (LooksLikeJson(keep)) keep = "";
                 isToolCall = false;
                 tool = "";
+                bool prevChatTool = _chatToolMode;
+                _chatToolMode = false;              // 这一轮要自然语言，不再要求只输出 JSON
                 string? final = await CallLlmFinalAsync(history, ct, sink, injectedSkills);
+                _chatToolMode = prevChatTool;
                 if (string.IsNullOrWhiteSpace(final)) final = keep;
                 if (string.IsNullOrWhiteSpace(final))
                 {
@@ -474,7 +491,8 @@ public sealed class Agent
                 reply = final;
             }
 
-            bool malformedCall = !isToolCall && !decisionDone && reply.Contains("\"tool\"", StringComparison.Ordinal);
+            bool malformedCall = useDecision && !isToolCall && !decisionDone &&
+                                 reply.Contains("\"tool\"", StringComparison.Ordinal);
             // 历史里保留模型原始输出（上下文需要），界面只显示 Meta 提示，避免暴露 {JSON}
             var assistantMsg = new AgentMessage
             {
@@ -533,15 +551,15 @@ public sealed class Agent
                 return reply;
             }
 
-            // 搜索意图拦截：用户要搜索时，第一个工具必须是「联网搜索」，
+            // 搜索意图拦截：用户要搜索时，第一个工具必须是「网络搜索」或「深度研究」，
             // 否则直接把模型的无关工具调用纠正回来（不执行）
-            if (userWantsSearch && !searched && tool != ToolSearch)
+            if (userWantsSearch && !searched && tool != ToolSearch && tool != ToolResearch)
             {
                 var corr = new AgentMessage
                 {
                     Role = "tool",
                     Meta = "工具纠正",
-                    Content = $"⚠️ 用户要求的是搜索/查资料，必须用「联网搜索」工具，而不是「{tool}」。请立即调用 {{\"tool\":\"联网搜索\",\"args\":{{\"关键词\":\"用户要查的内容\"}}}}；如果联网搜索提示已关闭，请提醒用户打开 🌐 开关。",
+                    Content = $"⚠️ 用户要求的是搜索/查资料，必须用「网络搜索」或「深度研究」工具，而不是「{tool}」。请立即调用 {{\"tool\":\"网络搜索\",\"args\":{{\"关键词\":\"用户要查的内容\"}}}}（需要多轮调研、写报告时用 {{\"tool\":\"深度研究\",\"args\":{{\"主题\":\"...\"}}}}）；如果提示已关闭，请提醒用户打开 🌐 开关。",
                 };
                 history.Add(corr);
                 MessageAdded?.Invoke(sid, corr);
@@ -565,7 +583,7 @@ public sealed class Agent
                 LastRunStopped = true;
                 return "（已停止）";
             }
-            if (tool == ToolSearch) searched = true;
+            if (tool is ToolSearch or ToolResearch) searched = true;
             // 停止后立刻结束本轮，不再继续调用其他工具
             if (ct.IsCancellationRequested)
             {
@@ -610,6 +628,8 @@ public sealed class Agent
         "- 运行Python脚本：参数 {\"代码\":\"Python 3 源码\",\"工作目录\":\"可选\"}。自动选择 Python 3 解释器，写入临时脚本并运行，返回输出与报错。\n" +
         "- 生成图片：参数 {\"提示词\":\"详细的画面描述\",\"尺寸\":\"可选 1024x1024 / 768x1344 / 1344x768\"}。调用 CogView-3-Flash 生成图片并保存到本地，返回本地图片路径。用户要求画图/生成图片/配图时使用。\n" +
         "- 看图：参数 {\"图片路径\":\"本地图片绝对路径\",\"问题\":\"可选，要问的问题\"}。调用 GLM-4.6V-Flash 多模态模型识别/分析图片（描述内容、读图、检查截图、审查生成的图片等）。\n" +
+        "- 网络搜索：参数 {\"关键词\":\"搜索词\"}。用内置爬虫直接抓取搜索结果页（Bing → 搜狗 → 360 → DuckDuckGo 依次尝试），返回标题/链接/摘要，无需 API Key；搜索/查价格/查资料/找最新信息时用它。\n" +
+        "- 深度研究：参数 {\"主题\":\"研究主题\",\"深度\":1-3}。多轮子查询搜索 + 抓取多个网页正文 + 汇总成一份带来源的 Markdown 研究报告（自动保存到本地，返回文件路径）；用户说「深度研究 / 调研 / 全面了解 / 整理一份报告」时用它。\n" +
         "- 抓取网页：参数 {\"网址\":\"https://...\"}。用内置爬虫下载网页并提取正文文本（自动去标签、限长），用于阅读搜索结果指向的文章、新闻、价格页等。\n" +
         "- 打开文件：参数 {\"路径\":\"绝对路径\"}。用系统默认程序打开本地文件（文档/图片/网页/媒体等）；" +
         "可执行文件/脚本也能打开（等于把它运行起来），work 模式下系统会先找用户确认，别自作主张反复调用。\n" +
@@ -628,8 +648,8 @@ public sealed class Agent
         "7. 严禁声称已执行：在真实调用工具并收到工具结果之前，禁止说「已运行」「已完成」之类的话；每一步执行都必须先调用工具，工具结果会返回给你。\n" +
         "8. 写代码 / 做网页 / 做项目时需要图片素材（图标、Logo、横幅、占位图、插图、配图等）时，用「生成图片」工具生成真实图片并引用本地路径，不要跳过、不要用手写 SVG 或纯色占位代替。\n" +
         "9. 工具执行失败、超时或被停止时：如实告知用户发生了什么并询问下一步；严禁调用无关工具、严禁假装任务已完成、严禁用「好的，我明白了」之类的通用话术敷衍。\n" +
-        "10. 用户要求搜索、查价格、查资料、找最新信息时，必须用「联网搜索」工具；搜到链接后如需原文，用「抓取网页」读取；严禁用 curl / wget / Invoke-WebRequest 等命令行代替（会触发拦截并导致失败）。\n" +
-        "11. 工具选择指南：搜索/查价格/查资料/找最新信息→「联网搜索」；阅读搜索结果的具体页面→「抓取网页」；执行命令/系统操作→「运行命令」；写代码跑脚本→「运行Python脚本」或「写入文件」；生成图片→「生成图片」；看图片→「看图」；读写文件→「读取文件/写入文件」；用默认程序打开文件→「打开文件」。\n" +
+        "10. 用户要求搜索、查价格、查资料、找最新信息时，必须用「网络搜索」工具（需要系统调研、写报告时用「深度研究」）；搜到链接后如需原文，用「抓取网页」读取；严禁用 curl / wget / Invoke-WebRequest 等命令行代替（会触发拦截并导致失败）。\n" +
+        "11. 工具选择指南：搜索/查价格/查资料/找最新信息→「网络搜索」；要系统调研/写报告→「深度研究」；阅读搜索结果的具体页面→「抓取网页」；执行命令/系统操作→「运行命令」；写代码跑脚本→「运行Python脚本」或「写入文件」；生成图片→「生成图片」；看图片→「看图」；读写文件→「读取文件/写入文件」；用默认程序打开文件→「打开文件」。\n" +
         "12. 最终回答必须是纯文本中文，禁止输出任何 JSON、代码块或结构化片段。\n" +
         "13. 用户提到重要事实、偏好、要求（比如称呼、习惯、项目约定、不想要什么）时，用「记住」工具保存；保存后告知用户已记住。\n" +
         "14. 当【已安装技能】里出现与你任务匹配的技能时，必须真正执行技能：按说明调用「运行Python脚本」「写入文件」「运行命令」「生成图片」等工具，把产物（PPT/文档/网页/脚本等）真实生成到磁盘，并在最终回复里给出完整本地路径；严禁只讲解步骤、只描述怎么做、或假装已完成。";
@@ -659,8 +679,19 @@ public sealed class Agent
 
     private const string ChatSystemPrompt =
         "你是一个运行在 Windows 电脑上的 AI 助手（聊天模式）。\n" +
-        "当前模式禁用所有工具：不能执行命令、不能读写文件。\n" +
+        "当前模式不能执行命令、不能读写本地文件。\n" +
         "请直接以中文回答用户的问题，简洁、清楚、友好，不要输出 JSON 或提及工具。";
+
+    /// <summary>chat 模式下这一轮带搜索/研究意图时的提示词：只放开「网络搜索 / 深度研究」两个只读工具。</summary>
+    private const string ChatToolSystemPrompt =
+        "你是一个运行在 Windows 电脑上的 AI 助手（聊天模式）。这一轮你有两个只读工具可用：\n" +
+        "- 网络搜索：参数 {\"关键词\":\"搜索词\"}。抓取搜索引擎结果页（Bing → 搜狗 → 360 → DuckDuckGo），返回标题/链接/摘要，快；适合查最新消息、价格、事实核对。\n" +
+        "- 深度研究：参数 {\"主题\":\"研究主题\",\"深度\":1-3}。多轮搜索 + 抓取多个网页正文 + 汇总结论，最后产出一份带来源的 Markdown 研究报告并保存到本地；适合「研究一下 / 调研 / 全面了解」类请求。\n" +
+        "输出规则：\n" +
+        "1. 需要工具时**只输出一行 JSON**：{\"tool_call\":{\"name\":\"网络搜索\",\"arguments\":{\"关键词\":\"...\"}}}；不要解释、不要用代码块包住 JSON。\n" +
+        "2. 不需要工具（闲聊、常识、创作、翻译、写代码等）时只输出：{\"tool_call\":null}，随后软件会请你用自然语言回答。\n" +
+        "3. 涉及最新消息、实时数据、价格、人物近况时必须先调工具，不许凭记忆编造。\n" +
+        "4. 这一轮只输出 JSON 本身，不要写正文。";
 
     private string SystemPromptForMode()
     {
@@ -668,24 +699,27 @@ public sealed class Agent
         {
             return
                 "你是运行在 Windows 上的 AI 助手（类似 Claude Code/Codex），能用工具干活。\n" +
-                "工具：运行命令/运行Python脚本/生成图片/看图/读取文件/写入文件/打开文件/联网搜索/抓取网页/记住(保存长期记忆)/删除记忆。\n" +
+                "工具：运行命令/运行Python脚本/生成图片/看图/读取文件/写入文件/打开文件/网络搜索/深度研究/抓取网页/记住(保存长期记忆)/删除记忆。\n" +
                 "工具调用只输出一行 JSON：{\"tool_call\":{\"name\":\"工具名\",\"arguments\":{...}}}；不需要工具时输出 {\"tool_call\":null}。\n" +
                 "这一轮只准输出 JSON 本身，不要写正文；工具结果由软件回传，最后再单独让你写最终回复。\n" +
-                "选工具：搜索/查价格/查资料→联网搜索（禁止 curl 等命令代替）；读搜索结果原文→抓取网页；写代码→Python/写入文件；画图→生成图片；看图→看图。\n" +
+                "选工具：搜索/查价格/查资料→网络搜索（禁止 curl 等命令代替）；要系统调研/写报告→深度研究；读搜索结果原文→抓取网页；写代码→Python/写入文件；画图→生成图片；看图→看图。\n" +
                 "失败/超时/停止时如实说明，禁止假装完成、乱调无关工具或用通用话术敷衍。\n" +
                 "用户提供重要事实/偏好时用「记住」保存，用户要求删除某条记忆时用「删除记忆」。";
         }
         string prompt = RunMode switch
         {
-            "chat" => ChatSystemPrompt,
+            "chat" => _chatToolMode ? ChatToolSystemPrompt : ChatSystemPrompt,
             "boom" => SystemPrompt + "\n\n当前是 boom（爆破）模式：你可以直接执行任何命令和文件操作，无需请求用户确认。",
             _ => SystemPrompt + "\n\n当前是 work（工作）模式：执行「运行命令」前系统会自动请求用户确认，确认结果会以工具结果返回给你；其余工具可直接使用。",
         };
         if (RunMode != "chat")
-            prompt += "\n- 联网搜索：参数 {\"关键词\":\"搜索词\"}。由内置爬虫脚本直接抓取搜索结果页（Bing → 搜狗 → 360 → DuckDuckGo 依次尝试），返回标题/链接/摘要，无需 API Key。用户要求搜索、查价格、查资料、找最新信息时优先使用；若工具提示已关闭，请提醒用户打开 🌐 开关，不要用命令行代替。";
+        {
+            prompt += "\n- 网络搜索：参数 {\"关键词\":\"搜索词\"}。由内置爬虫脚本直接抓取搜索结果页（Bing → 搜狗 → 360 → DuckDuckGo 依次尝试），返回标题/链接/摘要，无需 API Key。用户要求搜索、查价格、查资料、找最新信息时优先使用；若工具提示已关闭，请提醒用户打开 🌐 开关，不要用命令行代替。";
+            prompt += "\n- 深度研究：参数 {\"主题\":\"研究主题\",\"深度\":1-3}。多轮子查询搜索 + 抓取多篇网页正文 + 汇总成一份 Markdown 研究报告，自动保存到本地并返回路径；深度越大查得越广（1 快 / 2 标准 / 3 全面）。适合「研究一下 / 调研 / 全面了解 / 整理一份资料」。跑得比较久，开始前可先跟用户说一句预计要花点时间。";
             prompt += "\n- 抓取网页：参数 {\"网址\":\"https://...\"}。用内置爬虫抓取网页正文（自动去标签、限长 8000 字）。搜索得到链接后需要看原文时使用；若网页抓不到正文，如实说明，不要假装成功。";
             prompt += "\n- 打开文件：参数 {\"路径\":\"绝对路径\"}。用系统默认程序打开本地文件；" +
                       "可执行文件/脚本也允许打开（打开就是运行它，work 模式下会先请用户确认）。";
+        }
         if (!string.IsNullOrWhiteSpace(ExtraPrompt))
             prompt += "\n\n" + ExtraPrompt;
         if (MultimodalMain)
@@ -1265,6 +1299,19 @@ public sealed class Agent
                 return true;
             }
         }
+        if (t.Contains("深度研究", StringComparison.Ordinal) || t.Contains("深入研究", StringComparison.Ordinal) ||
+            t.Contains("调研", StringComparison.Ordinal) || t.StartsWith("研究一下", StringComparison.Ordinal) ||
+            t.StartsWith("帮我研究", StringComparison.Ordinal))
+        {
+            string topic = Regex.Replace(t,
+                @"^(深度研究|深入研究|研究一下|帮我研究|调研|帮我调研)\s*[:：]?\s*", "");
+            if (topic.Length > 0)
+            {
+                tool = ToolResearch;
+                args = Obj(("主题", topic));
+                return true;
+            }
+        }
         if (t.StartsWith("搜索", StringComparison.Ordinal) || t.Contains("搜一下", StringComparison.Ordinal) ||
             t.Contains("搜一搜", StringComparison.Ordinal) || t.StartsWith("查一下", StringComparison.Ordinal) ||
             t.StartsWith("查查", StringComparison.Ordinal) || t.StartsWith("查价格", StringComparison.Ordinal) ||
@@ -1472,6 +1519,39 @@ public sealed class Agent
         return -1;
     }
 
+    /// <summary>把模型可能输出的工具别名（含旧名「联网搜索」）归一成正式工具名。</summary>
+    private static string NormalizeToolName(string tool)
+    {
+        string t = (tool ?? "").Trim();
+        return t switch
+        {
+            "联网搜索" or "网络搜索" or "搜索" or "网页搜索" or "在线搜索" or "websearch" or "web_search" or "online search" => ToolSearch,
+            "深度研究" or "深度调研" or "深入研究" or "研究报告" or "调研报告" or "research" or "deep research" or "deep_research" or "deepresearch" => ToolResearch,
+            _ => t,
+        };
+    }
+
+    /// <summary>chat（纯聊天）模式下只放开网络搜索 / 深度研究这两个只读工具。</summary>
+    private bool ToolAllowedInMode(string tool)
+        => RunMode != "chat" || tool is ToolSearch or ToolResearch;
+
+    /// <summary>用户这句话是否在要搜索 / 查资料 / 做研究（chat 模式下据此启用工具通道）。</summary>
+    private static bool WantsSearchOrResearch(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return false;
+        return IsSearchIntent(text) ||
+               Regex.IsMatch(text, @"研究|调研|深度了解|全面了解|资料汇总|整理一份|帮我查查|查一查");
+    }
+
+    /// <summary>搜索一次：优先爬虫脚本，失败回退内核内置爬虫；都没结果返回 null。</summary>
+    private async Task<List<SearchHit>?> SearchOnceAsync(string query, CancellationToken ct)
+    {
+        var viaScript = await SearchViaScriptAsync(query, ct);
+        if (viaScript is { Count: > 0 }) return viaScript;
+        var (_, hits) = await WebCrawler.SearchAsync(query, ct);
+        return hits.Count > 0 ? hits : null;
+    }
+
     // ------------------------------------------------------------------
     // 工具实现
     // ------------------------------------------------------------------
@@ -1479,6 +1559,7 @@ public sealed class Agent
     private async Task<string> ExecuteToolAsync(string tool, JsonElement args, int sid,
                                                  CancellationToken ct)
     {
+        tool = NormalizeToolName(tool);
         try
         {
             return tool switch
@@ -1490,6 +1571,7 @@ public sealed class Agent
                     ? "图片已作为多模态输入直接发送给主模型，请直接描述图片内容，不要再调用「看图」工具。"
                     : await VisionTool(args, sid, ct),
                 ToolSearch => await WebSearchTool(args, ct),
+                ToolResearch => await ResearchToolAsync(args, sid, ct),
                 ToolFetch => await FetchUrlTool(args, ct),
                 ToolOpenFile => await OpenFileTool(args, sid),
                 ToolReadFile => ReadFileTool(args),
@@ -1561,9 +1643,9 @@ public sealed class Agent
         if (!string.IsNullOrWhiteSpace(workDir) && !Directory.Exists(workDir))
             return $"工作目录不存在：{workDir}";
 
-        // 拦截"命令行抓网页"：搜索类需求应走「联网搜索」工具，而不是 curl 等
+        // 拦截"命令行抓网页"：搜索类需求应走「网络搜索 / 深度研究」工具，而不是 curl 等
         if (LooksLikeWebFetch(cmd))
-            return "⚠️ 检测到你在用命令行抓取网页。网页搜索/查资料请改用「联网搜索」工具；" +
+            return "⚠️ 检测到你在用命令行抓取网页。网页搜索/查资料请改用「网络搜索」或「深度研究」工具；" +
                    "如果该工具提示已关闭，请提醒用户打开 🌐 联网搜索开关。不要用 curl / wget / Invoke-WebRequest / Python requests 等代替。";
         string? sandboxErr = Sandbox.CheckCommand(cmd);
         if (sandboxErr != null) return sandboxErr;
@@ -1752,7 +1834,7 @@ public sealed class Agent
     private static string Preview(string s, int max)
         => s.Length <= max ? s : s[..max] + "…";
 
-    /// <summary>判断命令是否在"用命令行抓网页"（应改用联网搜索工具）。</summary>
+    /// <summary>判断命令是否在"用命令行抓网页"（应改用网络搜索 / 深度研究工具）。</summary>
     private static bool LooksLikeWebFetch(string cmd)
     {
         string c = cmd.ToLowerInvariant();
@@ -1895,20 +1977,218 @@ public sealed class Agent
         }
     }
 
-    /// <summary>联网搜索：内置多引擎爬虫（Bing → 搜狗 → 360 → DuckDuckGo），无需 API Key。</summary>
+    /// <summary>
+    /// 深度研究：规划子查询 → 多轮搜索 → 抓取网页正文 → 让模型汇总成 Markdown 研究报告并保存到本地。
+    /// 参数：主题（必填）、深度 1-3（可选，默认 2）、输出文件（可选绝对路径）。
+    /// </summary>
+    private async Task<string> ResearchToolAsync(JsonElement args, int sid, CancellationToken ct)
+    {
+        if (!WebSearchEnabled)
+            return "深度研究已关闭（🌐 联网搜索开关关闭）。请提醒用户打开 🌐 开关。";
+        string? topic = GetArg(args, "主题") ?? GetArg(args, "课题") ?? GetArg(args, "问题") ?? GetArg(args, "关键词");
+        if (string.IsNullOrWhiteSpace(topic))
+            return "参数错误：缺少「主题」。";
+        topic = topic.Trim();
+        int depth = 2;
+        if (int.TryParse(GetArg(args, "深度") ?? GetArg(args, "depth"), out int d) ||
+            TryGetIntArg(args, out d, "深度", "depth"))
+            depth = Math.Clamp(d, 1, 3);
+        string? outFile = GetArg(args, "输出文件") ?? GetArg(args, "文件");
+
+        void Progress(string text) => ToolStarted?.Invoke(sid, ToolResearch + "·" + text);
+
+        // ① 规划子查询
+        Progress("正在规划研究步骤");
+        var queries = await PlanSubQueriesAsync(topic, depth, ct);
+        if (ct.IsCancellationRequested) return "深度研究已停止。";
+
+        // ② 多轮搜索，跨查询去重
+        var all = new List<SearchHit>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        int cap = Math.Min(24, 6 * depth);
+        for (int i = 0; i < queries.Count; i++)
+        {
+            if (ct.IsCancellationRequested) return "深度研究已停止。";
+            Progress($"正在搜索 {i + 1}/{queries.Count}：{Clip(queries[i], 16)}");
+            var hits = await SearchOnceAsync(queries[i], ct);
+            if (hits == null) continue;
+            foreach (var h in hits)
+            {
+                string key = string.IsNullOrWhiteSpace(h.Url) ? h.Title : h.Url;
+                if (seen.Add(key)) all.Add(h);
+            }
+            if (all.Count >= cap) break;
+        }
+        if (all.Count == 0)
+            return $"深度研究失败：围绕「{topic}」没有搜到任何网页（网络不可达或搜索被风控拦截）。请如实告知用户，不要编造结果。";
+
+        // ③ 抓取正文（抓不到就跳过，最后用摘要兜底）
+        int fetchCount = Math.Min(all.Count, depth >= 3 ? 6 : depth == 2 ? 4 : 3);
+        var docs = new List<(SearchHit Hit, string Text)>();
+        for (int i = 0; i < fetchCount; i++)
+        {
+            if (ct.IsCancellationRequested) return "深度研究已停止。";
+            Progress($"正在阅读资料 {i + 1}/{fetchCount}：{Clip(all[i].Title, 16)}");
+            try
+            {
+                string text = await WebCrawler.FetchTextAsync(all[i].Url, ct, 3000);
+                if (text.Length >= 200) docs.Add((all[i], text));
+            }
+            catch (OperationCanceledException) { throw; }
+            catch { /* 单篇抓取失败不影响整体 */ }
+        }
+
+        // ④ 让模型汇总成报告
+        Progress("正在撰写研究报告");
+        string? report = await WriteResearchReportAsync(topic, queries, docs, all, ct);
+        if (string.IsNullOrWhiteSpace(report)) report = FallbackReport(topic, queries, docs, all);
+
+        // ⑤ 保存
+        string dir = string.IsNullOrWhiteSpace(DataDir) ? Path.GetTempPath() : Path.Combine(DataDir, "research");
+        string path = string.IsNullOrWhiteSpace(outFile)
+            ? Path.Combine(dir, $"{DateTime.Now:yyyyMMdd-HHmmss}-{Slug(topic)}.md")
+            : Path.GetFullPath(outFile);
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, report, new UTF8Encoding(false));
+        }
+        catch (Exception ex)
+        {
+            return $"深度研究完成，但报告写盘失败（{ex.Message}）。报告正文如下：\n\n{Truncate(report, MaxToolOutput)}";
+        }
+        return $"深度研究完成（主题：{topic}；深度 {depth}；搜索 {queries.Count} 轮，命中 {all.Count} 条，精读 {docs.Count} 篇）\n" +
+               $"报告已保存：{path}\n\n" + Truncate(report, MaxToolOutput);
+    }
+
+    /// <summary>用模型把研究主题拆成几个不同角度的搜索查询词；模型不可用时退化为启发式查询。</summary>
+    private async Task<List<string>> PlanSubQueriesAsync(string topic, int depth, CancellationToken ct)
+    {
+        int want = depth >= 3 ? 5 : depth == 2 ? 4 : 2;
+        var fallback = new List<string>
+        {
+            topic, topic + " 最新进展", topic + " 数据 事实", topic + " 风险 争议", topic + " 对比 案例",
+        };
+        try
+        {
+            string sys = "你是研究助理，负责把研究主题拆成互不重复的中文搜索查询词。只输出查询词，每行一个，不要编号、不要解释。";
+            string user = $"研究主题：{topic}\n请给出 {want} 个从不同角度切入的搜索查询词（可覆盖：最新进展、数据与事实、风险与争议、对比或案例）。";
+            string? r = await CallOnceAsync(sys, new List<(string, string)> { ("user", user) }, ct, null);
+            if (!string.IsNullOrWhiteSpace(r))
+            {
+                var list = new List<string>();
+                foreach (var raw in r.Split('\n'))
+                {
+                    string q = Regex.Replace(raw.Trim(), @"^[\-\*\d\.、\)\s]+", "").Trim().Trim('"', '「', '」', '“', '”');
+                    if (q.Length is >= 2 and <= 60 && !list.Contains(q)) list.Add(q);
+                    if (list.Count >= want) break;
+                }
+                if (list.Count > 0)
+                {
+                    if (!list.Contains(topic)) list.Insert(0, topic);
+                    return list.Take(want).ToList();
+                }
+            }
+        }
+        catch (OperationCanceledException) { throw; }
+        catch { /* 模型不可用 → 用启发式查询 */ }
+        return fallback.Take(want).ToList();
+    }
+
+    /// <summary>把资料交给模型写成结构化研究报告；模型不可用返回 null（由 FallbackReport 兜底）。</summary>
+    private async Task<string?> WriteResearchReportAsync(string topic, List<string> queries,
+        List<(SearchHit Hit, string Text)> docs, List<SearchHit> all, CancellationToken ct)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"研究主题：{topic}");
+        sb.AppendLine("搜索轮次：" + string.Join(" / ", queries));
+        sb.AppendLine();
+        if (docs.Count > 0)
+        {
+            for (int i = 0; i < docs.Count; i++)
+            {
+                sb.AppendLine($"【资料 {i + 1}】{docs[i].Hit.Title}");
+                sb.AppendLine($"链接：{docs[i].Hit.Url}");
+                sb.AppendLine(docs[i].Text);
+                sb.AppendLine();
+            }
+        }
+        else
+        {
+            sb.AppendLine("（网页正文抓取失败，只有搜索摘要）");
+            for (int i = 0; i < Math.Min(10, all.Count); i++)
+            {
+                sb.AppendLine($"【资料 {i + 1}】{all[i].Title}｜{all[i].Url}");
+                if (!string.IsNullOrWhiteSpace(all[i].Snippet)) sb.AppendLine(all[i].Snippet);
+                sb.AppendLine();
+            }
+        }
+        string sys = "你是资深研究员。只依据给定资料写中文研究报告，禁止编造资料里没有的事实；资料不足的地方明确写「资料不足」。";
+        string user =
+            $"请基于下面的资料，围绕「{topic}」写一份 Markdown 研究报告，结构固定为：\n" +
+            "## 摘要\n## 关键发现（3-6 条，每条标注依据的资料编号）\n## 详细分析\n## 风险与不确定性\n## 结论与建议\n## 参考来源（编号 + 标题 + 链接）\n" +
+            "要求：引用资料用 [1][2] 这样的编号；不要编造；总长 800-2000 字；只输出报告本身，不要额外解释。\n\n" +
+            Truncate(sb.ToString(), 16000);
+        return await CallOnceAsync(sys, new List<(string, string)> { ("user", user) }, ct, null);
+    }
+
+    /// <summary>模型汇总失败时的兜底报告：把抓到的资料直接整理成 Markdown。</summary>
+    private static string FallbackReport(string topic, List<string> queries,
+        List<(SearchHit Hit, string Text)> docs, List<SearchHit> all)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"# {topic} · 研究报告（原始资料汇总）");
+        sb.AppendLine();
+        sb.AppendLine($"> 模型汇总不可用，以下为工具直接整理的结果：命中 {all.Count} 条，精读 {docs.Count} 篇。");
+        sb.AppendLine();
+        sb.AppendLine("## 搜索轮次");
+        foreach (var q in queries) sb.AppendLine($"- {q}");
+        sb.AppendLine();
+        sb.AppendLine("## 精读资料");
+        if (docs.Count == 0) sb.AppendLine("（正文抓取失败，见下方搜索结果）");
+        for (int i = 0; i < docs.Count; i++)
+        {
+            sb.AppendLine($"### [{i + 1}] {docs[i].Hit.Title}");
+            sb.AppendLine(docs[i].Hit.Url);
+            sb.AppendLine();
+            sb.AppendLine(Truncate(docs[i].Text, 700));
+            sb.AppendLine();
+        }
+        var read = new HashSet<string>(docs.Select(x => x.Hit.Url), StringComparer.OrdinalIgnoreCase);
+        sb.AppendLine("## 其他搜索结果");
+        int n = docs.Count;
+        foreach (var h in all.Where(x => !read.Contains(x.Url)).Take(12))
+        {
+            n++;
+            sb.AppendLine($"- [{n}] {h.Title}｜{h.Url}");
+            if (!string.IsNullOrWhiteSpace(h.Snippet)) sb.AppendLine($"  {Truncate(h.Snippet, 160)}");
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>把主题变成安全的文件名片段。</summary>
+    private static string Slug(string topic)
+    {
+        string s = Regex.Replace(topic, @"[\\/:*?""<>|\s]+", "-").Trim('-');
+        if (s.Length > 40) s = s[..40];
+        return string.IsNullOrWhiteSpace(s) ? "research" : s;
+    }
+
+    /// <summary>短文本裁剪（用于进度提示）。</summary>
+    private static string Clip(string s, int max)
+        => string.IsNullOrEmpty(s) || s.Length <= max ? s ?? "" : s[..max] + "…";
+
+    /// <summary>网络搜索：内置多引擎爬虫（Bing → 搜狗 → 360 → DuckDuckGo），无需 API Key。</summary>
     private async Task<string> WebSearchTool(JsonElement args, CancellationToken ct)
     {
         if (!WebSearchEnabled)
-            return "联网搜索已关闭。请提醒用户打开 AI 助手页的 🌐 联网搜索开关。";
+            return "网络搜索已关闭。请提醒用户打开 AI 助手页的 🌐 联网搜索开关。";
         string? q = GetArg(args, "关键词");
         if (string.IsNullOrWhiteSpace(q))
             return "参数错误：缺少「关键词」。";
 
-        var hits = await SearchViaScriptAsync(q, ct);
-        string engine = hits?.FirstOrDefault()?.Engine ?? "";
-        if (hits == null || hits.Count == 0)
-            (engine, hits) = await WebCrawler.SearchAsync(q, ct);
-        hits ??= new List<SearchHit>();
+        var hits = await SearchOnceAsync(q, ct) ?? new List<SearchHit>();
+        string engine = hits.FirstOrDefault()?.Engine ?? "";
         if (hits.Count == 0)
             return $"搜索「{q}」失败：Bing / 搜狗 / 360 / DuckDuckGo 都没能返回结果，" +
                    "可能是网络不可达或全部被风控拦截。请如实告知用户搜索失败，不要编造结果。";
@@ -2005,6 +2285,28 @@ public sealed class Agent
         {
             return $"打开文件失败：{ex.Message}";
         }
+    }
+
+    /// <summary>读取数字型参数（模型有时把「深度」写成数字而不是字符串）。</summary>
+    private static bool TryGetIntArg(JsonElement args, out int value, params string[] names)
+    {
+        value = 0;
+        if (args.ValueKind != JsonValueKind.Object) return false;
+        foreach (var n in names)
+        {
+            if (!args.TryGetProperty(n, out var el)) continue;
+            if (el.ValueKind == JsonValueKind.Number && el.TryGetInt32(out int v))
+            {
+                value = v;
+                return true;
+            }
+            if (el.ValueKind == JsonValueKind.String && int.TryParse(el.GetString(), out int vs))
+            {
+                value = vs;
+                return true;
+            }
+        }
+        return false;
     }
 
     private static string? GetArg(JsonElement args, string name)

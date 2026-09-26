@@ -1,6 +1,6 @@
 {
-    "version":  "2.1.2",
-    "url":  "https://github.com/zhdezs/deepsleep/releases/download/v2.1.2/deepsleep-Setup.exe",
-    "sha256":  "713431D5FEF0B8994BB569A79FF1C694FB2E423361D4024E0CD35FB9B9D906BA",
-    "notes":  "2.1.2：修「联网搜索不管用」——以前内核直接抓百度结果页，百度现在频繁访问会返回「安全验证」跳转页，解析不出结果，搜几次就废；现在联网搜索改成内置爬虫脚本 tools\\websearch.py，多引擎依次尝试 Bing → 搜狗 → 360 → DuckDuckGo，谁先出结果就用谁，不需要任何搜索 API Key，自动处理网页编码、相对链接、跳转链接与结果去重；内核优先调用脚本（本机有 Python 3 时），没装 Python 的机器自动回退内核内置的同款爬虫。🌐 联网搜索开关改为默认开启，并记住你的选择。其余功能与 2.1.1 完全一致。"
+    "version":  "2.1.3",
+    "url":  "https://github.com/zhdezs/deepsleep/releases/download/v2.1.3/deepsleep-Setup.exe",
+    "sha256":  "54485CAC5909D57D774A2DBA817FE165A74B462262FAE5FA2E7D02EC0817BEF9",
+    "notes":  "2.1.3：新增「深度研究」工具——把主题交给它会自动拆出多个子问题、多轮搜索、抓取多篇网页正文，最后汇总成一份带来源的 Markdown 研究报告并保存到 data\\research\\ 下（参数「深度」1-3，1 快 / 2 标准 / 3 全面）；原「联网搜索」正式更名「网络搜索」（老叫法仍可识别，Bing → 搜狗 → 360 → DuckDuckGo 多引擎爬虫）。chat（聊天）模式不再一刀切禁用工具：正常聊天照旧，一旦你说「搜一下 / 查查 / 研究一下 / 调研」，就自动开放网络搜索和深度研究两个只读工具，其它工具仍然禁用；设置里的 🌐 开关同时管这两个工具，默认开启并记住选择。其余功能与 2.1.2 一致。"
 }

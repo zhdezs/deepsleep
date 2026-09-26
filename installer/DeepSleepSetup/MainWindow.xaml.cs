@@ -11,7 +11,7 @@ public partial class MainWindow : Window
 {
     private const string AppName = "deepsleep";
     private const string AppDisplay = "deepsleep AI 助手";
-    private const string AppVersion = "2.1.2";
+    private const string AppVersion = "2.1.3";
     private const string Publisher = "deepsleep";
     private const string ExeName = "deepsleep.exe";
 

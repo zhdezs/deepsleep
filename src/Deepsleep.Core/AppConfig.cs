@@ -47,7 +47,7 @@ public sealed class AppConfig
     public bool GiteeFirst => !string.Equals(UpdateSource, "github", StringComparison.OrdinalIgnoreCase);
     /// <summary>是否显示桌面鲸鱼桌宠。</summary>
     public bool PetEnabled { get; set; } = true;
-    /// <summary>联网搜索开关（🌐）。默认开启，设置里可关；会持久化到 config.json。</summary>
+    /// <summary>联网搜索 / 深度研究开关（🌐）。默认开启，设置里可关；会持久化到 config.json。</summary>
     public bool WebSearch { get; set; } = true;
     /// <summary>桌宠左上角坐标（拖到哪记到哪）；-1 表示用默认的右下角位置。</summary>
     /// <summary>WebView2 兼容模式：界面渲染进程崩溃过就记住，下次直接用兼容参数启动。</summary>

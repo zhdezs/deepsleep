@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 /* deepsleep 界面层：只负责画面与交互，逻辑全在内核（通过 JSON 协议调用） */
 
 const $ = s => document.querySelector(s);
@@ -595,13 +595,13 @@ function openSettings(fresh) {
   const modeSel = document.createElement('div');
   modeSel.className = 'field';
   modeSel.innerHTML = '<label>AI 助手模式</label><select id="setMode">' +
-    '<option value="chat">chat · 纯聊天（工具禁用）</option>' +
+    '<option value="chat">chat · 聊天（可搜索 / 深度研究）</option>' +
     '<option value="work">work · 命令需确认</option>' +
     '<option value="boom">boom · 全自动（命令免确认）</option></select>';
   body.appendChild(modeSel);
   $('#setMode').value = s.mode || 'work';
   body.appendChild(ck('⚡ 极速模式', 'setFast', s.fast));
-  body.appendChild(ck('🌐 联网搜索', 'setSearch', s.search));
+  body.appendChild(ck('🌐 网络搜索 / 深度研究', 'setSearch', s.search));
 
   sect('OTA 自动更新');
   body.appendChild(field('更新源（owner/repo 或 update.json 的 URL）', 'updateUrl', s.updateUrl));

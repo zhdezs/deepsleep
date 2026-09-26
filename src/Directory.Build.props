@@ -4,8 +4,8 @@
        以前两边各写各的，内核那份忘了同步，导致程序自报的版本一直是旧的
        （升到 2.1.0 还显示 2.0.0）—— 现在统一由这个文件提供。 -->
   <PropertyGroup>
-    <Version>2.1.2</Version>
-    <FileVersion>2.1.2.0</FileVersion>
+    <Version>2.1.3</Version>
+    <FileVersion>2.1.3.0</FileVersion>
   </PropertyGroup>
 
 </Project>
