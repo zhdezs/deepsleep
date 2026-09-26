@@ -1,12 +1,12 @@
-﻿﻿# deepsleep · Windows AI 助手
+﻿﻿﻿# deepsleep · Windows AI 助手
 
-**本地优先**的 Windows 桌面 AI 助手（html），能力对标 Claude Code / Codex：
+**本地优先**的 Windows 桌面 AI 助手（WinUI 3），能力对标 Claude Code / Codex：
 对话、工具调用、技能库、Agent 集群、长期记忆、断点恢复，外加**安装程序**与 **OTA 自动更新**。
 自带 .NET 运行时，单文件安装包，**不需要管理员权限**。
 
 | | |
 | --- | --- |
-| 当前版本 | **2.1.3**（新增「深度研究」工具：多轮搜索 + 抓正文 + 生成研究报告；原「联网搜索」更名「网络搜索」；两者在 chat 聊天模式也能用） |
+| 当前版本 | **2.1.4**（新增 `AGENT.md` 全局初始提示词：所有对话共享、会话里改不了，只能在 ⚙ 设置里改；修桌宠浮窗不刷数据导致点不动的 bug） |
 | 系统要求 | Windows 10 1809+ / x64（推荐 Windows 11，可享亚克力毛玻璃界面） |
 | 下载 | [Releases](https://github.com/zhdezs/deepsleep/releases/latest) → `deepsleep-Setup.exe` |
 | OTA 更新源 | `zhdezs/deepsleep`（GitHub + Gitee 双源，⚙ 设置里可切换线路，默认 Gitee） |

@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 /* deepsleep 界面层：只负责画面与交互，逻辑全在内核（通过 JSON 协议调用） */
 
 const $ = s => document.querySelector(s);
@@ -474,7 +474,7 @@ function openMemory(m) {
   f.innerHTML = '<textarea id="memText" placeholder="每行一条记忆，例如：\n用户是产品经理，偏好简洁的答复\n项目约定：代码要写注释"></textarea>';
   body.appendChild(f);
   $('#memText').value = m.text || '';
-  setTimeout(() => $('#memText').focus(), 30);
+  setTimeout(() => { const t = $('#memText'); if (t) t.focus(); }, 30);
 }
 
 /* ---------------- 技能 ---------------- */
@@ -623,6 +623,24 @@ function openSettings(fresh) {
   tk.onclick = () => { const v = val('token'); if (v) call('setToken', { token: v }); };
   body.appendChild(tk);
 
+  sect('初始提示词（AGENT.md）');
+  const mdWrap = document.createElement('div');
+  mdWrap.className = 'field';
+  mdWrap.innerHTML = '<label>所有对话共享，会话里改不了，只能在这里改</label>';
+  const mdTa = document.createElement('textarea');
+  mdTa.id = 'setAgentMd';
+  mdTa.className = 'mdarea';
+  mdTa.rows = 8;
+  mdTa.spellcheck = false;
+  mdTa.value = s.agentMd || '';
+  mdTa.placeholder = '例：\n用中文回答，先给结论再给理由。\n叫我老板。\n所有文件默认写到 D:\\work';
+  mdWrap.appendChild(mdTa);
+  const mdHint = document.createElement('div');
+  mdHint.className = 'hint';
+  mdHint.textContent = '存在 data\\AGENT.md，会插到 AI 助手 / Agent 集群 / 桌宠所有对话的系统提示最前面；HTML 注释里的内容不会发给模型。保存后立即生效。';
+  mdWrap.appendChild(mdHint);
+  body.appendChild(mdWrap);
+
   sect('桌面桌宠');
   body.appendChild(ck('显示桌面鲸鱼桌宠（透明窗口、可拖拽；单击弹出聊天浮窗、右键有菜单）', 'petEnabled', s.petEnabled));
 }
@@ -639,6 +657,7 @@ function saveSettings() {
     updateUrl: val('updateUrl'), autoCheckUpdate: chk('autoCheckUpdate'), updateSource: val('updateSource'),
     petEnabled: chk('petEnabled'),
     mode: val('setMode'), fast: chk('setFast'), search: chk('setSearch'),
+    agentMd: val('setAgentMd'),
   }).then(() => toast('设置已保存。'));
 }
 /* ---------------- 权限确认 ---------------- */

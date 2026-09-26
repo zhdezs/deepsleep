@@ -79,6 +79,9 @@ public sealed class Agent
     /// <summary>运行模式：chat（纯聊天，禁用工具）/ work（工作，执行命令需确认）/ boom（爆破，全自动）。</summary>
     public string RunMode { get; set; } = "work";
 
+    /// <summary>初始提示词（来自 data\AGENT.md）：所有对话共享，会话里不可改，只能在 ⚙ 设置里改。</summary>
+    public string CustomPrompt { get; set; } = "";
+
     /// <summary>是否启用网络搜索 / 深度研究工具（界面上的 🌐 开关控制）。</summary>
     public bool WebSearchEnabled { get; set; } = true;
 
@@ -693,7 +696,18 @@ public sealed class Agent
         "3. 涉及最新消息、实时数据、价格、人物近况时必须先调工具，不许凭记忆编造。\n" +
         "4. 这一轮只输出 JSON 本身，不要写正文。";
 
+    /// <summary>系统提示词 = 初始提示词（AGENT.md，放最前面）+ 各模式自己的提示词。</summary>
     private string SystemPromptForMode()
+    {
+        string prompt = BuildModePrompt();
+        string custom = (CustomPrompt ?? "").Trim();
+        if (custom.Length > 0)
+            prompt = "【初始提示词 · AGENT.md（所有对话共享，只能在 ⚙ 设置里修改，优先级最高）】\n" +
+                     custom + "\n\n" + prompt;
+        return prompt;
+    }
+
+    private string BuildModePrompt()
     {
         if (FastMode && RunMode != "chat")
         {

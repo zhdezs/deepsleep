@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using Microsoft.UI.Windowing;
@@ -71,7 +71,14 @@ public sealed class PetChatWindow
                 catch (Exception ex) { res = "{\"ok\":false}"; Debug.WriteLine(ex.Message); }
                 try { s.PostWebMessageAsJson(res); } catch { }
             };
-            core.NavigationCompleted += (_, e) => { if (e.IsSuccess) _ready = true; };
+            core.NavigationCompleted += (_, e) =>
+            {
+                if (!e.IsSuccess) return;
+                _ready = true;
+                // 关键：浮窗和主窗口一样要发 uiReady，界面才会 call('boot') 拉取会话/状态；
+                // 以前只给主窗口发，桌宠浮窗永远收不到 boot → 面板一片空白、点了没反应。
+                try { core.PostWebMessageAsJson("{\"ev\":\"uiReady\"}"); } catch { }
+            };
             core.ProcessFailed += (_, e) =>
             {
                 if (_ready || _retried) return;
@@ -102,7 +109,15 @@ public sealed class PetChatWindow
 
     public void Show()
     {
-        try { _window.AppWindow.Show(); _window.Activate(); _visible = true; } catch { }
+        try
+        {
+            _window.AppWindow.Show();
+            _window.Activate();
+            _visible = true;
+            // 每次打开都重新同步一次全量状态（会话列表 / 消息 / 开关都跟主窗口保持一致）
+            if (_ready) Push("{\"ev\":\"uiReady\"}");
+        }
+        catch { }
     }
 
     public void Hide()

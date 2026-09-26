@@ -44,6 +44,8 @@ public sealed partial class Kernel
     private AppConfig _config = new();
     private string _dataDir = "";
     private string _lastTime = "";
+    /// <summary>初始提示词（AGENT.md 去注释后的正文）：所有对话共享。</summary>
+    private string _agentMd = "";
     private int _tab;                                  // 0 = AI 助手，1 = Agent 集群
     private readonly List<Conversation> _agentConvs = new();
     private readonly List<Conversation> _counterConvs = new();   // 以理服人（当前界面不显示，仅原样保留）
@@ -122,6 +124,9 @@ public sealed partial class Kernel
         if (_config.UseOllama) _agent.Backend = "llm";
         _agent.MultimodalMain = _config.MultimodalMain;
         _agent.WebSearchEnabled = _config.WebSearch;
+        // 初始提示词（data\AGENT.md）：所有对话共享，会话里不可改，只有 ⚙ 设置里能改
+        _agentMd = LoadAgentMd();
+        _agent.CustomPrompt = _agentMd;
         _agent.MessageAdded += OnAgentMessage;
         _agent.DeltaAdded += OnAgentDelta;
         _agent.ToolStarted += OnAgentToolStarted;
@@ -137,6 +142,7 @@ public sealed partial class Kernel
         if (_config.UseOllama) _clusterAgent.Backend = "llm";
         _clusterAgent.MultimodalMain = _config.MultimodalMain;
         _clusterAgent.WebSearchEnabled = _config.WebSearch;
+        _clusterAgent.CustomPrompt = _agentMd;
         _clusterAgent.MessageAdded += OnClusterMessage;
         _clusterAgent.DeltaAdded += OnClusterDelta;
         _clusterAgent.SkillUsed += OnSkillUsed;
@@ -283,6 +289,7 @@ public sealed partial class Kernel
 
             case "settingsGet": EmitSettings(); break;
             case "settingsSave": SaveSettings(a); break;
+            case "saveAgentMd": SaveAgentMd(GetStr(a, "text") ?? ""); break;
             case "installOllama": await InstallOllamaAsync().ConfigureAwait(false); break;
             case "setToken": SaveToken(GetStr(a, "token") ?? ""); break;
 
@@ -463,6 +470,7 @@ public sealed partial class Kernel
         ["autoCheckUpdate"] = _config.AutoCheckUpdate,
         ["updateSource"] = _config.UpdateSource,
         ["petEnabled"] = _config.PetEnabled,
+        ["agentMd"] = ReadAgentMdFile(),
         ["theme"] = _config.Theme,
         ["mode"] = _agent.RunMode,
         ["fast"] = _agent.FastMode,

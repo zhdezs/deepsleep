@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -468,6 +468,77 @@ public sealed partial class Kernel
     // 设置
     // ------------------------------------------------------------------
 
+    // ------------------------------------------------------------------
+    // 初始提示词（AGENT.md）：所有对话共享，会话里不可改，只有 ⚙ 设置里能改
+    // ------------------------------------------------------------------
+
+    /// <summary>初始提示词文件：data\AGENT.md。</summary>
+    public string AgentMdPath => Path.Combine(_dataDir, "AGENT.md");
+
+    private const string DefaultAgentMd =
+@"<!--
+AGENT.md · deepsleep 初始提示词（所有对话共享；只有 ⚙ 设置里能改）
+======================================================================
+
+写在本文件里的内容，会作为「初始提示词」插入【所有对话】系统提示的最前面：
+AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不了。
+
+· 只有 ⚙ 设置 → 初始提示词（AGENT.md） 里能改；也可以直接编辑本文件（改完重启生效）。
+· 被 HTML 注释包住的文字（例如本段）只是说明，不会发给模型，随便写。
+· 想让 AI 遵守什么，就把规则写成普通文字，例如：
+
+    用中文回答，先给结论再给理由。
+    回答尽量简短，别超过 5 行。
+    叫我老板。
+    所有文件默认写到 D:\work。
+
+· 整份文件都是注释（或留空）= 不加任何额外要求。
+-->";
+
+    /// <summary>读 AGENT.md 并把 HTML 注释剥掉（注释只给人看，不发模型）。</summary>
+    private string LoadAgentMd()
+    {
+        try
+        {
+            if (!File.Exists(AgentMdPath))
+                File.WriteAllText(AgentMdPath, DefaultAgentMd, new System.Text.UTF8Encoding(false));
+            return StripMdComments(File.ReadAllText(AgentMdPath));
+        }
+        catch { return ""; }
+    }
+
+    /// <summary>读原文（保留注释），给设置弹窗显示 / 编辑用。</summary>
+    private string ReadAgentMdFile()
+    {
+        try
+        {
+            if (!File.Exists(AgentMdPath)) File.WriteAllText(AgentMdPath, DefaultAgentMd, new System.Text.UTF8Encoding(false));
+            return File.ReadAllText(AgentMdPath);
+        }
+        catch { return DefaultAgentMd; }
+    }
+
+    private static string StripMdComments(string s)
+        => System.Text.RegularExpressions.Regex.Replace(s ?? "", "<!--.*?-->", "",
+               System.Text.RegularExpressions.RegexOptions.Singleline).Trim();
+
+    /// <summary>保存初始提示词：写文件 + 立即套用到所有 Agent（含集群）。</summary>
+    private void SaveAgentMd(string text)
+    {
+        try
+        {
+            File.WriteAllText(AgentMdPath, text ?? "", new System.Text.UTF8Encoding(false));
+            _agentMd = StripMdComments(text ?? "");
+            _agent.CustomPrompt = _agentMd;
+            _clusterAgent.CustomPrompt = _agentMd;
+            EmitSettings();
+            Toast(string.IsNullOrWhiteSpace(_agentMd)
+                ? "初始提示词已清空，所有对话立即生效。"
+                : "初始提示词已保存，所有对话立即生效。");
+        }
+        catch (Exception ex) { Toast("初始提示词保存失败：" + ex.Message, "error"); }
+    }
+
     private void EmitSettings() => Emit(new { ev = "settings", settings = SettingsJson() });
 
     private void SaveSettings(JsonElement a)
@@ -492,6 +563,9 @@ public sealed partial class Kernel
         if (src != null) _config.UpdateSource = src.Trim().ToLowerInvariant() == "github" ? "github" : "gitee";
         if (a.TryGetProperty("petEnabled", out _)) _config.PetEnabled = GetBool(a, "petEnabled");
         _config.Save();
+        // 初始提示词（AGENT.md）：设置弹窗里一起提交，保存后立即对所有对话生效
+        string? agentMd = GetStr(a, "agentMd");
+        if (agentMd != null) SaveAgentMd(agentMd);
 
         _engine.ApplyConfig(_config);
         _agent.ApplyConfig(_config);
