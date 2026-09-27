@@ -26,6 +26,8 @@ public sealed class ClusterWorkerDto
     public string Task { get; set; } = "";
     public string Status { get; set; } = "空闲";
     public string LogText { get; set; } = "";
+    public string Activity { get; set; } = "";
+    public string Result { get; set; } = "";
 }
 
 public sealed class ClusterRunDto

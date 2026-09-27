@@ -413,3 +413,57 @@ body.pet .tb-right { position: absolute; right: 12px; }
 body.pet #msgs { padding: 14px 14px 6px; }
 body.pet .bubble { max-width: 86%; }
 body.pet .compose-row select { flex: 1; }
+
+/* ---------------- Agent 名片条（集群页） ---------------- */
+.agents {
+  flex: 0 0 auto; padding: 10px 18px 0; border-bottom: 1px solid var(--border);
+  background: var(--panel); backdrop-filter: blur(20px) saturate(180%);
+}
+.agents .ag-head { display: flex; align-items: center; gap: 10px; font-size: 11.5px; color: var(--muted); margin-bottom: 7px; }
+.agents .ag-title { font-weight: 600; color: var(--text); }
+.agents .ag-run { color: #34C759; font-weight: 600; }
+.agents .ag-hint { margin-left: auto; opacity: .8; }
+.ag-list { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 8px; }
+.ag-list::-webkit-scrollbar { height: 6px; }
+.ag-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.ag-card {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 7px 11px 7px 8px;
+  border: 1px solid var(--border); border-radius: 13px; background: var(--card);
+  box-shadow: 0 1px 2px rgba(0,0,0,.05); transition: transform .12s, box-shadow .12s;
+}
+.ag-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,.13); }
+.ag-card.off { opacity: .55; }
+.ag-av {
+  width: 26px; height: 26px; flex: 0 0 26px; border-radius: 50%; color: #fff;
+  font-size: 11px; font-weight: 600; font-style: normal;
+  display: flex; align-items: center; justify-content: center;
+}
+.ag-av.big { width: 38px; height: 38px; flex: 0 0 38px; font-size: 14px; }
+.ag-main { display: flex; flex-direction: column; min-width: 0; text-align: left; }
+.ag-name { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+.ag-act { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+.ag-st {
+  font-size: 10.5px; font-style: normal; padding: 2px 7px; border-radius: 9px;
+  background: var(--chipbg); color: var(--muted); white-space: nowrap; margin-left: 2px;
+}
+.ag-st.run { background: rgba(0,122,255,.14); color: var(--blue); }
+.ag-st.done { background: rgba(52,199,89,.16); color: #2AA24A; }
+.ag-st.bad { background: rgba(255,59,48,.15); color: #D7372E; }
+.ag-st.stop { background: rgba(255,149,0,.16); color: #C77400; }
+.ag-st.idle { background: var(--chipbg); color: var(--muted); }
+
+/* 名片详情弹窗 */
+.acard .ac-head { display: flex; gap: 11px; align-items: center; margin-bottom: 4px; }
+.acard .ac-meta { min-width: 0; }
+.acard .ac-name { font-size: 14px; font-weight: 600; }
+.acard .ac-now { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.ac-sec { margin-top: 12px; }
+.ac-sec .ac-h { font-size: 11.5px; font-weight: 600; color: var(--muted); margin-bottom: 5px; }
+.ac-sec .ac-b {
+  font-size: 12.5px; background: var(--code); border-radius: 10px; padding: 9px 11px;
+  max-height: 240px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+  user-select: text; text-align: left;
+}
+.ac-sec .ac-b.log { font-size: 11.5px; color: var(--muted); max-height: 190px; }
+
+body.pet #agents { display: none; }

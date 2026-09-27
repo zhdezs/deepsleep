@@ -26,7 +26,7 @@ window.chrome.webview.addEventListener('message', e => {
 /* ---------------- 状态 ---------------- */
 const S = {
   tab: 0, conv: null, items: [], convs: [], settings: {},
-  prompts: [], clusterTemplates: [], skills: [], state: 'idle',
+  prompts: [], clusterTemplates: [], skills: [], state: 'idle', agents: [],
   update: null, pet: true, version: ''
 };
 const kind = () => (S.tab === 1 ? 2 : 0);
@@ -453,6 +453,7 @@ function setTabUI(t) {
   document.querySelectorAll('#seg button').forEach(b =>
     b.classList.toggle('on', +b.dataset.tab === S.tab));
   $('#btnClusterTpl').classList.toggle('hidden', S.tab !== 1);
+  renderAgents();
   $('#mode').classList.toggle('hidden', S.tab === 1);
   $('#input').placeholder = S.tab === 1
     ? '一句话指挥集群…（Enter 发送 / Shift+Enter 换行 / Esc 停止）'
@@ -465,6 +466,97 @@ function setTheme(t) {
   document.body.classList.toggle('light', t !== 'dark');
   $('#btnTheme').textContent = t === 'dark' ? '☀️' : '🌙';
 }
+/* ---------------- Agent 名片（集群） ---------------- */
+let agentCardSid = 0;
+const stCls = s => s === '运行中' ? 'run' : s === '完成' ? 'done' : s === '失败' ? 'bad' :
+  s === '已停止' ? 'stop' : 'idle';
+const stText = a => a.activity || (a.status === '运行中' ? '正在干活…' :
+  a.status === '待命' ? '本轮没上场' : a.status === '空闲' ? '还没派过活' : a.status);
+
+function renderAgents() {
+  const box = $('#agents');
+  if (!box) return;
+  const list = S.tab === 1 ? (S.agents || []) : [];
+  if (!list.length) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+  box.classList.remove('hidden');
+  const running = list.filter(a => a.status === '运行中').length;
+  let html = '<div class="ag-head"><span class="ag-title">👥 本场名册 ' + list.length + ' 人</span>' +
+    (running ? '<span class="ag-run">● ' + running + ' 人正在干活</span>' : '') +
+    '<span class="ag-hint">点名片看它在干什么</span></div><div class="ag-list">';
+  for (const a of list) {
+    html += '<button class="ag-card' + (a.active ? '' : ' off') + '" data-sid="' + a.sid + '">' +
+      '<i class="ag-av" style="background:' + esc(a.color || '#4A90D9') + '">' + esc(a.avatar || 'A') + '</i>' +
+      '<span class="ag-main"><span class="ag-name">' + esc(a.name) + '</span>' +
+      '<span class="ag-act">' + esc(stText(a)) + '</span></span>' +
+      '<em class="ag-st ' + stCls(a.status) + '">' + esc(a.status) + '</em></button>';
+  }
+  box.innerHTML = html + '</div>';
+  box.querySelectorAll('.ag-card').forEach(el => {
+    el.onclick = () => {
+      const a = (S.agents || []).find(x => String(x.sid) === el.dataset.sid);
+      if (a) openAgentCard(a);
+    };
+  });
+}
+
+function agentSec(title, text, id, cls) {
+  const d = document.createElement('div');
+  d.className = 'ac-sec';
+  const h = document.createElement('div');
+  h.className = 'ac-h'; h.textContent = title;
+  const b = document.createElement('div');
+  b.className = 'ac-b' + (cls ? ' ' + cls : '');
+  if (id) b.id = id;
+  b.textContent = text || '（暂无）';
+  d.append(h, b);
+  return d;
+}
+
+function openAgentCard(a) {
+  agentCardSid = a.sid;
+  const body = openModal('agent', 'Agent 名片 · ' + a.name, [{ t: '关闭' }]);
+  const box = document.createElement('div');
+  box.className = 'acard';
+  const head = document.createElement('div');
+  head.className = 'ac-head';
+  const av = document.createElement('i');
+  av.className = 'ag-av big';
+  av.style.background = a.color || '#4A90D9';
+  av.textContent = a.avatar || 'A';
+  const meta = document.createElement('div');
+  meta.className = 'ac-meta';
+  const n = document.createElement('div');
+  n.className = 'ac-name';
+  n.innerHTML = esc(a.name) + ' <em id="acSt" class="ag-st ' + stCls(a.status) + '">' + esc(a.status) + '</em>' +
+    (a.active ? '' : ' <em class="ag-st idle">本轮待命</em>');
+  const now = document.createElement('div');
+  now.className = 'ac-now';
+  now.id = 'acNow';
+  now.textContent = stText(a);
+  meta.append(n, now);
+  head.append(av, meta);
+  box.appendChild(head);
+  if (a.task) box.appendChild(agentSec('🎯 分工', a.task, 'acTask'));
+  if (a.result) box.appendChild(agentSec('📦 产出（这一轮交给指挥官的）', a.result, 'acRes', 'md'));
+  if (a.text && a.text !== a.result) box.appendChild(agentSec('📝 输出', a.text, 'acOut', 'md'));
+  box.appendChild(agentSec('🔧 过程（工具调用）', a.log, 'acLog', 'log'));
+  body.appendChild(box);
+}
+
+/* 详情开着的时候跟着实时刷新（不重建，免得打断阅读） */
+function refreshAgentCard() {
+  if (modalName !== 'agent' || !agentCardSid) return;
+  const a = (S.agents || []).find(x => x.sid === agentCardSid);
+  if (!a) return;
+  const st = $('#acSt');
+  if (st) { st.textContent = a.status; st.className = 'ag-st ' + stCls(a.status); }
+  const now = $('#acNow'); if (now) now.textContent = stText(a);
+  const set = (id, v) => { const e = $('#' + id); if (e && v) e.textContent = v; };
+  set('acRes', a.result);
+  set('acOut', a.text && a.text !== a.result ? a.text : '');
+  set('acLog', a.log);
+}
+
 /* ---------------- 事件分发 ---------------- */
 function handleEvent(m) {
   switch (m.ev) {
@@ -480,14 +572,16 @@ function handleEvent(m) {
       setTheme(m.theme);
       setTabUI(m.tab || 0);
       S.convs = m.convs || []; S.conv = m.conv; S.items = m.items || [];
-      renderConvs(); renderItems(); renderStatus(m.status);
+      S.agents = m.agents || [];
+      renderConvs(); renderItems(); renderAgents(); renderStatus(m.status);
       if (S.update) showUpdatePill(S.update);
       document.title = 'deepsleep v' + S.version;
       break;
     case 'tab':
       setTabUI(m.tab || 0);
       S.convs = m.convs || []; S.conv = m.conv; S.items = m.items || [];
-      renderConvs(); renderItems(); renderStatus(m.status);
+      S.agents = m.agents || [];
+      renderConvs(); renderItems(); renderAgents(); renderStatus(m.status);
       break;
     case 'convs':
       if (m.tab != null && m.tab !== S.tab) break;
@@ -496,8 +590,16 @@ function handleEvent(m) {
     case 'conv':
       if (m.tab != null) setTabUI(m.tab);
       S.convs = m.convs || []; S.conv = m.conv; S.items = m.items || [];
-      renderConvs(); renderItems();
+      S.agents = m.agents || [];
+      renderConvs(); renderItems(); renderAgents();
       if (m.status) renderStatus(m.status);
+      break;
+    case 'agents':
+      if (m.kind !== 2) break;
+      if (m.conv != null && S.conv && m.conv !== S.conv.sid) break;
+      S.agents = m.agents || [];
+      renderAgents();
+      refreshAgentCard();
       break;
     case 'add': if (m.kind === kind()) addItem(m.item); break;
     case 'delta': updateText(m.conv, m.id, m.text); break;

@@ -152,6 +152,7 @@ public sealed partial class Kernel
         _clusterAgent.DeltaAdded += OnClusterDelta;
         _clusterAgent.SkillUsed += OnSkillUsed;
         _clusterAgent.ReasoningAdded += OnClusterReasoning;
+        _clusterAgent.ToolStarted += OnClusterToolStarted;
         _clusterAgent.Skills = _skills;
         string workspace = Path.Combine(_dataDir, "cluster_workspace");
         Directory.CreateDirectory(workspace);
@@ -196,6 +197,7 @@ public sealed partial class Kernel
             ["conv"] = ConvJson(cur),
             ["items"] = cur.Items.Select(ItemJson).ToList(),
             ["status"] = StatusJson(_tab),
+            ["agents"] = AgentsJson(_tab),
             ["settings"] = SettingsJson(),
             ["prompts"] = PromptTemplates.Select(t => new { name = t.Name, prompt = t.Prompt }).ToList(),
             ["clusterTemplates"] = ClusterTemplates.Select(t => new

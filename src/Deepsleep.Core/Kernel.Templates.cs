@@ -65,7 +65,10 @@ public sealed partial class Kernel
 
     /// <summary>集群汇总提示词。</summary>
     public const string ClusterSummaryPrompt =
-        "你是 Agent 集群总指挥。下面是各 Agent 的任务与输出，请汇总成结构化总结：关键结论、完成情况、产物路径、遗留问题、下一步建议。只输出中文总结，不要 JSON。";
+        "你是 Agent 集群总指挥。下面是每个 Agent 的分工、产出和执行过程（工具调用日志）。" +
+        "请按成员逐个汇报：谁负责什么、实际做了什么（关键步骤 / 跑过的命令 / 写出的文件）、产出与结论；" +
+        "然后再给总体结论、产物路径、遗留问题、下一步建议。" +
+        "用小标题 + 短句分点写，别照抄原始日志和命令输出；只输出中文，不要 JSON。";
 
     /// <summary>集群工作区说明（写进集群 Agent 的额外提示词）。</summary>
     public static string ClusterExtraPrompt(string workspace) =>

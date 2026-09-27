@@ -88,6 +88,97 @@ public sealed partial class Kernel
     }
 
     // ------------------------------------------------------------------
+    // Agent 名片（推给界面：每个成员一张卡，点开看它在干什么）
+    // ------------------------------------------------------------------
+
+    private readonly Dictionary<int, DateTime> _agentsEmitAt = new();
+
+    /// <summary>某场集群对话的名册名片：谁、什么状态、正在干什么、任务、产出、过程日志。</summary>
+    private List<object> AgentsJsonFor(int convSid)
+    {
+        var list = new List<object>();
+        if (!_clusterRuns.TryGetValue(convSid, out var run)) return list;
+        int i = 0;
+        foreach (var w in run.Workers)
+        {
+            string text = _clusterStreamItems.TryGetValue(w.Sid, out var item) ? item.Text : "";
+            list.Add(new
+            {
+                sid = w.Sid,
+                name = w.Name,
+                avatar = WorkerAvatar(w.Name),
+                color = ClusterColors[Math.Max(0, i % ClusterColors.Length)],
+                status = w.Status,
+                task = w.Task,
+                activity = w.Activity,
+                active = run.ActiveSids.Count == 0 || run.ActiveSids.Contains(w.Sid),
+                result = Cap(w.Result, 4000),
+                log = Cap(w.LogText, 4000),
+                text = Cap(text, 4000),
+            });
+            i++;
+        }
+        return list;
+    }
+
+    /// <summary>界面初始化/切页时按当前页取名片（AI 助手页为空）。</summary>
+    private List<object> AgentsJson(int tab) => tab == 1 ? AgentsJsonFor(_clusterCur.Sid) : new List<object>();
+
+    /// <summary>把最新名片推给界面（同一场对话 600ms 内最多一次，forceful 时无视节流）。</summary>
+    private void EmitAgents(int convSid, bool forceful = false)
+    {
+        var now = DateTime.UtcNow;
+        if (!forceful && _agentsEmitAt.TryGetValue(convSid, out var t) &&
+            (now - t).TotalMilliseconds < 600) return;
+        _agentsEmitAt[convSid] = now;
+        Emit(new { ev = "agents", kind = 2, conv = convSid, agents = AgentsJsonFor(convSid) });
+    }
+
+    private void EmitAgentsOf(ClusterRun run, bool forceful = false)
+    {
+        var conv = ConvOfRun(run);
+        if (conv != null) EmitAgents(conv.Sid, forceful);
+    }
+
+    /// <summary>把工具名翻成「正在…」，给名片当「正在做什么」。</summary>
+    private static string ActivityText(string tool)
+    {
+        if (tool.StartsWith(Agent.ToolResearch + "·", StringComparison.Ordinal))
+            return tool[(Agent.ToolResearch.Length + 1)..];
+        return tool switch
+        {
+            Agent.ToolRunCommand => "正在运行命令",
+            Agent.ToolPython => "正在执行 Python 脚本",
+            Agent.ToolImage => "正在生成图片",
+            Agent.ToolVision => "正在识别图片",
+            Agent.ToolSearch => "正在网络搜索",
+            Agent.ToolResearch => "正在进行深度研究",
+            Agent.ToolFetch => "正在抓取网页",
+            Agent.ToolOpenFile => "正在打开文件",
+            Agent.ToolReadFile => "正在读取文件",
+            Agent.ToolWriteFile => "正在写入文件",
+            Agent.ToolRemember => "正在记录记忆",
+            Agent.ToolForget => "正在更新记忆",
+            _ => $"正在执行「{tool}」",
+        };
+    }
+
+    /// <summary>集群成员开始用工具：更新名片上的「正在做什么」。</summary>
+    private void OnClusterToolStarted(int sid, string tool)
+    {
+        lock (_gate)
+        {
+            var run = FindRunBySid(sid);
+            var w = run?.Workers.FirstOrDefault(x => x.Sid == sid);
+            if (run == null || w == null || w.Status != "运行中") return;
+            string act = ActivityText(tool);
+            if (w.Activity == act) { EmitAgentsOf(run); return; }
+            w.Activity = act;
+            EmitAgentsOf(run, true);
+        }
+    }
+
+    // ------------------------------------------------------------------
     // 会话内小助手
     // ------------------------------------------------------------------
 
@@ -188,13 +279,16 @@ public sealed partial class Kernel
     {
         lock (_gate)
         {
-            var w = FindRunBySid(sid)?.Workers.FirstOrDefault(x => x.Sid == sid);
-            if (w == null || m.Role == "user") return;
+            var run = FindRunBySid(sid);
+            var w = run?.Workers.FirstOrDefault(x => x.Sid == sid);
+            if (run == null || w == null || m.Role == "user") return;
             if (m.Role == "tool")
             {
                 string t = m.Content.Length > 300 ? m.Content[..300] + "…" : m.Content;
                 w.LogText += $"[工具「{m.Meta}」] {t}\n";
                 if (w.LogText.Length > 8000) w.LogText = w.LogText[^8000..];
+                if (w.Status == "运行中") w.Activity = $"「{m.Meta}」已完成，继续处理…";
+                EmitAgentsOf(run, true);      // 名片上的「过程」实时刷新
             }
         }
     }
@@ -303,6 +397,7 @@ public sealed partial class Kernel
             AddClusterSys(sid,
                 $"👥 名册共 {roster.Count} 人，整场对话共享、只增不减：{string.Join("、", roster.Select(w => w.Name))}");
             AddClusterSys(sid, "🚀 并行执行中…");
+            EmitAgents(sid, true);
             EmitStatus(2);
 
             await Task.WhenAll(picked.Select(w => RunClusterWorkerAsync(run, w, cts.Token))).ConfigureAwait(false);
@@ -317,6 +412,7 @@ public sealed partial class Kernel
             int done = active.Count(w => w.Status == "完成");
             int failed = active.Count(w => w.Status == "失败");
             AddClusterSys(sid, $"📊 并行执行完成：{done} 完成 / {failed} 失败，指挥官汇总中…");
+            EmitAgentsOf(run, true);
             run.SummarySid = _nextClusterSid++;
             _clusterAgent.NewSession(run.SummarySid);
             var sb = new StringBuilder();
@@ -324,8 +420,9 @@ public sealed partial class Kernel
             {
                 sb.AppendLine();
                 sb.AppendLine($"=== {w.Name}（{w.Status}）===");
-                sb.AppendLine($"任务：{w.Task}");
-                sb.AppendLine(Clip(w.LogText, 1200));
+                sb.AppendLine($"分工：{w.Task}");
+                if (!string.IsNullOrWhiteSpace(w.Result)) sb.AppendLine($"产出：{Clip(w.Result, 1200)}");
+                if (!string.IsNullOrWhiteSpace(w.LogText)) sb.AppendLine($"过程：{Clip(w.LogText, 800)}");
             }
             string summary = await _clusterAgent.SummarizeAsync(ClusterSummaryPrompt, sb.ToString(), cts.Token,
                 d => OnClusterDelta(run.SummarySid, d)).ConfigureAwait(false);
@@ -356,6 +453,7 @@ public sealed partial class Kernel
         {
             _clusterCts.Remove(sid);
             RemoveClusterThinking(sid);
+            EmitAgents(sid, true);
             EmitStatus(2);
             ScheduleSave();
         }
@@ -441,22 +539,37 @@ public sealed partial class Kernel
     private async Task RunClusterWorkerAsync(ClusterRun run, ClusterWorker w, CancellationToken ct)
     {
         w.Status = "运行中";
+        w.Activity = "正在理解任务…";
+        w.Result = "";
+        EmitAgentsOf(run, true);
         EmitStatus(2);
         try
         {
             string result = await _clusterAgent.RunAsync(w.Sid, "你的任务：" + w.Task, ct).ConfigureAwait(false);
-            if (ct.IsCancellationRequested) { w.Status = "已停止"; return; }
-            w.LogText = string.IsNullOrWhiteSpace(result) ? "（无输出）" : result.Trim();
+            if (ct.IsCancellationRequested)
+            {
+                w.Status = "已停止";
+                w.Activity = "";
+                EmitAgentsOf(run, true);
+                return;
+            }
+            w.Result = string.IsNullOrWhiteSpace(result) ? "" : result.Trim();
             w.Status = (result.Contains("后端不可用", StringComparison.Ordinal) ||
                         result.Contains("出错", StringComparison.Ordinal) ||
                         result.Contains("失败", StringComparison.Ordinal)) ? "失败" : "完成";
-            if (!string.IsNullOrWhiteSpace(w.LogText) && !_clusterStreamItems.ContainsKey(w.Sid))
-                AddClusterBubble(run, w.Sid, w.LogText, WorkerAvatar(w.Name), $"Agent「{w.Name}」", false);
+            // 过程日志（工具调用）留在 LogText 里，输出单独放 Result —— 名片和汇总都要用
+            string bubble = string.IsNullOrWhiteSpace(w.Result)
+                ? (string.IsNullOrWhiteSpace(w.LogText) ? "" : w.LogText)
+                : w.Result;
+            if (!string.IsNullOrWhiteSpace(bubble) && !_clusterStreamItems.ContainsKey(w.Sid))
+                AddClusterBubble(run, w.Sid, bubble, WorkerAvatar(w.Name), $"Agent「{w.Name}」", false);
+            w.Activity = "";
         }
-        catch (OperationCanceledException) { w.Status = "已停止"; }
-        catch (Exception ex) { w.Status = "失败"; w.LogText = "[错误] " + ex.Message; }
+        catch (OperationCanceledException) { w.Status = "已停止"; w.Activity = ""; }
+        catch (Exception ex) { w.Status = "失败"; w.Activity = ""; w.Result = "[错误] " + ex.Message; }
         finally
         {
+            EmitAgentsOf(run, true);
             EmitStatus(2);
             ScheduleSave();
         }
@@ -524,6 +637,7 @@ public sealed partial class Kernel
         }
         _clusterAgent.ResetSession(sid);
         _clusterRuns.Remove(sid);
+        EmitAgents(sid, true);
         var conv = _clusterConvs.FirstOrDefault(c => c.Sid == sid);
         if (conv != null) conv.Items.Clear();
         _clusterThinking.Remove(sid);

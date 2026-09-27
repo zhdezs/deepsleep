@@ -32,6 +32,7 @@ public sealed partial class Kernel
             ["conv"] = ConvJson(conv),
             ["items"] = conv.Items.Select(ItemJson).ToList(),
             ["status"] = StatusJson(_tab),
+            ["agents"] = AgentsJson(_tab),
         });
     }
 
@@ -76,6 +77,7 @@ public sealed partial class Kernel
             ["conv"] = ConvJson(conv),
             ["items"] = conv.Items.Select(ItemJson).ToList(),
             ["status"] = StatusJson(_tab),
+            ["agents"] = AgentsJson(_tab),
         });
         ScheduleSave();
     }
@@ -95,6 +97,7 @@ public sealed partial class Kernel
             ["conv"] = ConvJson(conv),
             ["items"] = conv.Items.Select(ItemJson).ToList(),
             ["status"] = StatusJson(_tab),
+            ["agents"] = AgentsJson(_tab),
         });
     }
 
@@ -162,6 +165,7 @@ public sealed partial class Kernel
             ["conv"] = ConvJson(cur),
             ["items"] = cur.Items.Select(ItemJson).ToList(),
             ["status"] = StatusJson(_tab),
+            ["agents"] = AgentsJson(_tab),
         });
         ScheduleSave();
     }
@@ -186,6 +190,7 @@ public sealed partial class Kernel
             ["conv"] = ConvJson(conv),
             ["items"] = new List<object>(),
             ["status"] = StatusJson(_tab),
+            ["agents"] = AgentsJson(_tab),
         });
         ScheduleSave();
     }
@@ -333,6 +338,8 @@ public sealed partial class Kernel
                     Task = w.Task,
                     Status = w.Status,
                     LogText = Cap(w.LogText, 2000),
+                    Activity = w.Activity,
+                    Result = Cap(w.Result, 4000),
                 }).ToList(),
             });
         foreach (var kv in _clusterStates)
@@ -378,6 +385,8 @@ public sealed partial class Kernel
                     Task = w.Task,
                     Status = w.Status,
                     LogText = w.LogText,
+                    Activity = w.Activity,
+                    Result = w.Result,
                 }).ToList(),
             };
             _clusterStates[r.Sid] = RunState.Stopped;

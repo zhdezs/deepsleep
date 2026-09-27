@@ -10,13 +10,7 @@ internal static partial class Program
         Res[] clients;
         lock (SseGate) clients = SseClients.ToArray();
         foreach (var c in clients)
-        {
-            _ = Task.Run(async () =>
-            {
-                try { await c.SseAsync("data: " + json + "\n\n"); }
-                catch { lock (SseGate) SseClients.Remove(c); }
-            });
-        }
+            c.PushSse("data: " + json + "\n\n");
     }
 
     private static async Task HandleAsync(Req req, Res res)
@@ -98,11 +92,12 @@ internal static partial class Program
         lock (SseGate) SseClients.Add(res);
         try
         {
-            await res.SseAsync(": connected\n\n");
+            res.PushSse(": connected\n\n");
             while (true)
             {
                 await Task.Delay(15000);
-                await res.SseAsync(": ping\n\n");
+                if (res.SseBroken) break;
+                res.PushSse(": ping\n\n");
             }
         }
         catch { }

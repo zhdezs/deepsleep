@@ -71,4 +71,8 @@ public sealed class ClusterWorker
     public string Task { get; set; } = "";
     public string Status { get; set; } = "空闲";
     public string LogText { get; set; } = "";
+    /// <summary>正在做什么（最近一次工具调用），实时推给界面上的「Agent 名片」。</summary>
+    public string Activity { get; set; } = "";
+    /// <summary>这一轮的产出（成员自己的回答），汇总时按人喂给指挥官。</summary>
+    public string Result { get; set; } = "";
 }
