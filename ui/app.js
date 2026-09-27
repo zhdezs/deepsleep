@@ -341,11 +341,15 @@ function restoreOpen(m) {
   }
 }
 
+// 老版本存下来的「调用了工具「X」」气泡：不再显示（工具卡片本身就说明了一切）
+function isToolCallNotice(it) {
+  return !it.self && !it.sys && !it.tool && /^调用了工具「[^」]*」$/.test(String(it.text || '').trim());
+}
 function renderItems(force) {
   const box = $('#msgs');
   const open = captureOpen();
   box.innerHTML = '';
-  for (const e of groupEntries(S.items))
+  for (const e of groupEntries(S.items.filter(x => !isToolCallNotice(x))))
     for (const n of (e.g ? groupNodes(e) : itemNodes(e.it))) box.appendChild(n);
   restoreOpen(open);
   scrollBottom(force === undefined ? true : force);
@@ -353,6 +357,7 @@ function renderItems(force) {
 
 function addItem(it) {
   if (!S.conv || it.sessionId !== S.conv.sid) return;
+  if (isToolCallNotice(it)) return;
   S.items.push(it);
   renderItems(!!it.self);
 }

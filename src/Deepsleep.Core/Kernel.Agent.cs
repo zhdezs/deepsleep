@@ -149,6 +149,9 @@ public sealed partial class Kernel
 
             bool isUser = m.Role == "user";
             bool isTool = m.Role == "tool";
+            // 「调用了工具「X」」这句不再显示：调了什么、结果如何，下面的工具卡片里写着，说了是重复刷屏
+            if (!isUser && !isTool && m.Meta.StartsWith("调用了工具", StringComparison.Ordinal))
+                return;
             bool isToolCallNotice = !isUser && !isTool && !string.IsNullOrEmpty(m.Meta);
             bool looksLikeToolJson = !isUser && !isTool && !isToolCallNotice &&
                                      m.Content.Contains("\"tool\"", StringComparison.Ordinal);
