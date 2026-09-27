@@ -33,6 +33,8 @@ public sealed class ClusterRunDto
     public int Sid { get; set; }
     public string UserText { get; set; } = "";
     public List<ClusterWorkerDto> Workers { get; set; } = new();
+    /// <summary>上一轮派了哪些成员上场（名册是只增不减的，得知道这轮谁参与了）。</summary>
+    public List<int> ActiveSids { get; set; } = new();
     public int SummarySid { get; set; }
 }
 

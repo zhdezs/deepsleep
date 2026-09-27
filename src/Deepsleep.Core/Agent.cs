@@ -231,13 +231,20 @@ public sealed class Agent
         history.Add(new AgentMessage { Role = "user", Content = text });
     }
 
-    /// <summary>一句话指挥：让指挥官模型把目标拆解成子任务，返回 JSON 计划文本。</summary>
-    public async Task<string> PlanAsync(string instruction, string? feedback = null)
+    /// <summary>一句话指挥：让指挥官模型把目标拆解成子任务，返回 JSON 计划文本（给了名册就优先复用老成员）。</summary>
+    public async Task<string> PlanAsync(string instruction, string? feedback = null, string? roster = null)
     {
-        const string system =
-            "你是 Agent 集群的指挥官。用户用一句话给出目标，你需要把目标拆解成 3~10 个可并行执行的子任务。" +
-            "必须拆出至少 3 个子任务，严禁只拆 1 个、严禁拒绝拆解。只输出严格 JSON 数组，不要任何其他文字或代码块：" +
-            "[{\"角色\":\"名称\",\"任务\":\"具体任务\"},...]。子任务要具体、可执行，覆盖实现、测试、素材等必要环节。";
+        string system =
+            "你是 Agent 集群的指挥官。用户用一句话给出目标，你把目标拆成 1~10 个能并行执行的子任务。" +
+            "只输出严格 JSON 数组，不要任何其他文字或代码块：" +
+            "[{\"角色\":\"名称\",\"任务\":\"具体任务\",\"复用\":true},...]。" +
+            "拆解原则：活小就少派人（1~2 个就够），活大才多派人；严禁为了凑数把不相干的角色都拉上；" +
+            "每个子任务都要具体、可执行。";
+        if (!string.IsNullOrWhiteSpace(roster))
+            system += "\n\n这个集群的名册是整场对话共享的，能复用就复用（复用成员会保留它之前的工作记忆），别重复造人：\n" +
+                      roster +
+                      "\n规则：① 确实缺角色才新增；② 复用名册里的某位成员时，「角色」就写它的名字并加 \"复用\":true" +
+                      "（也可以写 \"成员\":\"名字\" 明确指定）；③ 本轮用不上的成员不要列进来，他们待命就行。";
         string content = instruction;
         if (!string.IsNullOrWhiteSpace(feedback))
             content += "\n\n" + feedback;

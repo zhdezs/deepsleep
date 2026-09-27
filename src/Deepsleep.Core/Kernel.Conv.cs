@@ -325,6 +325,7 @@ public sealed partial class Kernel
                 Sid = kv.Key,
                 UserText = kv.Value.UserText,
                 SummarySid = kv.Value.SummarySid,
+                ActiveSids = kv.Value.ActiveSids.ToList(),
                 Workers = kv.Value.Workers.Select(w => new ClusterWorkerDto
                 {
                     Sid = w.Sid,
@@ -369,6 +370,7 @@ public sealed partial class Kernel
             {
                 UserText = r.UserText,
                 SummarySid = r.SummarySid,
+                ActiveSids = r.ActiveSids?.ToList() ?? new List<int>(),
                 Workers = r.Workers.Select(w => new ClusterWorker
                 {
                     Sid = w.Sid,

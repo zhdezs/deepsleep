@@ -12,12 +12,27 @@ namespace TrollWrangler.Core;
 /// </summary>
 public sealed partial class Kernel
 {
-    /// <summary>一次集群执行的状态：指令文本、子任务成员、汇总会话 id。</summary>
+    /// <summary>名册上限：整场对话只增不减，但也别无限长（到顶后只能复用老成员）。</summary>
+    private const int MaxClusterMembers = 20;
+    /// <summary>一轮最多派几个人上（名册可以很大，单轮参与者有上限）。</summary>
+    private const int MaxRoundParticipants = 10;
+
+    /// <summary>
+    /// 一场集群对话的运行状态。
+    /// Workers 是**整场对话共享的成员名册**：拆出来的 Agent 一直留着，以后只新加、不删除
+    /// （只有用户点「清空集群」才清）。每轮由指挥官从名册里挑一部分人参与，其他人待命 ——
+    /// 小活就用一两个人，不必全员一起上。
+    /// </summary>
     private sealed class ClusterRun
     {
         public string UserText = "";
-        public List<ClusterWorker> Workers = new();
+        public List<ClusterWorker> Workers = new();   // 名册（只增不减）
+        public List<int> ActiveSids = new();          // 本轮参与的成员
         public int SummarySid;
+
+        /// <summary>本轮参与的成员；没有记录（老数据）时退回整本名册。</summary>
+        public List<ClusterWorker> ActiveMembers()
+            => ActiveSids.Count == 0 ? Workers : Workers.Where(w => ActiveSids.Contains(w.Sid)).ToList();
     }
 
     // ------------------------------------------------------------------
@@ -38,8 +53,9 @@ public sealed partial class Kernel
         string running = "";
         if (_clusterRuns.TryGetValue(sid, out var run))
         {
-            int n = run.Workers.Count(w => w.Status == "运行中");
-            running = n > 0 ? $"{n}/{run.Workers.Count} 个 Agent 并行中" : "";
+            var part = run.ActiveMembers();
+            int n = part.Count(w => w.Status == "运行中");
+            running = n > 0 ? $"{n}/{part.Count} 个 Agent 并行中（名册 {run.Workers.Count} 人）" : "";
         }
         return GetClusterState(sid) switch
         {
@@ -62,8 +78,9 @@ public sealed partial class Kernel
         foreach (var c in _clusterConvs)
             if (_clusterRuns.TryGetValue(c.Sid, out var r))
             {
-                total += r.Workers.Count;
-                running += r.Workers.Count(w => w.Status == "运行中");
+                var part = r.ActiveMembers();
+                total += part.Count;
+                running += part.Count(w => w.Status == "运行中");
             }
         string lair = total > 0 ? $"　并行：{running}/{total}" : "";
         return $"模式：boom · 全自动　后端：{backend}　联网：{(_clusterAgent.WebSearchEnabled ? "开" : "关")}" +
@@ -212,14 +229,21 @@ public sealed partial class Kernel
     // ------------------------------------------------------------------
 
     private async Task RunClusterCoreAsync(int sid, string text, bool addUserBubble,
-        List<(string role, string task)>? preset)
+        List<(string role, string task, string member)>? preset)
     {
         SetClusterState(sid, RunState.Running);
         AddClusterThinking(sid);
         var cts = new CancellationTokenSource();
         _clusterCts[sid] = cts;
-        var run = new ClusterRun { UserText = text };
-        _clusterRuns[sid] = run;
+        // 名册是整场对话共享的：已经拆出来的 Agent 一直留着，以后再拆只往里加
+        if (!_clusterRuns.TryGetValue(sid, out var run))
+        {
+            run = new ClusterRun();
+            _clusterRuns[sid] = run;
+        }
+        run.UserText = text;
+        run.SummarySid = 0;
+        var roster = run.Workers;
         var conv = _clusterConvs.First(c => c.Sid == sid);
         try
         {
@@ -244,20 +268,44 @@ public sealed partial class Kernel
                 Emit(new { ev = "convs", tab = _tab, convs = ConvListJson(_tab) });
             }
 
-            List<(string role, string task)> plan;
-            if (preset != null && preset.Count >= 2) plan = preset;
-            else plan = await PlanAndRetryAsync(sid, text, cts.Token).ConfigureAwait(false);
+            List<(string role, string task, string member)> plan;
+            if (preset != null && preset.Count >= 1) plan = preset;
+            else plan = await PlanAndRetryAsync(sid, text, roster, cts.Token).ConfigureAwait(false);
 
-            foreach (var (role, task) in plan.Take(10))
+            // 名册合并：名册里有同名成员就复用（它之前的会话记忆一并留着），确实缺角色才新增；
+            // 本轮没被点到的成员待命，不参与这次工作 —— 小活不用全员上。
+            var picked = new List<ClusterWorker>();
+            var added = new List<string>();
+            foreach (var (role, task, member) in plan.Take(MaxRoundParticipants))
             {
-                var w = new ClusterWorker { Name = role, Task = task, Sid = _nextClusterSid++ };
+                var w = MatchMember(roster, string.IsNullOrWhiteSpace(member) ? role : member);
+                if (w != null)
+                {
+                    w.Task = task;
+                    if (!picked.Contains(w)) picked.Add(w);
+                    continue;
+                }
+                if (roster.Count >= MaxClusterMembers) continue;
+                w = new ClusterWorker { Name = role.Trim(), Task = task, Sid = _nextClusterSid++ };
                 _clusterAgent.NewSession(w.Sid);
-                run.Workers.Add(w);
+                roster.Add(w);
+                picked.Add(w);
+                added.Add(w.Name);
             }
-            AddClusterSys(sid, $"🧠 指挥官已拆解为 {run.Workers.Count} 个子任务，并行执行中：{string.Join("、", run.Workers.Select(w => w.Name))}");
+            if (picked.Count == 0 && roster.Count > 0) picked = roster.Take(MaxRoundParticipants).ToList();
+
+            run.ActiveSids = picked.Select(w => w.Sid).ToList();
+            foreach (var w in roster)
+                if (!picked.Contains(w)) w.Status = "待命";
+            AddClusterSys(sid,
+                $"🧠 本轮 {picked.Count} 名成员参与：{string.Join("、", picked.Select(w => w.Name))}" +
+                (added.Count > 0 ? $"（新增 {string.Join("、", added)}）" : "（全部复用老成员）"));
+            AddClusterSys(sid,
+                $"👥 名册共 {roster.Count} 人，整场对话共享、只增不减：{string.Join("、", roster.Select(w => w.Name))}");
+            AddClusterSys(sid, "🚀 并行执行中…");
             EmitStatus(2);
 
-            await Task.WhenAll(run.Workers.Select(w => RunClusterWorkerAsync(run, w, cts.Token))).ConfigureAwait(false);
+            await Task.WhenAll(picked.Select(w => RunClusterWorkerAsync(run, w, cts.Token))).ConfigureAwait(false);
             if (cts.IsCancellationRequested)
             {
                 SetClusterState(sid, RunState.Stopped);
@@ -265,13 +313,14 @@ public sealed partial class Kernel
                 return;
             }
 
-            int done = run.Workers.Count(w => w.Status == "完成");
-            int failed = run.Workers.Count(w => w.Status == "失败");
+            var active = run.ActiveMembers();
+            int done = active.Count(w => w.Status == "完成");
+            int failed = active.Count(w => w.Status == "失败");
             AddClusterSys(sid, $"📊 并行执行完成：{done} 完成 / {failed} 失败，指挥官汇总中…");
             run.SummarySid = _nextClusterSid++;
             _clusterAgent.NewSession(run.SummarySid);
             var sb = new StringBuilder();
-            foreach (var w in run.Workers)
+            foreach (var w in active)
             {
                 sb.AppendLine();
                 sb.AppendLine($"=== {w.Name}（{w.Status}）===");
@@ -312,32 +361,81 @@ public sealed partial class Kernel
         }
     }
 
-    private async Task<List<(string role, string task)>> PlanAndRetryAsync(int sid, string instruction, CancellationToken ct)
+    private async Task<List<(string role, string task, string member)>> PlanAndRetryAsync(
+        int sid, string instruction, List<ClusterWorker> roster, CancellationToken ct)
     {
         string planText = "";
-        var plan = new List<(string, string)>();
+        var plan = new List<(string, string, string)>();
+        string rosterText = RosterText(roster);
         for (int attempt = 1; attempt <= 3; attempt++)
         {
             AddClusterSys(sid, $"🧠 指挥官拆解中（第 {attempt} 次尝试）…");
             string feedback = attempt == 1 ? "" :
-                "上次输出无效：必须输出严格 JSON 数组 [{\"角色\":...,\"任务\":...}]，至少 3 个子任务。上次输出：" + Clip(planText, 500);
-            planText = await _clusterAgent.PlanAsync(instruction, feedback).ConfigureAwait(false);
+                "上次输出无效：必须输出严格 JSON 数组 [{\"角色\":...,\"任务\":...}]（至少 1 个子任务，" +
+                "需要复用名册里的老成员就加 \"复用\":true）。上次输出：" + Clip(planText, 500);
+            planText = await _clusterAgent.PlanAsync(instruction, feedback, rosterText).ConfigureAwait(false);
             plan = TryParsePlan(planText);
-            if (plan.Count >= 3) break;
+            if (plan.Count >= 1) break;   // 小活只派一个人也认，不再硬凑 3 个
         }
-        if (plan.Count < 2)
+        if (plan.Count == 0)
         {
             string brief = Clip(instruction, 80);
             AddClusterSys(sid,
                 "⚠️ 指挥官拆分无效，已按「实现/测试/素材」保底拆成 3 个成员继续执行。\n\n指挥官输出：\n" + Clip(planText, 500));
-            plan = new List<(string, string)>
+            plan = new List<(string, string, string)>
             {
-                ("实现", $"负责「{brief}」的具体实现，可写代码/脚本完成，产物保存到工作区。"),
-                ("测试校验", $"对「{brief}」的产物进行测试与校验，报告问题与修复建议。"),
-                ("素材与文档", $"为「{brief}」用「生成图片」准备图片素材（如需），并撰写说明文档。"),
+                ("实现", $"负责「{brief}」的具体实现，可写代码/脚本完成，产物保存到工作区。", ""),
+                ("测试校验", $"对「{brief}」的产物进行测试与校验，报告问题与修复建议。", ""),
+                ("素材与文档", $"为「{brief}」用「生成图片」准备图片素材（如需），并撰写说明文档。", ""),
             };
         }
-        return plan.Take(10).ToList();
+        return plan.Take(MaxRoundParticipants).ToList();
+    }
+
+    /// <summary>把名册写成给指挥官看的一行一行清单（谁在、上次干什么活）。</summary>
+    private static string RosterText(List<ClusterWorker> roster)
+    {
+        if (roster.Count == 0) return "";
+        var sb = new StringBuilder();
+        foreach (var w in roster)
+        {
+            sb.Append("· ").Append(w.Name);
+            if (!string.IsNullOrWhiteSpace(w.Task)) sb.Append("（上次：").Append(Clip(w.Task, 40)).Append('）');
+            sb.AppendLine();
+        }
+        return sb.ToString().TrimEnd();
+    }
+
+    /// <summary>按名字从名册里找成员（先精确、再互相包含，都忽略空格与常见后缀）。</summary>
+    private static ClusterWorker? MatchMember(List<ClusterWorker> roster, string name)
+    {
+        string key = MemberKey(name);
+        if (key.Length == 0) return null;
+        foreach (var w in roster)
+            if (MemberKey(w.Name) == key) return w;
+        foreach (var w in roster)
+        {
+            string n = MemberKey(w.Name);
+            if (n.Length >= 2 && key.Length >= 2 && (n.Contains(key, StringComparison.Ordinal) ||
+                                                     key.Contains(n, StringComparison.Ordinal)))
+                return w;
+        }
+        return null;
+    }
+
+    private static string MemberKey(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "";
+        var sb = new StringBuilder();
+        foreach (char c in name)
+            if (!char.IsWhiteSpace(c) && c != '·' && c != '-' && c != '_' && c != '（' && c != '）' &&
+                c != '(' && c != ')' && c != '"' && c != '\'')
+                sb.Append(c);
+        string t = sb.ToString();
+        foreach (string suffix in new[] { "Agent", "agent", "智能体", "成员", "助手" })
+            if (t.EndsWith(suffix, StringComparison.Ordinal) && t.Length > suffix.Length)
+                t = t[..^suffix.Length];
+        return t;
     }
 
     private async Task RunClusterWorkerAsync(ClusterRun run, ClusterWorker w, CancellationToken ct)
@@ -376,10 +474,12 @@ public sealed partial class Kernel
             return;
         }
         TruncateAfterLastUserMessage(sid, run.UserText);
-        foreach (var w in run.Workers) { _clusterAgent.ResetSession(w.Sid); _clusterStreamItems.Remove(w.Sid); _clusterThoughts.Remove(w.Sid); }
+        var rerun = run.ActiveMembers();      // 只重跑上一轮参与的人，名册里其他成员不动
+        foreach (var w in rerun) { _clusterAgent.ResetSession(w.Sid); _clusterStreamItems.Remove(w.Sid); _clusterThoughts.Remove(w.Sid); }
         if (run.SummarySid != 0) _clusterStreamItems.Remove(run.SummarySid); _clusterThoughts.Remove(run.SummarySid);
-        AddClusterSys(sid, "🔄 已从断点重新执行集群任务…");
-        await RunClusterCoreAsync(sid, run.UserText, false, run.Workers.Select(w => (w.Name, w.Task)).ToList()).ConfigureAwait(false);
+        AddClusterSys(sid, $"🔄 已从断点重新执行集群任务（上一轮的 {rerun.Count} 名成员）…");
+        await RunClusterCoreAsync(sid, run.UserText, false,
+            rerun.Select(w => (w.Name, w.Task, w.Name)).ToList()).ConfigureAwait(false);
     }
 
     private async Task ClusterRegenerateAsync()
@@ -387,9 +487,10 @@ public sealed partial class Kernel
         int sid = _clusterCur.Sid;
         if (!_clusterRuns.TryGetValue(sid, out var run) || string.IsNullOrWhiteSpace(run.UserText)) return;
         TruncateAfterLastUserMessage(sid, run.UserText);
-        foreach (var w in run.Workers) { _clusterAgent.ResetSession(w.Sid); _clusterStreamItems.Remove(w.Sid); _clusterThoughts.Remove(w.Sid); }
+        // 名册里老成员的会话记忆保留（重新拆解时还会优先复用他们），只清掉上一轮的流式气泡
+        foreach (var w in run.ActiveMembers()) { _clusterStreamItems.Remove(w.Sid); _clusterThoughts.Remove(w.Sid); }
         if (run.SummarySid != 0) _clusterStreamItems.Remove(run.SummarySid); _clusterThoughts.Remove(run.SummarySid);
-        AddClusterSys(sid, "↻ 重新生成集群结果…");
+        AddClusterSys(sid, "↻ 重新生成集群结果（会优先复用名册里的老成员）…");
         await RunClusterCoreAsync(sid, run.UserText, false, null).ConfigureAwait(false);
     }
 
@@ -468,17 +569,17 @@ public sealed partial class Kernel
         if (GetClusterState(sid) == RunState.Running) return;
         var t = ClusterTemplates[index];
         string text = $"使用分工模板「{t.Name}」：\n" + string.Join("\n", t.Members.Select(m => $"{m.Role}：{m.Task}"));
-        await RunClusterCoreAsync(sid, text, true, t.Members.Select(m => (m.Role, m.Task)).ToList()).ConfigureAwait(false);
+        await RunClusterCoreAsync(sid, text, true, t.Members.Select(m => (m.Role, m.Task, "")).ToList()).ConfigureAwait(false);
     }
 
     // ------------------------------------------------------------------
     // 指挥官输出解析
     // ------------------------------------------------------------------
 
-    /// <summary>从指挥官输出里解析 [{"角色":...,"任务":...}] 计划。</summary>
-    private static List<(string role, string task)> TryParsePlan(string text)
+    /// <summary>从指挥官输出里解析 [{"角色":...,"任务":...,"成员":...}] 计划（「成员」是复用谁，可省）。</summary>
+    private static List<(string role, string task, string member)> TryParsePlan(string text)
     {
-        var list = new List<(string, string)>();
+        var list = new List<(string, string, string)>();
         int idx = text.IndexOf('[');
         while (idx >= 0)
         {
@@ -487,13 +588,16 @@ public sealed partial class Kernel
             {
                 try
                 {
-                    var candidate = new List<(string, string)>();
+                    var candidate = new List<(string, string, string)>();
                     using var doc = System.Text.Json.JsonDocument.Parse(text[idx..end]);
                     foreach (var el in doc.RootElement.EnumerateArray())
                     {
                         string role = GetJsonStr(el, "角色") ?? GetJsonStr(el, "role") ?? GetJsonStr(el, "名称") ?? $"Agent {candidate.Count + 1}";
                         string task = GetJsonStr(el, "任务") ?? GetJsonStr(el, "task") ?? "";
-                        if (!string.IsNullOrWhiteSpace(task)) candidate.Add((role, task));
+                        // 「成员」= 复用名册里的哪一位；只写了「复用」没写名字的，按「角色」去名册里找
+                        string member = GetJsonStr(el, "成员") ?? GetJsonStr(el, "复用成员") ?? GetJsonStr(el, "member") ?? "";
+                        if (member.Length == 0 && IsJsonTrue(el, "复用")) member = role;
+                        if (!string.IsNullOrWhiteSpace(task)) candidate.Add((role, task, member));
                     }
                     if (candidate.Count > 0) { list = candidate; break; }
                 }
@@ -524,6 +628,13 @@ public sealed partial class Kernel
         }
         return -1;
     }
+
+    private static bool IsJsonTrue(System.Text.Json.JsonElement el, string name)
+        => el.ValueKind == System.Text.Json.JsonValueKind.Object &&
+           el.TryGetProperty(name, out var v) &&
+           (v.ValueKind == System.Text.Json.JsonValueKind.True ||
+            (v.ValueKind == System.Text.Json.JsonValueKind.String &&
+             string.Equals(v.GetString(), "true", StringComparison.OrdinalIgnoreCase)));
 
     private static string? GetJsonStr(System.Text.Json.JsonElement el, string name)
     {
