@@ -20,7 +20,7 @@ r"""deepsleep 发布到 Gitee（zhdezs/deepsleep）：源码同步 + Release 附
 版本号自动读 src\TrollWrangler.csproj；附件取 release\deepsleep-Setup.exe（按需切片）与
 release\deepsleep-<版本>-win-x64.zip。
 """
-import argparse, base64, hashlib, http.client, json, os, re, shutil, ssl, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
+import argparse, atexit, base64, hashlib, http.client, json, os, re, shutil, ssl, sys, tempfile, time, urllib.error, urllib.parse, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))          # <root>\release\tools
 ROOT = os.path.dirname(os.path.dirname(HERE))              # <root>
@@ -32,6 +32,19 @@ SKIP_DIRS = {"bin", "obj", "dist", "publish", "package", ".git", "data", "__pyca
 SKIP_NAMES = {"payload.zip"}
 SKIP_EXT = (".zip", ".exe", ".pdb", ".dll")
 PART_SIZE = 90 * 1024 * 1024        # 单个附件上限 100MB，留足余量
+# 切分片用的临时目录：固定一个，别每次 mkdtemp 留一坨 130MB 的碎块（以前攒了几十个、4GB 多），
+# 进程退出时自动删干净。
+PARTS_TMP = os.path.join(tempfile.gettempdir(), "deepsleep-gitee-parts")
+_parts_ready = [False]
+
+
+def parts_dir():
+    if not _parts_ready[0]:
+        shutil.rmtree(PARTS_TMP, ignore_errors=True)
+        os.makedirs(PARTS_TMP, exist_ok=True)
+        _parts_ready[0] = True
+        atexit.register(lambda: shutil.rmtree(PARTS_TMP, ignore_errors=True))
+    return PARTS_TMP
 TOKEN = ""
 REPO = REPO_DEFAULT
 
@@ -122,7 +135,7 @@ def split_installer(path):
     base = os.path.basename(path)
     if size <= PART_SIZE:
         return [(base, path, size)]
-    tmp = tempfile.mkdtemp(prefix="deepsleep-gitee-parts-")
+    tmp = parts_dir()
     parts, index, left = [], 1, size
     with open(path, "rb") as src:
         while left > 0:

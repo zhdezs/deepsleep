@@ -1,6 +1,6 @@
 {
-  "version": "2.2.4",
-  "url": "https://github.com/zhdezs/deepsleep/releases/download/v2.2.4/deepsleep-Setup.exe",
-  "sha256": "f8e2a327fde3c31b00ab86664de309bd868640c1a7b9043851e7634255857cfb",
-  "notes": "2.2.4 两个修复：\n① 思考内容不再混进正文 —— 模型思考（reasoning）以前会被当成正文拼进回答，最明显的是 Responses 接口「流式没拿到正文 → 回退非流式」那条路，用户就看见「AI 突然说了一大段英文」。现在思考单独收好、折叠在回答气泡上方（默认收起，点开才看，标题遇到英文思考会标注「模型用英文思考，已折叠」），正文只剩干净的中文；提示词也明确要求思考过程用简体中文。\n② AI 不再「说着说着就停」—— 回答被输出长度上限截断时，以前只有部分协议能识别（finish_reason=length），Responses / Anthropic / Gemini 三条路都没认出来，于是停在半截、得手动说「继续」。现在四种协议都认截断，软件自动接着往下写（最多续 4 次），并把续写开头与已写结尾的重复部分削掉，不会重复一段。\n其余与 2.2.3 一致：不再刷屏「调用了工具「X」」、升级窗关掉不再弹回、命令与文件合并成可展开卡片、内核版 CMD 模式 deepsleep-core --cli。"
+  "version": "2.2.5",
+  "url": "https://github.com/zhdezs/deepsleep/releases/download/v2.2.5/deepsleep-Setup.exe",
+  "sha256": "6bcdff7faa81111877957e9545bbb59a5d04e59ec26a1d4d64c1b26aee31ecf8",
+  "notes": "2.2.5：专治「明明是 Gitee 却慢」。① 检查更新不再先等 GitHub —— 以前就算走 Gitee 线路，也要串行先请求境外的 api.github.com（国内常被重置或挂到 20 秒超时）才轮到 Gitee，现在 GitHub 请求丢后台、只等 Gitee，Gitee 带官方 SHA256 就直接用。② Gitee 分片改成两片一起下（单连接吃不满带宽），实测速度接近翻倍。③ 下载显示实时速度和剩余时间（如「993 KB/s · 已下 6.1 MB / 8.0 MB · 剩余约 2 秒」），不再像卡死。④ 修掉「每次升级都从头重下几百 MB」的真 bug：以前所有版本共用同一个临时安装包，断点续传会把上一个版本剩下的半截接着往下写，拼出来的包 SHA256 永远对不上；现在按「版本号 + SHA256」分开存，续传真能续上，并自动清掉旧残件。其余与 2.2.4 一致：思考内容折叠、截断自动续写、命令与文件合并卡、内核版 CMD 模式。"
 }

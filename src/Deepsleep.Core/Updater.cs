@@ -248,8 +248,18 @@ public static async Task<UpdateInfo?> CheckAsync(string manifestUrl, bool giteeF
     // 2) GitHub 仓库 → Releases API（顺便看 Gitee 同名仓库，能加速就加速）
     if (TryParseGitHub(manifestUrl, out string owner, out string repo))
     {
-        var gh = await CheckGitHubAsync(owner, repo, ct).ConfigureAwait(false);
-        var gt = giteeFirst ? await CheckGiteeAsync(owner, repo, ct).ConfigureAwait(false) : null;
+        // 「明明是 Gitee 却慢」的元凶：GitHub 的 api.github.com 是境外地址，国内要么连接被重置、
+        // 要么一直挂到 20 秒超时，而它是串行挡在 Gitee 前面的。现在把 GitHub 那一请求丢后台，
+        // 只等 Gitee；Gitee 上有同一个版本、又自带官方 SHA256 的话直接就用，一秒都不等 GitHub。
+        var ghTask = CheckGitHubAsync(owner, repo, ct);
+        UpdateInfo? gt = null;
+        if (giteeFirst)
+        {
+            gt = await CheckGiteeAsync(owner, repo, ct).ConfigureAwait(false);
+            if (gt != null && IsNewer(gt.Version, CurrentVersion) && !string.IsNullOrWhiteSpace(gt.Sha256))
+                return gt;   // 快路径：整条链不依赖 GitHub API
+        }
+        var gh = await ghTask.ConfigureAwait(false);
 
         bool ghNewer = gh != null && IsNewer(gh.Version, CurrentVersion);
         bool gtNewer = gt != null && IsNewer(gt.Version, CurrentVersion);
@@ -560,6 +570,25 @@ public static bool IsNewer(string remote, string local)
 
 public static string DownloadDir => Path.Combine(Path.GetTempPath(), "deepsleep-update");
 
+/// <summary>
+/// 这次更新的专属下载目录（版本号 + SHA256 前 8 位）。
+/// 以前所有版本共用 %TEMP%\deepsleep-update\deepsleep-Setup.exe，断点续传会把上一个版本、
+/// 或者上一个源剩下的半截"接着往下写"——拼出来的包 SHA256 永远对不上，于是每次都白下几百 MB、
+/// 又得从头再来（这就是"明明是 Gitee 却越来越慢"的直接原因之一）。
+/// </summary>
+public static string DownloadDirFor(UpdateInfo info)
+{
+    var keep = new List<char>();
+    foreach (char c in NormalizeVersion(info.Version))
+        if (char.IsLetterOrDigit(c) || c == '.' || c == '-') keep.Add(c);
+    string tag = new string(keep.ToArray());
+    if (tag.Length == 0) tag = "unknown";
+    string sha8 = "";
+    if (!string.IsNullOrWhiteSpace(info.Sha256) && info.Sha256.Trim().Length >= 8)
+        sha8 = new string(info.Sha256.Trim().ToLowerInvariant().Take(8).Where(char.IsLetterOrDigit).ToArray());
+    return Path.Combine(DownloadDir, sha8.Length > 0 ? tag + "-" + sha8 : tag);
+}
+
 /// <summary>走 Gitee 时的最低速度兜底（KB/s）：跟探针实测速度的三分之一取大者。</summary>
 private const double GiteeMinKbpsFloor = 60;
 /// <summary>Gitee 下载中途"多久没数据"算卡住（秒），超了就换源。</summary>
@@ -572,8 +601,10 @@ private const int HttpStallSeconds = 45;
 public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double>? progress,
                                                CancellationToken ct = default, Action<string>? onStatus = null)
 {
-    Directory.CreateDirectory(DownloadDir);
-    string dest = Path.Combine(DownloadDir, "deepsleep-Setup.exe");
+    string destDir = DownloadDirFor(info);
+    Directory.CreateDirectory(destDir);
+    string dest = Path.Combine(destDir, "deepsleep-Setup.exe");
+    CleanStaleDownloads(destDir);
 
     // ① Gitee 优先线路（默认，⚙ 设置里可切成 GitHub 线路）：只要 Gitee 上有同一个版本，
     //    就直接从 Gitee 下，不再跟 GitHub 探速比快慢（国内 Gitee 快一个数量级，探速纯属浪费时间）。
@@ -595,12 +626,13 @@ public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double
             // 片没下成、或者中途卡住/太慢，就退回下面的 GitHub 流程（照样按官方 SHA256 校验）
             if (info.PartUrls.Count > 0)
             {
-                onStatus?.Invoke($"正在从 Gitee 下载分片（{info.PartUrls.Count} 片，下齐后拼回整包）…");
+                onStatus?.Invoke($"正在从 Gitee 下载分片（{info.PartUrls.Count} 片一起下，下齐后拼回整包）…");
                 return await DownloadPartsAsync(info, dest, progress, ct, onStatus, minKbps).ConfigureAwait(false);
             }
             onStatus?.Invoke("正在从 Gitee 下载整包…");
             return await DownloadOnceAsync(info, info.MirrorUrl, dest, progress, ct, true,
-                                           GiteeStallSeconds, minKbps).ConfigureAwait(false);
+                                           GiteeStallSeconds, minKbps, null, onStatus, "Gitee")
+                .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -650,7 +682,9 @@ public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double
                     ? "正在从 GitHub 下载更新包…"
                     : $"正在重试（{CandidateName(candidate)}，第 {tries} 次）…");
                 return await DownloadOnceAsync(info, candidate, dest, progress, ct, true,
-                                               HttpStallSeconds, 0).ConfigureAwait(false);
+                                               HttpStallSeconds, 0, null, onStatus,
+                                               tries == 1 ? "GitHub" : CandidateName(candidate))
+                    .ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -683,6 +717,25 @@ private static string CandidateName(string url)
         return host.Contains("github", StringComparison.OrdinalIgnoreCase) ? "GitHub 直连" : "国内加速镜像 " + host;
     }
     catch { return "候选地址"; }
+}
+
+/// <summary>
+/// 清掉别的版本/别的源留下来的下载残件：这次不用它们了，留着白占几百 MB，
+/// 更怕哪天被当成"半截包"接着续传，拼出一坨 SHA256 永远对不上的东西。
+/// </summary>
+private static void CleanStaleDownloads(string keepDir)
+{
+    try
+    {
+        if (!Directory.Exists(DownloadDir)) return;
+        foreach (string d in Directory.GetDirectories(DownloadDir))
+            if (!string.Equals(d.TrimEnd('\\'), keepDir.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                try { Directory.Delete(d, true); } catch { }
+        // 老版本直接堆在根目录里的那种残件（没下完的 deepsleep-Setup.exe / .partN）
+        foreach (string f in Directory.GetFiles(DownloadDir, "deepsleep-Setup*"))
+            try { File.Delete(f); } catch { }
+    }
+    catch { }
 }
 
 /// <summary>清掉 Gitee 分片留下的临时文件（deepsleep-Setup.exe.part1、.part2…）。</summary>
@@ -750,7 +803,9 @@ private static List<string> BuildCandidates(UpdateInfo info)
 /// <param name="minKbps">下载满 15 秒后平均速度低于这个值就判失败换源（0 = 不设门槛）。</param>
 private static async Task<string> DownloadOnceAsync(UpdateInfo info, string url, string dest,
                                                    IProgress<double>? progress, CancellationToken ct,
-                                                   bool jsonProbe = true, int stallSeconds = 0, double minKbps = 0)
+                                                   bool jsonProbe = true, int stallSeconds = 0, double minKbps = 0,
+                                                   Action<DownloadTick>? onTick = null, Action<string>? onStatus = null,
+                                                   string label = "")
 {
     long have = File.Exists(dest) ? new FileInfo(dest).Length : 0;
     if (info.Size > 0 && have >= info.Size) have = 0;   // 已经下满却仍被判失败 → 从头重下
@@ -782,6 +837,7 @@ private static async Task<string> DownloadOnceAsync(UpdateInfo info, string url,
             long read = start;
             using var stallCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             var clock = Stopwatch.StartNew();
+            long lastStatusMs = Environment.TickCount64;
             while (true)
             {
                 int n = stallSeconds > 0
@@ -791,6 +847,18 @@ private static async Task<string> DownloadOnceAsync(UpdateInfo info, string url,
                 await dst.WriteAsync(buffer.AsMemory(0, n), ct).ConfigureAwait(false);
                 read += n;
                 if (goal > 0) progress?.Report(Math.Min(99.9, read * 100.0 / goal));
+                if (onTick != null || (onStatus != null && label.Length > 0))
+                {
+                    var tick = new DownloadTick(read, start, goal, clock.Elapsed.TotalSeconds);
+                    onTick?.Invoke(tick);
+                    // 每秒刷一次"多快、还剩多久"——不然 0.8MB/s 下进度条看着像卡死了
+                    if (onStatus != null && label.Length > 0 &&
+                        Environment.TickCount64 - lastStatusMs >= 1000)
+                    {
+                        lastStatusMs = Environment.TickCount64;
+                        onStatus(SpeedText(label, tick.Kbps, read, goal));
+                    }
+                }
                 // 平均速度太低（境外连国内源就是这样）→ 早点判失败换源，别让人干等着
                 if (minKbps > 0 && clock.Elapsed.TotalSeconds >= 15)
                 {
@@ -821,6 +889,7 @@ private static async Task<string> DownloadOnceAsync(UpdateInfo info, string url,
 /// <summary>
 /// 下载 Gitee 上的安装包分片（deepsleep-Setup.exe.part1/N）再拼回一个完整安装包。
 /// 每片单独重试、支持断点续传，拼完按官方 SHA256 校验 —— 所以和从 GitHub 下整包完全等价。
+/// 多片**一起下**：单条连接吃不完整带宽，Gitee 那边两片并着下才跑得起来。
 /// </summary>
 private static async Task<string> DownloadPartsAsync(UpdateInfo info, string dest,
                                                      IProgress<double>? progress, CancellationToken ct,
@@ -833,52 +902,89 @@ private static async Task<string> DownloadPartsAsync(UpdateInfo info, string des
     var parts = new string[count];
     for (int i = 0; i < count; i++) parts[i] = dest + ".part" + (i + 1);
 
-    long completed = 0;
+    // 并行下时每片只分到一部分带宽，单片的"太慢"门槛也要跟着降下来，别把还在跑的片误判成卡住
+    double partMinKbps = count > 1 ? Math.Max(20, minKbps * 0.5) : minKbps;
+
+    var partRead = new long[count];      // 每片已经下到多少字节
+    var partKbps = new double[count];    // 每片的实时速度（KB/s）
+    int finished = 0;                    // 下完几片（Gitee 不给附件大小时按片报进度）
+    long lastStatusMs = 0;
+
+    void Report(bool force = false)
+    {
+        long done = 0;
+        for (int i = 0; i < count; i++) done += partRead[i];
+        if (total > 0) progress?.Report(Math.Min(99.9, done * 100.0 / total));
+        else progress?.Report(Math.Min(99.9, Volatile.Read(ref finished) * 100.0 / count));
+        if (onStatus == null) return;
+        long now = Environment.TickCount64;
+        if (!force && now - lastStatusMs < 1000) return;
+        lastStatusMs = now;
+        double kbps = 0;
+        for (int i = 0; i < count; i++) kbps += partKbps[i];
+        onStatus(SpeedText(count > 1 ? $"Gitee 分片（{count} 片一起下）" : "Gitee 分片", kbps, done, total));
+    }
+
+    using var gate = new SemaphoreSlim(Math.Min(count, 3));   // 最多三路并发，别把源那边惹毛
+    var errors = new Exception?[count];
+
+    async Task DownloadOnePartAsync(int index)
+    {
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            long partSize = index < info.PartSizes.Count ? info.PartSizes[index] : 0;
+            var partInfo = new UpdateInfo { Url = info.PartUrls[index], Size = partSize };
+            Exception? lastError = null;
+
+            for (int attempt = 1; attempt <= 3; attempt++)
+            {
+                try
+                {
+                    await DownloadOnceAsync(partInfo, partInfo.Url, parts[index], null, ct, false,
+                                            GiteeStallSeconds, partMinKbps,
+                                            t =>
+                                            {
+                                                partRead[index] = t.Read;
+                                                partKbps[index] = t.Kbps;
+                                                Report();
+                                            }).ConfigureAwait(false);
+                    lastError = null;
+                    partKbps[index] = 0;          // 这片下完了，速度不再计进合计
+                    Interlocked.Increment(ref finished);
+                    break;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    lastError = ex;
+                    partKbps[index] = 0;
+                    // 卡住 / 太慢 → 留着残片下次续传；内容不对才删掉重下
+                    if (ex is not TimeoutException)
+                    {
+                        try { if (File.Exists(parts[index])) File.Delete(parts[index]); } catch { }
+                        partRead[index] = 0;
+                    }
+                    onStatus?.Invoke($"Gitee 分片 {index + 1}/{count} 第 {attempt} 次没成：{ex.Message}");
+                    await Task.Delay(TimeSpan.FromSeconds(1.5 * attempt), ct).ConfigureAwait(false);
+                }
+            }
+            if (lastError != null) errors[index] = lastError;
+            Report(true);
+        }
+        finally { gate.Release(); }
+    }
+
+    var tasks = new Task[count];
     for (int i = 0; i < count; i++)
     {
         int index = i;
-        long partSize = i < info.PartSizes.Count ? info.PartSizes[i] : 0;
-        var partInfo = new UpdateInfo { Url = info.PartUrls[index], Size = partSize };
-        Exception? lastError = null;
-
-        for (int attempt = 1; attempt <= 3; attempt++)
-        {
-            var partProgress = new Progress<double>(p =>
-            {
-                // Gitee 不给附件大小 → 按"第几片"均分进度，别让进度条一直停在 0
-                double done = total > 0
-                    ? (completed + partSize * p / 100.0) * 100.0 / total
-                    : (index + p / 100.0) * 100.0 / count;
-                progress?.Report(Math.Min(99.9, done));
-            });
-            try
-            {
-                await DownloadOnceAsync(partInfo, partInfo.Url, parts[index], partProgress, ct, false,
-                                        GiteeStallSeconds, minKbps)
-                    .ConfigureAwait(false);
-                lastError = null;
-                break;
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                lastError = ex;
-                // 卡住 / 太慢 → 留着残片下次续传；内容不对才删掉重下
-                if (ex is not TimeoutException)
-                {
-                    try { if (File.Exists(parts[index])) File.Delete(parts[index]); } catch { }
-                }
-                onStatus?.Invoke($"Gitee 分片 {index + 1}/{count} 第 {attempt} 次没成：{ex.Message}");
-                await Task.Delay(TimeSpan.FromSeconds(1.5 * attempt), ct).ConfigureAwait(false);
-            }
-        }
-        if (lastError != null)
-            throw new InvalidDataException($"Gitee 分片 {index + 1}/{count} 下载失败：{lastError.Message}", lastError);
-
-        completed += new FileInfo(parts[index]).Length;
-        progress?.Report(Math.Min(99.9, total > 0
-            ? completed * 100.0 / total
-            : (index + 1) * 100.0 / count));
+        tasks[index] = DownloadOnePartAsync(index);
     }
+    await Task.WhenAll(tasks).ConfigureAwait(false);
+
+    for (int i = 0; i < count; i++)
+        if (errors[i] != null)
+            throw new InvalidDataException($"Gitee 分片 {i + 1}/{count} 下载失败：{errors[i]!.Message}", errors[i]);
 
     // 拼回整包（顺序必须和上传时一致，否则 SHA256 对不上）
     using (var output = new FileStream(dest, FileMode.Create, FileAccess.Write, FileShare.None))
@@ -898,6 +1004,37 @@ private static async Task<string> DownloadPartsAsync(UpdateInfo info, string des
     progress?.Report(100);
     return dest;
 }
+
+/// <summary>下载进度的一次采样：界面靠它算"现在多快、还剩多久"。</summary>
+public readonly record struct DownloadTick(long Read, long Start, long Goal, double Seconds)
+{
+    public double Kbps => Seconds > 0.05 ? (Read - Start) / 1024.0 / Seconds : 0;
+}
+
+/// <summary>把速度 + 进度 + 预计剩余时间写成一行状态文案。</summary>
+private static string SpeedText(string label, double kbps, long read, long goal)
+{
+    string speed = kbps >= 1024 ? (kbps / 1024.0).ToString("0.0") + " MB/s" : kbps.ToString("0") + " KB/s";
+    var sb = new StringBuilder("正在从 ").Append(label).Append(" 下载… ").Append(speed);
+    if (goal > 0)
+    {
+        sb.Append(" · 已下 ").Append(HumanSize(read)).Append(" / ").Append(HumanSize(goal));
+        long left = goal - read;
+        if (kbps > 5 && left > 0)
+        {
+            var t = TimeSpan.FromSeconds(left / 1024.0 / kbps);
+            sb.Append(t.TotalMinutes >= 1
+                ? $" · 剩余约 {(int)t.TotalMinutes} 分 {t.Seconds} 秒"
+                : $" · 剩余约 {Math.Max(1, (int)Math.Round(t.TotalSeconds))} 秒");
+        }
+    }
+    return sb.ToString();
+}
+
+/// <summary>字节数写成人看的大小。</summary>
+private static string HumanSize(long bytes) => bytes >= 1048576
+    ? (bytes / 1048576.0).ToString("0.0") + " MB"
+    : Math.Max(0, bytes / 1024) + " KB";
 
 /// <summary>SHA256 校验（清单未提供校验值时跳过）。</summary>
 private static void VerifyHash(string file, string expectedHex)
