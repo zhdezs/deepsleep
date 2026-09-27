@@ -127,6 +127,12 @@ public sealed class Agent
     /// <summary>工具开始执行时触发（参数：会话 id、工具名），UI 显示「正在…」状态。</summary>
     public event Action<int, string>? ToolStarted;
 
+    /// <summary>
+    /// 模型吐出的思考 / 推理内容（会话 id, 思考全文）。界面把它折叠在正文上方展示，
+    /// 绝不混进正文 —— 以前 Responses 接口的英文思考会被当答案拼进去。
+    /// </summary>
+    public event Action<int, string>? ReasoningAdded;
+
     private int _currentSid;
 
     public Agent(Engine counter) => _counter = counter;
@@ -661,7 +667,8 @@ public sealed class Agent
         "11. 工具选择指南：搜索/查价格/查资料/找最新信息→「网络搜索」；要系统调研/写报告→「深度研究」；阅读搜索结果的具体页面→「抓取网页」；执行命令/系统操作→「运行命令」；写代码跑脚本→「运行Python脚本」或「写入文件」；生成图片→「生成图片」；看图片→「看图」；读写文件→「读取文件/写入文件」；用默认程序打开文件→「打开文件」。\n" +
         "12. 最终回答必须是纯文本中文，禁止输出任何 JSON、代码块或结构化片段。\n" +
         "13. 用户提到重要事实、偏好、要求（比如称呼、习惯、项目约定、不想要什么）时，用「记住」工具保存；保存后告知用户已记住。\n" +
-        "14. 当【已安装技能】里出现与你任务匹配的技能时，必须真正执行技能：按说明调用「运行Python脚本」「写入文件」「运行命令」「生成图片」等工具，把产物（PPT/文档/网页/脚本等）真实生成到磁盘，并在最终回复里给出完整本地路径；严禁只讲解步骤、只描述怎么做、或假装已完成。";
+        "14. 当【已安装技能】里出现与你任务匹配的技能时，必须真正执行技能：按说明调用「运行Python脚本」「写入文件」「运行命令」「生成图片」等工具，把产物（PPT/文档/网页/脚本等）真实生成到磁盘，并在最终回复里给出完整本地路径；严禁只讲解步骤、只描述怎么做、或假装已完成。" +
+        "15. 思考 / 推理过程也必须用简体中文，禁止用英文思考；思考内容界面会单独折叠展示，不要写进正文。";
 
     /// <summary>
     /// 工具决策阶段的协议：软件先发这条指令，模型这一轮**只准输出 JSON**，
@@ -684,12 +691,13 @@ public sealed class Agent
     private const string FinalAnswerPrompt =
         "\n\n【最终回复阶段】工具执行结果已经在上面的对话里了，这一轮请直接用自然语言回答用户：\n" +
         "不要输出 JSON、不要调用工具、不要用代码块包住整段回答；简洁、专业、说人话。\n" +
+        "思考过程用中文；不要在回答里复述思考过程。\n" +
         "如果工具失败了，如实说明失败原因与下一步建议，不要假装成功。";
 
     private const string ChatSystemPrompt =
         "你是一个运行在 Windows 电脑上的 AI 助手（聊天模式）。\n" +
         "当前模式不能执行命令、不能读写本地文件。\n" +
-        "请直接以中文回答用户的问题，简洁、清楚、友好，不要输出 JSON 或提及工具。";
+        "请直接以中文回答用户的问题（思考过程也用中文），简洁、清楚、友好，不要输出 JSON 或提及工具。";
 
     /// <summary>chat 模式下这一轮带搜索/研究意图时的提示词：只放开「网络搜索 / 深度研究」两个只读工具。</summary>
     private const string ChatToolSystemPrompt =
@@ -775,7 +783,7 @@ public sealed class Agent
             ? history.Select(m => (m.Role, MaybeAttachImage(m))).ToList()
             : history.Select(m => (m.Role, m.Content)).ToList();
         string sys = SystemPromptForMode() + BuildSkillsPrompt(history, injectedSkills) + ToolDecisionPrompt;
-        return await CallOnceAsync(sys, msgs, ct, null);
+        return await CallOnceAsync(sys, msgs, ct, null, emitReasoning: true);
     }
 
     /// <summary>
@@ -801,7 +809,7 @@ public sealed class Agent
             ? history.Select(m => (m.Role, MaybeAttachImage(m))).ToList()
             : history.Select(m => (m.Role, m.Content)).ToList();
         string sys = SystemPromptForMode() + BuildSkillsPrompt(history, injectedSkills) + FinalAnswerPrompt;
-        return await CallOnceAutoContinueAsync(sys, msgs, ct, onDelta);
+        return await CallOnceAutoContinueAsync(sys, msgs, ct, onDelta, emitReasoning: true);
     }
 
     /// <summary>决策阶段是否明确表示「不需要工具」（{"tool_call":null} 等）。</summary>
@@ -881,7 +889,7 @@ public sealed class Agent
         if (MultimodalMain)
             msgs = history.Select(m => (m.Role, MaybeAttachImage(m))).ToList();
         return await CallOnceAutoContinueAsync(SystemPromptForMode() + BuildSkillsPrompt(history, injectedSkills),
-                                               msgs, ct, onDelta);
+                                               msgs, ct, onDelta, emitReasoning: true);
     }
 
     /// <summary>多模态模式：把用户上传的图片路径转为 IMG|路径|文本 标记，由 API 客户端内联为 image_url。</summary>
@@ -1017,25 +1025,42 @@ public sealed class Agent
     /// 以前被截断就停在那儿，用户得手动说「继续」——现在软件自己续。
     /// </summary>
     private async Task<string?> CallOnceAutoContinueAsync(string system,
-        List<(string Role, string Content)> msgs, CancellationToken ct, Action<string>? onDelta)
+        List<(string Role, string Content)> msgs, CancellationToken ct, Action<string>? onDelta,
+        bool emitReasoning = false)
     {
-        string? text = await CallOnceAsync(system, msgs, ct, onDelta);
+        string? text = await CallOnceAsync(system, msgs, ct, onDelta, emitReasoning);
         for (int i = 0; i < MaxContinuations; i++)
         {
             if (string.IsNullOrEmpty(text) || ct.IsCancellationRequested || !_api.LastTruncated) break;
             Log($"回复被长度上限截断，自动续写第 {i + 1} 次（已 {text.Length} 字）");
             msgs.Add(("assistant", text));
             msgs.Add(("user", ContinueHint));
-            string? more = await CallOnceAsync(system, msgs, ct, onDelta);
-            if (string.IsNullOrWhiteSpace(more)) break;
+            string? more = await CallOnceAsync(system, msgs, ct, onDelta, emitReasoning);
+            if (string.IsNullOrWhiteSpace(more)) { Log("续写没有返回内容，停止续写"); break; }
+            more = TrimOverlap(text, more);
+            if (more.Length == 0) { Log("续写内容与已写部分重复，停止续写"); break; }
             text += more;
         }
         return text;
     }
 
+    /// <summary>
+    /// 续写时模型有时会把上一段的结尾重复一遍，这里把重复的部分削掉再拼，避免回答里出现重复段落。
+    /// 只削「已写内容的结尾 == 续写内容的开头」这种明确重叠（至少 20 字才认）。
+    /// </summary>
+    private static string TrimOverlap(string already, string more)
+    {
+        int max = Math.Min(already.Length, more.Length);
+        for (int len = max; len >= 20; len--)
+            if (already.AsSpan(already.Length - len).SequenceEqual(more.AsSpan(0, len)))
+                return more[len..];
+        return more;
+    }
+
     /// <summary>单次 LLM 调用（不跑工具循环）：按后端选择 API / Ollama，429 自动退避重试。</summary>
     private async Task<string?> CallOnceAsync(string system,
-        List<(string Role, string Content)> msgs, CancellationToken ct, Action<string>? onDelta)
+        List<(string Role, string Content)> msgs, CancellationToken ct, Action<string>? onDelta,
+        bool emitReasoning = false)
     {
         if (Backend == "local")
         {
@@ -1080,7 +1105,13 @@ public sealed class Agent
                     reply = await _api.ChatAsync(system, msgs, ct: ct);
                 }
                 Log($"API 回复长度={reply?.Length ?? 0} 流式增量={any} LastError={_api.LastError}");
-                if (!string.IsNullOrEmpty(reply)) return reply;
+                if (!string.IsNullOrEmpty(reply))
+                {
+                    // 思考 / 推理内容单独抛给界面折叠展示（以前被当成正文拼进去，用户就看见一大段英文）
+                    if (emitReasoning && !string.IsNullOrEmpty(_api.Reasoning))
+                        ReasoningAdded?.Invoke(_currentSid, _api.Reasoning);
+                    return reply;
+                }
                 if (ct.IsCancellationRequested) return null;
                 if (!IsRateLimit(_api.LastError) || any) break;
                 await Task.Delay(TimeSpan.FromSeconds(3) * (attempt + 1), ct);

@@ -187,6 +187,7 @@ function paintBubble(row, it) {
     let html = '';
     if (it.speaker) html += '<div class="who">' + esc(it.speaker) + '</div>';
     else if (it.meta && it.meta !== 'AI' && it.meta !== '你') html += '<div class="who">' + esc(it.meta) + '</div>';
+    if (it.thought) html += thinkBox(it.thought);
     if (it.image) html += '<img src="' + esc(it.image) + '" alt="图片">';
     if (it.attName) html += '<div class="who">📎 ' + esc(it.attName) + '　' + esc(it.attSize) + '</div>';
     html += md(it.text);
@@ -195,6 +196,19 @@ function paintBubble(row, it) {
     const bar = row.querySelector('.sysbar');
     if (bar) bar.textContent = it.text;
   }
+}
+
+/* 思考内容（模型 reasoning）：默认折叠在正文上方，不混进正文；
+   模型若用英文思考，就在标题里说明，避免用户以为 AI「突然冒出一大段英文」。 */
+function thoughtIsEnglish(t) {
+  const s = String(t || '');
+  const cjk = (s.match(/[\u4e00-\u9fff]/g) || []).length;
+  const lat = (s.match(/[A-Za-z]/g) || []).length;
+  return lat > 40 && cjk < lat / 6;
+}
+function thinkBox(t) {
+  const label = thoughtIsEnglish(t) ? '已思考（模型用英文思考，已折叠）' : '已思考';
+  return '<details class="thinkbox"><summary>' + label + '</summary><div class="thinkbody">' + esc(t) + '</div></details>';
 }
 
 function toolSig(it) {
@@ -381,7 +395,7 @@ function updateText(conv, id, text) {
 
 function patchItem(conv, m) {
   const it = S.items.find(x => x.id === m.id);
-  if (it) { if (m.text != null) it.text = m.text; if (m.thinking != null) it.thinking = m.thinking; if (m.opacity != null) it.opacity = m.opacity; }
+  if (it) { if (m.text != null) it.text = m.text; if (m.thinking != null) it.thinking = m.thinking; if (m.opacity != null) it.opacity = m.opacity; if (m.thought != null) it.thought = m.thought; }
   const row = findRow(conv, m.id);
   if (!row) return;
   if (row.dataset.gkind) paintGroup(row, row.dataset.gkind, groupRowItems(row));

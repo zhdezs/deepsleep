@@ -144,6 +144,7 @@ public sealed partial class Kernel
             SelfAvatarText = "你",
             AvatarColor = isSummary ? "#F09F1F" : ClusterColors[Math.Max(0, idx % ClusterColors.Length)],
             Speaker = isSummary ? "指挥官" : $"Agent「{name}」",
+            Thought = _clusterThoughts.TryGetValue(sid, out var th) ? th : "",
             SessionId = sid,
             TimeStr = Now(),
             ShowTime = ShouldShowTime(),
@@ -375,8 +376,8 @@ public sealed partial class Kernel
             return;
         }
         TruncateAfterLastUserMessage(sid, run.UserText);
-        foreach (var w in run.Workers) { _clusterAgent.ResetSession(w.Sid); _clusterStreamItems.Remove(w.Sid); }
-        if (run.SummarySid != 0) _clusterStreamItems.Remove(run.SummarySid);
+        foreach (var w in run.Workers) { _clusterAgent.ResetSession(w.Sid); _clusterStreamItems.Remove(w.Sid); _clusterThoughts.Remove(w.Sid); }
+        if (run.SummarySid != 0) _clusterStreamItems.Remove(run.SummarySid); _clusterThoughts.Remove(run.SummarySid);
         AddClusterSys(sid, "🔄 已从断点重新执行集群任务…");
         await RunClusterCoreAsync(sid, run.UserText, false, run.Workers.Select(w => (w.Name, w.Task)).ToList()).ConfigureAwait(false);
     }
@@ -386,8 +387,8 @@ public sealed partial class Kernel
         int sid = _clusterCur.Sid;
         if (!_clusterRuns.TryGetValue(sid, out var run) || string.IsNullOrWhiteSpace(run.UserText)) return;
         TruncateAfterLastUserMessage(sid, run.UserText);
-        foreach (var w in run.Workers) { _clusterAgent.ResetSession(w.Sid); _clusterStreamItems.Remove(w.Sid); }
-        if (run.SummarySid != 0) _clusterStreamItems.Remove(run.SummarySid);
+        foreach (var w in run.Workers) { _clusterAgent.ResetSession(w.Sid); _clusterStreamItems.Remove(w.Sid); _clusterThoughts.Remove(w.Sid); }
+        if (run.SummarySid != 0) _clusterStreamItems.Remove(run.SummarySid); _clusterThoughts.Remove(run.SummarySid);
         AddClusterSys(sid, "↻ 重新生成集群结果…");
         await RunClusterCoreAsync(sid, run.UserText, false, null).ConfigureAwait(false);
     }
@@ -409,8 +410,16 @@ public sealed partial class Kernel
         if (_clusterRuns.TryGetValue(sid, out var run))
         {
             foreach (var w in run.Workers) _clusterAgent.ResetSession(w.Sid);
-            foreach (var w in run.Workers) _clusterStreamItems.Remove(w.Sid);
-            if (run.SummarySid != 0) _clusterStreamItems.Remove(run.SummarySid);
+            foreach (var w in run.Workers)
+            {
+                _clusterStreamItems.Remove(w.Sid);
+                _clusterThoughts.Remove(w.Sid);
+            }
+            if (run.SummarySid != 0)
+            {
+                _clusterStreamItems.Remove(run.SummarySid);
+                _clusterThoughts.Remove(run.SummarySid);
+            }
         }
         _clusterAgent.ResetSession(sid);
         _clusterRuns.Remove(sid);
@@ -433,8 +442,13 @@ public sealed partial class Kernel
             {
                 _clusterAgent.ResetSession(w.Sid);
                 _clusterStreamItems.Remove(w.Sid);
+                _clusterThoughts.Remove(w.Sid);
             }
-            if (run.SummarySid != 0) _clusterStreamItems.Remove(run.SummarySid);
+            if (run.SummarySid != 0)
+            {
+                _clusterStreamItems.Remove(run.SummarySid);
+                _clusterThoughts.Remove(run.SummarySid);
+            }
         }
         _clusterStates.Remove(sid);
         _clusterCts.Remove(sid);

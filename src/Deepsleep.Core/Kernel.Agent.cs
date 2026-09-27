@@ -141,9 +141,14 @@ public sealed partial class Kernel
         {
             Conversation? conv = _agentConvs.FirstOrDefault(c => c.Sid == sid);
             if (conv == null) return;
-            // 若上一轮流式残留了气泡（如工具调用前说了半句话），先清掉再展示正式消息
+            // 若上一轮流式残留了气泡（如工具调用前说了半句话），先清掉再展示正式消息；
+            // 顺手把气泡上的思考块取下来，等会儿接着挂到正式气泡上（思考只在正文上方折叠显示一次）
+            string carriedThought = "";
             if (_streamItems.TryGetValue(sid, out var streamedItem) && conv.Items.Contains(streamedItem))
+            {
+                carriedThought = streamedItem.Thought;
                 RemoveRaw(conv, streamedItem);
+            }
             _streamItems.Remove(sid);
             if (m.Role == "tool") RemoveAgentWorking(sid);
 
@@ -171,6 +176,18 @@ public sealed partial class Kernel
             }
 
             bool isToolCard = isTool && !isVisionResult;
+            // 思考内容（reasoning）只跟着「AI 的正文回答」走：工具卡 / 系统话术都不带
+            bool isAssistantAnswer = !isUser && !isTool && !isToolCallNotice && !looksLikeToolJson;
+            string thought = "";
+            if (isAssistantAnswer && _agentThoughts.TryGetValue(sid, out var pendingThought))
+            {
+                thought = pendingThought;
+                _agentThoughts.Remove(sid);
+            }
+            else if (isAssistantAnswer)
+            {
+                thought = carriedThought;
+            }
             var item = new ChatItem
             {
                 IsSys = false,
@@ -180,6 +197,7 @@ public sealed partial class Kernel
                 ToolSummary = isToolCard ? ToolCardSummary(m.Meta, m.Content) : "",
                 ToolDetail = isToolCard ? (string.IsNullOrWhiteSpace(m.Detail) ? m.Content : m.Detail) : "",
                 ToolKind = isToolCard ? ToolKindOf(m.Meta) : "",
+                Thought = thought,
                 Text = isToolCard ? m.Content
                     : isVisionResult ? visionText
                     : isToolCallNotice ? m.Meta
@@ -223,6 +241,7 @@ public sealed partial class Kernel
                     IsSelf = false,
                     CanAccept = false,
                     Text = "",
+                    Thought = _agentThoughts.TryGetValue(sid, out var pendingStreamThought) ? pendingStreamThought : "",
                     Meta = "AI",
                     AvatarText = "AI",
                     SelfAvatarText = "你",
@@ -398,10 +417,50 @@ public sealed partial class Kernel
 
     private void RemoveAgentThinking(int sid)
     {
+        _agentThoughts.Remove(sid);
         if (!_agentThinking.TryGetValue(sid, out var item)) return;
         var conv = _agentConvs.FirstOrDefault(c => c.Sid == sid);
         if (conv != null && conv.Items.Contains(item)) RemoveRaw(conv, item);
         _agentThinking.Remove(sid);
+    }
+
+    /// <summary>
+    /// 模型吐出思考 / 推理内容（reasoning_content / Responses 的 reasoning 条目）。
+    /// 这些内容以前被当成正文拼进回答，用户就看见「AI 突然说了一大段英文」；
+    /// 现在只挂在气泡上折叠展示，绝不进正文。
+    /// </summary>
+    private void OnAgentReasoning(int sid, string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        lock (_gate)
+        {
+            var conv = _agentConvs.FirstOrDefault(c => c.Sid == sid);
+            if (conv == null) return;
+            _agentThoughts[sid] = text;
+            if (_streamItems.TryGetValue(sid, out var item) && conv.Items.Contains(item))
+            {
+                item.Thought = text;
+                Emit(new { ev = "msgUpdate", kind = 0, conv = sid, id = item.Id, thought = text });
+            }
+        }
+    }
+
+    /// <summary>集群 Agent 的思考内容：同样只折叠展示，不进正文。</summary>
+    private void OnClusterReasoning(int sid, string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        lock (_gate)
+        {
+            var run = FindRunBySid(sid);
+            var conv = run == null ? null : ConvOfRun(run);
+            if (conv == null) return;
+            _clusterThoughts[sid] = text;
+            if (_clusterStreamItems.TryGetValue(sid, out var item) && conv.Items.Contains(item))
+            {
+                item.Thought = text;
+                Emit(new { ev = "msgUpdate", kind = 2, conv = conv.Sid, id = item.Id, thought = text });
+            }
+        }
     }
 
     private void RemoveAgentWorking(int sid)

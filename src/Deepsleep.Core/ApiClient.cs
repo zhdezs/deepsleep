@@ -25,6 +25,27 @@ public sealed class ApiClient : IDisposable
     /// <summary>思考强度：low / medium / high（配合 Thinking 使用）。</summary>
     public string ReasoningEffort { get; set; } = "high";
 
+    /// <summary>
+    /// 最近一次调用里模型吐出的思考 / 推理内容（reasoning_content / reasoning / Responses 的 reasoning 条目）。
+    /// 界面把它折叠展示，**绝不混进正文** —— 以前 Responses 的非流式回退会把这段英文思考当答案拼进去。
+    /// </summary>
+    public string Reasoning { get; private set; } = "";
+
+    private readonly StringBuilder _reasonLog = new();
+
+    private void ResetReasoning()
+    {
+        _reasonLog.Clear();
+        Reasoning = "";
+    }
+
+    private void AddReasoning(string? chunk)
+    {
+        if (string.IsNullOrEmpty(chunk)) return;
+        _reasonLog.Append(chunk);
+        Reasoning = _reasonLog.ToString();
+    }
+
     public bool Configured => !string.IsNullOrWhiteSpace(ApiKey);
 
     /// <summary>最近一次调用失败的原因（用于界面诊断）。</summary>
@@ -122,7 +143,7 @@ public sealed class ApiClient : IDisposable
         try
         {
         LastTruncated = false;
-        LastTruncated = false;
+        ResetReasoning();
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
@@ -177,6 +198,9 @@ public sealed class ApiClient : IDisposable
                 LastError = "响应中没有 choices";
                 return null;
             }
+            if (choices[0].GetProperty("message").TryGetProperty("reasoning_content", out var rc0) &&
+                rc0.ValueKind == JsonValueKind.String)
+                AddReasoning(rc0.GetString());
             string? text = choices[0].GetProperty("message").GetProperty("content").GetString();
             if (choices[0].TryGetProperty("finish_reason", out var fr) && fr.ValueKind == JsonValueKind.String)
                 LastTruncated = fr.GetString() == "length";
@@ -238,6 +262,7 @@ public sealed class ApiClient : IDisposable
             LastError = "未配置 API Key";
             return null;
         }
+        ResetReasoning();
         try
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -306,6 +331,11 @@ public sealed class ApiClient : IDisposable
                         fr.ValueKind == JsonValueKind.String && fr.GetString() == "length")
                         LastTruncated = true;
                     var delta = choices[0].GetProperty("delta");
+                    // 思考增量单独收集：界面上折叠，不跟正文混在一起
+                    if (delta.TryGetProperty("reasoning_content", out var rc) && rc.ValueKind == JsonValueKind.String)
+                        AddReasoning(rc.GetString());
+                    else if (delta.TryGetProperty("reasoning", out var rj) && rj.ValueKind == JsonValueKind.String)
+                        AddReasoning(rj.GetString());
                     if (delta.TryGetProperty("content", out var c) && c.ValueKind == JsonValueKind.String)
                     {
                         string chunk = c.GetString() ?? "";
@@ -399,12 +429,36 @@ public sealed class ApiClient : IDisposable
                 if (type == "response.output_text.delta")
                     return ev.TryGetProperty("delta", out var d) && d.ValueKind == JsonValueKind.String
                         ? d.GetString() : null;
-                if (type is "response.failed" or "response.incomplete" or "error")
+                // 思考 / 推理事件：只收进思考缓冲，绝不返回给正文
+                if (type is "response.reasoning_summary_text.delta" or "response.reasoning_text.delta" or
+                    "response.reasoning_summary.delta")
+                {
+                    if (ev.TryGetProperty("delta", out var rd) && rd.ValueKind == JsonValueKind.String)
+                        AddReasoning(rd.GetString());
+                    return null;
+                }
+                if (type == "response.incomplete")
+                {
+                    // 被输出长度上限截断：标记一下，上层会自动接着往下写，别停在半截
+                    LastTruncated = true;
                     LastError = "Responses 流式事件：" + type;
+                }
+                else if (type == "response.completed" && ResponsesEventTruncated(ev))
+                {
+                    LastTruncated = true;
+                }
+                else if (type is "response.failed" or "error")
+                {
+                    LastError = "Responses 流式事件：" + type;
+                }
                 return null;
             }).ConfigureAwait(false);
             // 流式没拿到内容（部分兼容端点不支持）→ 退回非流式，保证能出话
-            if (string.IsNullOrEmpty(text)) return await ChatResponsesAsync(system, messages, ct, false, null, maxOut);
+            if (string.IsNullOrEmpty(text))
+            {
+                ResetReasoning();
+                return await ChatResponsesAsync(system, messages, ct, false, null, maxOut);
+            }
             LastError = null;
             return text;
         }
@@ -413,10 +467,13 @@ public sealed class ApiClient : IDisposable
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
 
-        string got = ExtractResponsesText(root, out string status, out string reason);
+        string got = ExtractResponsesText(root, out string status, out string reason, out string reasoning);
+        AddReasoning(reasoning);
         if (got.Length > 0)
         {
-            // 即使被判定为 incomplete（例如刚好卡在 token 上限），也先把已经拿到的部分交给用户，别整段丢掉
+            // 即使被判定为 incomplete（例如刚好卡在 token 上限），也先把已经拿到的部分交给用户，别整段丢掉；
+            // 同时标记截断，上层会自动接着写（以前这里不标记，回答就断在半截，用户得手动说「继续」）
+            if (status == "incomplete") LastTruncated = true;
             LastError = null;
             return got;
         }
@@ -435,12 +492,26 @@ public sealed class ApiClient : IDisposable
         return null;
     }
 
+    /// <summary>response.completed / response.incomplete 里是否写着「输出被长度上限截断」。</summary>
+    private static bool ResponsesEventTruncated(JsonElement ev)
+    {
+        if (!ev.TryGetProperty("response", out var r) || r.ValueKind != JsonValueKind.Object) return false;
+        if (r.TryGetProperty("status", out var st) && st.ValueKind == JsonValueKind.String &&
+            st.GetString() == "incomplete") return true;
+        return r.TryGetProperty("incomplete_details", out var det) && det.ValueKind == JsonValueKind.Object &&
+               det.TryGetProperty("reason", out var rs) && rs.ValueKind == JsonValueKind.String &&
+               (rs.GetString() ?? "").Contains("max_output_tokens", StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// 宽容解析 Responses API 的返回：output_text / output[].content[].text / output[].text 都认，
     /// 不再要求 content 的 type 一定等于 output_text（各家实现不一致），
     /// 并顺带带回 status 与 incomplete_details.reason，方便把「为什么没有文本」说清楚。
+    /// type 含 reasoning 的条目是模型的思考过程（常常是一大段英文），单独走 reasoning 返回，
+    /// **不算正文** —— 以前这里会把思考当答案拼进去，用户就看见「AI 突然说了一大段英文」。
     /// </summary>
-    private static string ExtractResponsesText(JsonElement root, out string status, out string reason)
+    private static string ExtractResponsesText(JsonElement root, out string status, out string reason,
+                                               out string reasoning)
     {
         status = root.TryGetProperty("status", out var st) && st.ValueKind == JsonValueKind.String
             ? st.GetString() ?? "" : "";
@@ -449,24 +520,33 @@ public sealed class ApiClient : IDisposable
             inc.TryGetProperty("reason", out var rs) && rs.ValueKind == JsonValueKind.String)
             reason = rs.GetString() ?? "";
 
-        if (root.TryGetProperty("output_text", out var ot) && ot.ValueKind == JsonValueKind.String)
-        {
-            string s = ot.GetString() ?? "";
-            if (s.Length > 0) return s;
-        }
-
         var sb = new StringBuilder();
+        var rsb = new StringBuilder();
         if (root.TryGetProperty("output", out var arr) && arr.ValueKind == JsonValueKind.Array)
         {
             foreach (var item in arr.EnumerateArray())
             {
+                string itype = item.TryGetProperty("type", out var ty) && ty.ValueKind == JsonValueKind.String
+                    ? ty.GetString() ?? "" : "";
+                bool isReasoning = itype.Contains("reasoning", StringComparison.OrdinalIgnoreCase);
+                var target = isReasoning ? rsb : sb;
                 if (item.TryGetProperty("content", out var cs) && cs.ValueKind == JsonValueKind.Array)
                     foreach (var c in cs.EnumerateArray())
                         if (c.TryGetProperty("text", out var tx) && tx.ValueKind == JsonValueKind.String)
-                            sb.Append(tx.GetString());
+                            target.Append(tx.GetString());
+                if (isReasoning && item.TryGetProperty("summary", out var sm) && sm.ValueKind == JsonValueKind.Array)
+                    foreach (var c in sm.EnumerateArray())
+                        if (c.TryGetProperty("text", out var tx2) && tx2.ValueKind == JsonValueKind.String)
+                            target.Append(tx2.GetString());
                 if (item.TryGetProperty("text", out var itx) && itx.ValueKind == JsonValueKind.String)
-                    sb.Append(itx.GetString());
+                    target.Append(itx.GetString());
             }
+        }
+        reasoning = rsb.ToString();
+        if (root.TryGetProperty("output_text", out var ot) && ot.ValueKind == JsonValueKind.String)
+        {
+            string s = ot.GetString() ?? "";
+            if (s.Length > 0) return s;
         }
         return sb.ToString();
     }
@@ -543,15 +623,21 @@ public sealed class ApiClient : IDisposable
             var content = doc.RootElement.GetProperty("content");
             if (content.GetArrayLength() == 0) { LastError = "响应中没有 content"; return null; }
             LastError = null;
+            if (doc.RootElement.TryGetProperty("stop_reason", out var sr) && sr.ValueKind == JsonValueKind.String &&
+                sr.GetString() == "max_tokens") LastTruncated = true;
             return content[0].GetProperty("text").GetString() ?? "";
         }
         LastError = null;
         return await ReadSseAsync(await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false),
             ct, onDelta, ev =>
             {
-                if (ev.TryGetProperty("delta", out var delta) &&
-                    delta.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String)
-                    return t.GetString() ?? "";
+                if (ev.TryGetProperty("delta", out var delta))
+                {
+                    if (delta.TryGetProperty("stop_reason", out var sr2) && sr2.ValueKind == JsonValueKind.String &&
+                        sr2.GetString() == "max_tokens") LastTruncated = true;
+                    if (delta.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String)
+                        return t.GetString() ?? "";
+                }
                 return null;
             });
     }
@@ -607,6 +693,8 @@ public sealed class ApiClient : IDisposable
                 return null;
             }
             LastError = null;
+            if (cands[0].TryGetProperty("finishReason", out var frg) && frg.ValueKind == JsonValueKind.String &&
+                (frg.GetString() ?? "").Contains("MAX_TOKENS", StringComparison.OrdinalIgnoreCase)) LastTruncated = true;
             var parts = cands[0].GetProperty("content").GetProperty("parts");
             var sb = new StringBuilder();
             foreach (var p in parts.EnumerateArray())
@@ -620,6 +708,9 @@ public sealed class ApiClient : IDisposable
             {
                 if (ev.TryGetProperty("candidates", out var c) && c.GetArrayLength() > 0)
                 {
+                    if (c[0].TryGetProperty("finishReason", out var frs) && frs.ValueKind == JsonValueKind.String &&
+                        (frs.GetString() ?? "").Contains("MAX_TOKENS", StringComparison.OrdinalIgnoreCase))
+                        LastTruncated = true;
                     var parts = c[0].GetProperty("content").GetProperty("parts");
                     foreach (var p in parts.EnumerateArray())
                         if (p.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String)

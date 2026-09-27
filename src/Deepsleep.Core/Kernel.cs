@@ -69,6 +69,9 @@ public sealed partial class Kernel
     private readonly Dictionary<int, CancellationTokenSource> _clusterCts = new();
     private readonly Dictionary<int, ChatItem> _streamItems = new();
     private readonly Dictionary<int, ChatItem> _agentThinking = new();
+    /// <summary>会话 id → 最近一次模型思考全文（正文气泡上折叠展示用，正文一出来就清掉）。</summary>
+    private readonly Dictionary<int, string> _agentThoughts = new();
+    private readonly Dictionary<int, string> _clusterThoughts = new();
     private readonly Dictionary<int, ChatItem> _agentWorking = new();
     private readonly Dictionary<int, ChatItem> _clusterThinking = new();
     private readonly Dictionary<int, ChatItem> _clusterStreamItems = new();
@@ -131,6 +134,7 @@ public sealed partial class Kernel
         _agent.MessageAdded += OnAgentMessage;
         _agent.DeltaAdded += OnAgentDelta;
         _agent.ToolStarted += OnAgentToolStarted;
+        _agent.ReasoningAdded += OnAgentReasoning;
         _agent.ConfirmRequested += ConfirmCommandAsync;
         _agent.SkillUsed += OnSkillUsed;
 
@@ -147,6 +151,7 @@ public sealed partial class Kernel
         _clusterAgent.MessageAdded += OnClusterMessage;
         _clusterAgent.DeltaAdded += OnClusterDelta;
         _clusterAgent.SkillUsed += OnSkillUsed;
+        _clusterAgent.ReasoningAdded += OnClusterReasoning;
         _clusterAgent.Skills = _skills;
         string workspace = Path.Combine(_dataDir, "cluster_workspace");
         Directory.CreateDirectory(workspace);
@@ -392,6 +397,7 @@ public sealed partial class Kernel
         ["toolSummary"] = it.ToolSummary,
         ["toolDetail"] = it.ToolDetail,
         ["toolKind"] = it.ToolKind,
+        ["thought"] = it.Thought,
         ["accepted"] = it.Accepted,
     };
 

@@ -175,6 +175,7 @@ public sealed partial class Kernel
         conv.Items.Clear();
         _streamItems.Remove(conv.Sid);
         _agentThinking.Remove(conv.Sid);
+        _agentThoughts.Remove(conv.Sid);
         _agentWorking.Remove(conv.Sid);
         SetAgentState(conv.Sid, RunState.Idle);
         Emit(new Dictionary<string, object?>

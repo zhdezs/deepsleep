@@ -46,6 +46,9 @@ public sealed class ChatItem
     /// <summary>工具大类：cmd（运行命令）/file（写文件）/search/research/vision/read/other。
     /// 界面把同一轮里连续的 cmd、file 各自合并成一张可展开卡片。</summary>
     public string ToolKind { get; set; } = "";
+
+    /// <summary>模型的思考过程（reasoning）。界面把它折叠在正文上方（默认不展开），绝不混进正文。</summary>
+    public string Thought { get; set; } = "";
 }
 
 /// <summary>一个对话会话（AI 助手 kind=0 / Agent 集群 kind=2）。</summary>

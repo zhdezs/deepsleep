@@ -179,6 +179,27 @@ body.dark .seg button.on { background: #636366; }
 .bubble hr { border: 0; border-top: 1px solid var(--border); margin: 8px 0; }
 .bubble a { color: var(--blue); }
 
+/* ---- 思考块（模型 reasoning）：正文上方默认折叠，不占地方 ---- */
+.thinkbox {
+  border: 1px solid var(--border); background: var(--code);
+  border-radius: 10px; overflow: hidden; margin: 0 0 7px;
+  font-size: 12px; line-height: 1.55;
+}
+.thinkbox > summary {
+  list-style: none; cursor: pointer; display: flex; align-items: center; gap: 6px;
+  padding: 5px 10px; font-size: 11.5px; color: var(--muted);
+  user-select: none; transition: background .12s;
+}
+.thinkbox > summary:hover { background: var(--hover); }
+.thinkbox > summary::-webkit-details-marker { display: none; }
+.thinkbox > summary::before { content: '\1F4AD  '; font-size: 11px; }
+.thinkbox[open] > summary { border-bottom: 1px solid var(--border); }
+.thinkbox:not([open]) > .thinkbody { display: none; }
+.thinkbox .thinkbody {
+  padding: 7px 10px 9px; color: var(--muted); white-space: pre-wrap;
+  word-break: break-word; user-select: text; max-height: 34vh; overflow: auto;
+}
+
 /* ---- 工具结果卡（搜索资料 / 命令输出 / 文件内容，可展开）---- */
 .bubble.tool { padding: 0; background: none; box-shadow: none; }
 .bubble.tool .who { margin: 0 0 4px 2px; }
