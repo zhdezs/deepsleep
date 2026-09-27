@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace TrollWrangler.Core;
@@ -107,11 +108,15 @@ public sealed partial class Kernel
         }
 
         _updateRunning = true;
+        using var cts = new CancellationTokenSource();
+        _updateCts = cts;
         try
         {
             string status = "正在下载更新包…";
             var progress = new Progress<double>(p => Emit(new { ev = "updateProgress", percent = p, status }));
-            string installer = await Updater.DownloadAsync(info, progress, default, s => status = s).ConfigureAwait(false);
+            string installer = await Updater.DownloadAsync(info, progress, cts.Token, s => status = s).ConfigureAwait(false);
+            // 下载刚好结束时用户按了取消：别再往下装
+            cts.Token.ThrowIfCancellationRequested();
             Emit(new { ev = "updateStatus", text = "下载完成，正在启动升级程序…", done = false });
             string exePath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "deepsleep.exe");
             string installDir = Path.GetDirectoryName(exePath) ?? AppContext.BaseDirectory;
@@ -128,8 +133,15 @@ public sealed partial class Kernel
         }
         finally
         {
+            if (ReferenceEquals(_updateCts, cts)) _updateCts = null;
             _updateRunning = false;
         }
+    }
+
+    /// <summary>用户点了「取消升级」：中断下载。已经进到安装阶段（升级程序已拉起）就来不及了。</summary>
+    private void CancelUpdate()
+    {
+        try { _updateCts?.Cancel(); } catch { }
     }
 
     // ------------------------------------------------------------------

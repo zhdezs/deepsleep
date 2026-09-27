@@ -60,6 +60,7 @@ public sealed partial class Kernel
     private bool _llmOnline;
     private UpdateInfo? _pendingUpdate;
     private bool _updateRunning;
+    private CancellationTokenSource? _updateCts;
 
     private readonly object _gate = new();
     private readonly Dictionary<int, RunState> _agentStates = new();
@@ -298,6 +299,7 @@ public sealed partial class Kernel
 
             case "checkUpdate": await CheckUpdateAsync(true).ConfigureAwait(false); break;
             case "runUpdate": await RunUpdateAsync().ConfigureAwait(false); break;
+            case "cancelUpdate": CancelUpdate(); break;
 
             case "openMain": Emit(new { ev = "openMain" }); break;
             case "petToggle": SetPetEnabled(GetBool(a, "on")); break;

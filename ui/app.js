@@ -574,7 +574,9 @@ function renameBox(c) {
 }
 /* ---------------- 弹窗骨架 ---------------- */
 let modalName = '';
-function closeModal() {
+// internal=true 表示是 openModal 内部在换弹窗，不算「用户自己关掉的」
+function closeModal(internal) {
+  const wasUpdate = modalName === 'update';
   if (activeAsk && modalName.indexOf('ask:') === 0) {
     const id = activeAsk;
     activeAsk = null;
@@ -583,9 +585,10 @@ function closeModal() {
   $('#modalRoot').classList.remove('on');
   $('#modalRoot').innerHTML = '';
   modalName = '';
+  if (wasUpdate && !internal) updateDismissed = true;
 }
 function openModal(name, title, buttons) {
-  closeModal();
+  closeModal(true);
   modalName = name;
   const wrap = document.createElement('div');
   wrap.className = 'backdrop';
@@ -854,16 +857,22 @@ function closeAsk(id) {
 }
 
 /* ---------------- 升级 ---------------- */
+let updateActive = false;     // 这次会话里确实在跑升级（自动弹进度窗的前提）
+let updateDismissed = false;  // 用户已经把进度窗关掉了：别再被进度事件顶回来
+let updatePct = null;         // 最后一次进度（关掉再打开时接着显示）
+let updateMsg = '';
 function showUpdatePill(u) {
   $('#btnUpdate').classList.remove('hidden');
-  $('#updateText').textContent = '有新版 v' + u.version;
+  $('#updateText').textContent = updateActive ? '升级中…' : '有新版 v' + u.version;
 }
 function onUpdateClick() {
+  if (updateActive) { updateDismissed = false; openUpdateProgress(); return; }
   const u = S.update;
   if (!u) { call('checkUpdate'); return; }
   const body = openModal('updateinfo', '发现新版本 v' + u.version, [
     { t: '稍后' },
-    { t: '立即升级', primary: true, fn: () => startUpdate() },
+    // 返回 false：进度窗由 startUpdate 自己开，别让弹窗骨架再关一次
+    { t: '立即升级', primary: true, fn: () => { startUpdate(); return false; } },
   ]);
   const d = document.createElement('div');
   d.style.cssText = 'font-size:12.5px;line-height:1.6;white-space:pre-wrap;margin:6px 0 14px';
@@ -871,22 +880,58 @@ function onUpdateClick() {
     '\n\n升级会下载安装包，退出后静默覆盖安装并自动重启。用户数据（API Key、对话历史、记忆、自训练模型）不受影响。\n\n' + (u.route || '');
   body.appendChild(d);
 }
+function setModalFoot(buttons) {
+  const foot = $('#modalRoot').querySelector('.foot');
+  if (!foot) return;
+  foot.innerHTML = '';
+  for (const b of buttons) {
+    const btn = document.createElement('button');
+    btn.className = 'btn' + (b.primary ? ' primary' : '') + (b.danger ? ' danger' : '');
+    btn.textContent = b.t;
+    btn.onclick = () => { if (!b.fn || b.fn() !== false) closeModal(); };
+    foot.appendChild(btn);
+  }
+}
+function openUpdateProgress(buttons) {
+  const body = openModal('update', '正在升级', buttons || [
+    { t: '后台继续', fn: () => toast('升级在后台接着下，点左下角「升级中」随时能看进度。') },
+    { t: '取消升级', danger: true, fn: () => call('cancelUpdate') },
+  ]);
+  body.innerHTML = '<div id="upText" style="font-size:12.5px;margin:8px 0"></div>' +
+    '<div class="bar"><i id="upBar"></i></div>';
+  paintUpdate();
+  return body;
+}
+function paintUpdate() {
+  const t = $('#upText'), b = $('#upBar');
+  if (t) t.textContent = updateMsg ? updateMsg + (updatePct == null ? '' : '\n进度 ' + Math.round(updatePct) + '%') : '正在准备下载…';
+  if (b && updatePct != null) b.style.width = Math.max(0, Math.min(100, updatePct)) + '%';
+}
 function startUpdate() {
-  openModal('update', '正在升级', []);
-  const body = $('#modalRoot').querySelector('.body');
-  body.innerHTML = '<div id="upText" style="font-size:12.5px;margin:8px 0">正在准备下载…</div><div class="bar"><i id="upBar"></i></div>';
+  updateActive = true; updateDismissed = false;
+  updatePct = null; updateMsg = '';
+  openUpdateProgress();
   call('runUpdate');
 }
 function updateProgress(p, text, done) {
-  if (modalName !== 'update') {
-    openModal('update', '正在升级', done ? [{ t: '关闭' }] : []);
-    const body = $('#modalRoot').querySelector('.body');
-    body.innerHTML = '<div id="upText" style="font-size:12.5px;margin:8px 0"></div><div class="bar"><i id="upBar"></i></div>';
+  const hidden = updateDismissed, wasActive = updateActive;
+  if (done) { updateActive = false; updateDismissed = false; }
+  // 关掉过就保持关着，只把进度写到左下角小按钮上
+  if (!hidden && wasActive) {
+    if (modalName !== 'update') openUpdateProgress(done ? [{ t: '关闭' }] : null);
+    else if (done) setModalFoot([{ t: '关闭' }]);
   }
-  const t = $('#upText'), b = $('#upBar');
-  if (t && text) t.textContent = text + (p == null ? '' : '\n进度 ' + Math.round(p) + '%');
-  if (b && p != null) b.style.width = Math.max(0, Math.min(100, p)) + '%';
-  if (done && t) t.textContent = text || '';
+  if (text) updateMsg = text;
+  if (p != null) updatePct = p;
+  if (done) updatePct = null;
+  paintUpdate();
+  if (!done) {
+    $('#btnUpdate').classList.remove('hidden');
+    $('#updateText').textContent = p == null ? '升级中…' : '升级中 ' + Math.round(p) + '%';
+  } else {
+    if (S.update) showUpdatePill(S.update); else $('#btnUpdate').classList.add('hidden');
+    if (hidden) toast(text || '升级已结束。');
+  }
 }
 function restarting() {
   toast('升级程序已启动，deepsleep 即将退出并自动重启…');
