@@ -35,6 +35,9 @@ internal static partial class Program
     private static int Main(string[] args)
     {
         try { Console.OutputEncoding = Encoding.UTF8; } catch { }
+        // 管道 / 重定向时（脚本喂输入）按 UTF-8 读，否则中文会被按系统代码页解成乱码。
+        // 真控制台不动它：ReadLine 走控制台 API，本来就是 Unicode 正确的。
+        if (Console.IsInputRedirected) { try { Console.InputEncoding = Encoding.UTF8; } catch { } }
         try { Console.Title = "deepsleep 内核版（Core）"; } catch { }
 
         _rootDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
@@ -45,8 +48,10 @@ internal static partial class Program
         string? inline = ArgStr(args, "--token");
         _token = string.IsNullOrWhiteSpace(inline) ? LoadOrCreateToken(args.Contains("--new-token")) : inline!;
 
+        _cliMode = CliWanted(args);
         _kernel = new Kernel();
         _kernel.Push += OnPush;
+        if (_cliMode) _kernel.Push += OnCliPush;      // CMD 模式：同一份内核事件流
         try { _kernel.Init(_dataDir); }
         catch (Exception ex) { Console.WriteLine("内核初始化失败：" + ex.Message); return 2; }
 
@@ -58,14 +63,39 @@ internal static partial class Program
         catch (Exception ex)
         {
             Console.WriteLine("端口 " + _port + " 起不来：" + ex.Message);
-            Console.WriteLine("换一个端口再试，例如：deepsleep-core --port 8757");
-            return 1;
+            if (_cliMode)
+            {
+                Console.WriteLine("CMD 模式下先不管端口，继续启动。");
+            }
+            else
+            {
+                Console.WriteLine("换一个端口再试，例如：deepsleep-core --port 8757");
+                return 1;
+            }
         }
 
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; Shutdown(); };
         AppDomain.CurrentDomain.ProcessExit += (_, _) => { try { _kernel.Shutdown(); } catch { } };
 
         Banner();
+
+        if (_cliMode)
+        {
+            // CMD 模式：HTTP 服务照旧在后台跑（网页版/桌面端可以同时连），前台变成命令行聊天
+            _ = Task.Run(AcceptLoop);
+            RunCli(args);
+            try { _listener?.Stop(); } catch { }
+            try { _kernel.Shutdown(); } catch { }
+            return 0;
+        }
+
+        AcceptLoop();
+        return 0;
+    }
+
+    private static void AcceptLoop()
+    {
+        if (_listener == null) return;
         while (true)
         {
             TcpClient client;
@@ -73,7 +103,6 @@ internal static partial class Program
             catch { break; }
             _ = Task.Run(() => ServeAsync(client));
         }
-        return 0;
     }
 
     private static async Task ServeAsync(TcpClient client)
@@ -118,6 +147,11 @@ internal static partial class Program
         Console.WriteLine("      " + link);
         Console.WriteLine();
         Console.WriteLine("  退出 Ctrl+C ｜ 换端口 --port 8757 ｜ 换令牌 --new-token ｜ 换数据目录 --data 路径");
+        if (_cliMode)
+        {
+            Console.WriteLine();
+            Console.WriteLine("  CMD 模式   直接在这里发消息（--cli 交互 / --say \"一句话\" 发完即退）");
+        }
         Console.WriteLine();
     }
 

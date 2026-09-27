@@ -175,7 +175,8 @@ public sealed partial class Kernel
                 CanAccept = false,
                 ToolName = isToolCard ? m.Meta : "",
                 ToolSummary = isToolCard ? ToolCardSummary(m.Meta, m.Content) : "",
-                ToolDetail = isToolCard ? m.Content : "",
+                ToolDetail = isToolCard ? (string.IsNullOrWhiteSpace(m.Detail) ? m.Content : m.Detail) : "",
+                ToolKind = isToolCard ? ToolKindOf(m.Meta) : "",
                 Text = isToolCard ? m.Content
                     : isVisionResult ? visionText
                     : isToolCallNotice ? m.Meta
@@ -287,6 +288,18 @@ public sealed partial class Kernel
     /// 工具结果卡折叠时显示的一句话：搜到几篇 / 第一行是什么。
     /// 展开后的明细就是工具原始返回，所以折叠态必须短、能一眼看出干了什么。
     /// </summary>
+    /// <summary>工具大类：界面把同一轮里连续的 cmd / file 合并成一张卡片。</summary>
+    private static string ToolKindOf(string tool) => tool switch
+    {
+        Agent.ToolRunCommand or Agent.ToolPython => "cmd",
+        Agent.ToolWriteFile => "file",
+        Agent.ToolSearch => "search",
+        Agent.ToolResearch => "research",
+        Agent.ToolVision => "vision",
+        Agent.ToolFetch or Agent.ToolReadFile or Agent.ToolOpenFile => "read",
+        _ => "other",
+    };
+
     private static string ToolCardSummary(string tool, string result)
     {
         if (tool == Agent.ToolSearch)

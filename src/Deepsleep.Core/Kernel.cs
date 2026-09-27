@@ -389,6 +389,7 @@ public sealed partial class Kernel
         ["tool"] = it.ToolName,
         ["toolSummary"] = it.ToolSummary,
         ["toolDetail"] = it.ToolDetail,
+        ["toolKind"] = it.ToolKind,
         ["accepted"] = it.Accepted,
     };
 

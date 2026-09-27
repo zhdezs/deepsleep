@@ -17,6 +17,9 @@ public sealed class AgentMessage
     public string Role { get; set; } = "user";
     public string Content { get; set; } = "";
     public string Meta { get; set; } = "";
+    /// <summary>可选：界面卡片用的明细（写文件时是路径 + 内容）。
+    /// 只给界面看，不会饱给模型（避免把上下文撞爆）。</summary>
+    public string Detail { get; set; } = "";
     /// <summary>可选：本消息附带一张本地图片（生成图片工具的结果）。</summary>
     public string? ImagePath { get; set; }
 }
@@ -600,6 +603,7 @@ public sealed class Agent
                 Role = "tool",
                 Content = result,
                 Meta = tool,
+                Detail = tool == ToolWriteFile ? WriteFileDetail(args) : "",
                 ImagePath = tool == ToolImage ? _lastImagePath : null,
             });
             TrimHistory(history);
@@ -1189,7 +1193,11 @@ public sealed class Agent
         };
         string path = Path.Combine(dir, GuessCodeFileName(history, lang, ext));
         string result = WriteFileTool(Obj(("路径", path), ("内容", code)));
-        history.Add(new AgentMessage { Role = "tool", Content = result, Meta = ToolWriteFile });
+        history.Add(new AgentMessage
+        {
+            Role = "tool", Content = result, Meta = ToolWriteFile,
+            Detail = "路径：" + path + "\n" + Truncate(code, MaxToolOutput),
+        });
         TrimHistory(history);
         MessageAdded?.Invoke(sid, history[^1]);
         string preview = code.Length > 800 ? code[..800] + "…" : code;
@@ -2290,6 +2298,15 @@ public sealed class Agent
             return $"文件不存在：{path}";
         string content = File.ReadAllText(path, Encoding.UTF8);
         return Truncate($"文件：{path}（{content.Length} 字符）\n\n{content}", MaxToolOutput);
+    }
+
+    /// <summary>写入文件给界面看的明细：路径 + 写进去的内容。</summary>
+    private static string WriteFileDetail(JsonElement args)
+    {
+        string? path = GetArg(args, "路径");
+        if (string.IsNullOrWhiteSpace(path)) return "";
+        string content = GetArg(args, "内容") ?? "";
+        return "路径：" + path + "\n" + Truncate(content, MaxToolOutput);
     }
 
     private static string WriteFileTool(JsonElement args)

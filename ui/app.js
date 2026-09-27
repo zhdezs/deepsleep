@@ -197,9 +197,13 @@ function paintBubble(row, it) {
   }
 }
 
-function paintTool(b, it) {
+function toolSig(it) {
   const detail = it.toolDetail || it.text || '';
-  const sig = (it.tool || '') + '::' + (it.toolSummary || '') + '::' + detail.length + '::' + detail.slice(0, 48);
+  return (it.tool || '') + '::' + (it.toolSummary || '') + '::' + detail.length + '::' + detail.slice(0, 48);
+}
+
+function paintTool(b, it) {
+  const sig = toolSig(it);
   if (b.dataset.tsig === sig) return;
   const prev = b.querySelector('details.toolcard');
   const open = !!(prev && prev.open);
@@ -212,30 +216,151 @@ function paintTool(b, it) {
   const tx = document.createElement('span');  tx.className = 'tsum';  tx.textContent = it.toolSummary || '';
   sum.append(nm, tx);
   const body = document.createElement('div'); body.className = 'tbody';
-  body.innerHTML = md(detail);
+  body.innerHTML = md(it.toolDetail || it.text || '');
   det.append(sum, body);
   b.innerHTML = '';
   b.appendChild(det);
 }
 
-function renderItems() {
+/* ---- 命令 / 文件聚合卡：同一轮里「运行命令」「写入文件」各并成一张，点开看全部 ---- */
+function groupKind(it) {
+  if (!it || !it.tool || it.thinking) return '';
+  const k = it.toolKind;
+  return (k === 'cmd' || k === 'file') ? k : '';
+}
+
+function groupEntries(items) {
+  const out = [];
+  for (const it of items) {
+    const k = groupKind(it);
+    const last = out[out.length - 1];
+    if (k && last && last.kind === k) last.items.push(it);
+    else if (k) out.push({ g: true, kind: k, items: [it] });
+    else out.push({ it });
+  }
+  return out;
+}
+
+function fileNameOf(it) {
+  let p = String(it.toolSummary || '');
+  p = p.replace(/^已写入[：:]\s*/, '').replace(/[（(][^（()）]*[)）]\s*$/, '').trim();
+  const seg = p.split(/[\\/]/).pop();
+  return (seg && seg.trim()) ? seg.trim() : (it.tool || '文件');
+}
+
+function groupSummary(kind, items) {
+  if (kind === 'cmd') return items.length + ' 条（点开看全部命令与输出）';
+  const names = items.map(fileNameOf);
+  return items.length + ' 个：' + names.slice(0, 4).join('、') + (names.length > 4 ? ' 等' : '');
+}
+
+function groupRowItems(row) {
+  const ids = String(row.dataset.gids || '').split(' ').filter(Boolean);
+  return ids.map(id => S.items.find(x => x.id === id)).filter(Boolean);
+}
+
+function paintGroup(row, kind, items) {
+  const b = row.querySelector('.bubble');
+  if (!b || !items.length) return;
+  const sig = kind + '::' + items.length + '::' + items.map(toolSig).join('|');
+  if (b.dataset.tsig === sig) return;
+  const prev = b.querySelector('details.toolcard');
+  const open = !!(prev && prev.open);
+  b.dataset.tsig = sig;
+  row.dataset.gkind = kind;
+  row.dataset.gids = items.map(x => x.id).join(' ');
+  const det = document.createElement('details');
+  det.className = 'toolcard grp';
+  det.open = open;
+  const sum = document.createElement('summary');
+  const nm = document.createElement('span'); nm.className = 'tname';
+  nm.textContent = kind === 'cmd' ? '运行的命令' : '编辑的文件';
+  const tx = document.createElement('span'); tx.className = 'tsum';
+  tx.textContent = groupSummary(kind, items);
+  sum.append(nm, tx);
+  const body = document.createElement('div'); body.className = 'tbody';
+  items.forEach((it, i) => {
+    const sub = document.createElement('div'); sub.className = 'titem';
+    const h = document.createElement('div'); h.className = 'titem-h';
+    h.textContent = (i + 1) + '. ' + (it.toolSummary || it.tool || '');
+    const c = document.createElement('div'); c.className = 'titem-b';
+    c.innerHTML = md(it.toolDetail || it.text || '');
+    sub.append(h, c);
+    body.appendChild(sub);
+  });
+  det.append(sum, body);
+  b.innerHTML = '';
+  b.appendChild(det);
+}
+
+function groupNodes(entry) {
+  const nodes = [];
+  const first = entry.items[0];
+  if (first.showTime) {
+    const tl = document.createElement('div');
+    tl.className = 'timeline'; tl.textContent = first.time;
+    nodes.push(tl);
+  }
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.dataset.gkey = 'g:' + entry.kind + ':' + first.id;
+  const av = document.createElement('div');
+  av.className = 'avatar';
+  av.style.background = first.color || '#4A90D9';
+  av.textContent = first.avatar || 'AI';
+  row.appendChild(av);
+  const b = document.createElement('div'); b.className = 'bubble tool'; row.appendChild(b);
+  const acts = document.createElement('div'); acts.className = 'acts';
+  const del = document.createElement('button');
+  del.textContent = '删除'; del.title = '删除这一组工具结果';
+  del.onclick = () => entry.items.forEach(x => call('deleteMsg', { kind: kind(), item: x.id }));
+  acts.append(del); row.appendChild(acts);
+  row.dataset.gids = entry.items.map(x => x.id).join(' ');
+  row.dataset.gkind = entry.kind;
+  paintGroup(row, entry.kind, entry.items);
+  row.dataset.gids = entry.items.map(x => x.id).join(' ');
+  nodes.push(row);
+  return nodes;
+}
+
+function captureOpen() {
+  const m = {};
+  for (const d of document.querySelectorAll('#msgs details.toolcard')) {
+    const row = d.closest('.row');
+    const k = row && (row.dataset.gkey || (row.dataset.id ? 't:' + row.dataset.id : ''));
+    if (k) m[k] = d.open;
+  }
+  return m;
+}
+
+function restoreOpen(m) {
+  for (const d of document.querySelectorAll('#msgs details.toolcard')) {
+    const row = d.closest('.row');
+    const k = row && (row.dataset.gkey || (row.dataset.id ? 't:' + row.dataset.id : ''));
+    if (k && k in m) d.open = m[k];
+  }
+}
+
+function renderItems(force) {
   const box = $('#msgs');
+  const open = captureOpen();
   box.innerHTML = '';
-  for (const it of S.items) for (const n of itemNodes(it)) box.appendChild(n);
-  scrollBottom(true);
+  for (const e of groupEntries(S.items))
+    for (const n of (e.g ? groupNodes(e) : itemNodes(e.it))) box.appendChild(n);
+  restoreOpen(open);
+  scrollBottom(force === undefined ? true : force);
 }
 
 function addItem(it) {
   if (!S.conv || it.sessionId !== S.conv.sid) return;
   S.items.push(it);
-  const box = $('#msgs');
-  for (const n of itemNodes(it)) box.appendChild(n);
-  scrollBottom(!!it.self);
+  renderItems(!!it.self);
 }
 
 function findRow(conv, id) {
   if (!S.conv || conv !== S.conv.sid) return null;
-  return $('#msgs').querySelector('[data-id="' + id + '"]');
+  const box = $('#msgs');
+  return box.querySelector('[data-id="' + id + '"]') || box.querySelector('[data-gids~="' + id + '"]');
 }
 
 function updateText(conv, id, text) {
@@ -244,7 +369,8 @@ function updateText(conv, id, text) {
   if (it) { it.text = text; it.thinking = false; }
   const row = findRow(conv, id);
   if (!row) return;
-  paintBubble(row, it || { text: text });
+  if (row.dataset.gkind) paintGroup(row, row.dataset.gkind, groupRowItems(row));
+  else paintBubble(row, it || { text: text });
   scrollBottom();
 }
 
@@ -252,18 +378,15 @@ function patchItem(conv, m) {
   const it = S.items.find(x => x.id === m.id);
   if (it) { if (m.text != null) it.text = m.text; if (m.thinking != null) it.thinking = m.thinking; if (m.opacity != null) it.opacity = m.opacity; }
   const row = findRow(conv, m.id);
-  if (row) paintBubble(row, it || m);
+  if (!row) return;
+  if (row.dataset.gkind) paintGroup(row, row.dataset.gkind, groupRowItems(row));
+  else paintBubble(row, it || m);
 }
 
 function removeItem(conv, id) {
   if (!S.conv || conv !== S.conv.sid) return;
   S.items = S.items.filter(x => x.id !== id);
-  const row = findRow(conv, id);
-  if (row) {
-    const prev = row.previousElementSibling;
-    if (prev && prev.classList.contains('timeline')) prev.remove();
-    row.remove();
-  }
+  renderItems(false);
 }
 
 /* 贴底跟随：只有「用户自己没往上翻」时才自动滚到底。

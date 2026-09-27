@@ -223,6 +223,15 @@ body.dark .seg button.on { background: #636366; }
 .toolcard .tbody a { color: var(--blue); }
 .toolcard .tbody blockquote { margin: 5px 0; padding: 2px 10px; border-left: 3px solid var(--border); color: var(--muted); }
 
+/* 聚合卡：命令 / 文件合并后，展开态是每条一个子块 */
+.toolcard.grp .titem { border-top: 1px solid var(--border); padding: 9px 0 3px; }
+.toolcard.grp .titem:first-child { border-top: 0; padding-top: 2px; }
+.toolcard.grp .titem-h { font-weight: 600; font-size: 12px; opacity: .8; margin-bottom: 5px; word-break: break-all; }
+.toolcard.grp .titem-b { user-select: text; }
+.toolcard.grp .titem-b > :first-child { margin-top: 0; }
+.toolcard.grp .titem-b > :last-child { margin-bottom: 0; }
+.toolcard.grp .titem-b pre { max-height: 32vh; }
+
 .copycode {
   position: absolute; top: 6px; right: 6px; font-size: 11px; opacity: .5;
   padding: 2px 8px; border-radius: 7px; background: var(--input);

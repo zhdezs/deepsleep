@@ -43,6 +43,9 @@ public sealed class ChatItem
     public string ToolSummary { get; set; } = "";
     /// <summary>展开后的明细（搜索结果列表 / 命令输出 / 文件内容）。</summary>
     public string ToolDetail { get; set; } = "";
+    /// <summary>工具大类：cmd（运行命令）/file（写文件）/search/research/vision/read/other。
+    /// 界面把同一轮里连续的 cmd、file 各自合并成一张可展开卡片。</summary>
+    public string ToolKind { get; set; } = "";
 }
 
 /// <summary>一个对话会话（AI 助手 kind=0 / Agent 集群 kind=2）。</summary>
