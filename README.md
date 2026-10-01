@@ -6,12 +6,12 @@
 
 | | |
 | --- | --- |
-| 当前版本 | **2.2.7**（Agent 集群有了「名片」：一句话指挥后，集群页顶部会排出一行成员卡，每张卡写着谁、什么状态（运行中 / 待命 / 完成 / 失败）、此刻在干什么（正在网络搜索 / 正在写入文件…）；点开任意一张，能看到它的分工、产出（这一轮交给指挥官的东西）和完整的工具调用过程，而且干活过程中实时刷新。指挥官最后的汇总也改成按人汇报：谁负责什么、实际做了什么、产出了什么，最后才是总体结论。顺手修了网页版的一个老 bug：内核往网页推事件时是并发写的，帧会互相踩、连接被踢，事件一丢就丢一片（Agent 名片这类高频事件尤其明显），现在每个连接一条有序发送队列。其余与 2.2.6 一致：集群名册只增不减 + 按需派工、Gitee 线路加速 + 实时速度 + 续传不重下、思考内容折叠、截断自动续写、命令与文件合并卡、内核版 CMD 模式） |
-| 系统要求 | Windows 10 1809+ / x64（推荐 Windows 11，可享亚克力毛玻璃界面） |
+| 当前版本 | **2.3.0**（内核跨平台：同一个内核现在能编成 Windows / Linux / macOS 三平台的原生程序。Windows 体验完全不变；Linux 与 macOS 上跑内核版（Core）——解压、`./deepsleep.sh` 会直接开出一个原生桌面窗口（内嵌同一套界面：Linux 用系统自带的 WebKitGTK，macOS 用 WKWebView），也能用浏览器打开网页端遥控这台电脑，工具、命令、写文件、记忆、技能、网络搜索、深度研究一个不少。平台差异集中在一个 `Platform.cs` 里：命令壳（Windows 走 PowerShell，Unix 走 bash）、数据目录（Windows 用 %LocalAppData%，Unix 用 XDG / Application Support）、打开文件管理器（explorer / open / xdg-open）、令牌保险箱的机器绑定（注册表 MachineGuid + SID / /etc/machine-id + 用户名）、沙箱黑名单与系统目录（两套规则）、OTA 升级包（Windows 认 .exe，Unix 认 .tar.gz 并自动换个平台对应那份）。Release 现在除了安装版 / 便携版 / 内核版，还带 4 个跨平台内核包：linux-x64、linux-arm64、osx-arm64、osx-x64。其余与 2.2.7 一致：Agent 名片 + 按人汇报、集群名册只增不减 + 按需派工、Gitee 线路加速、思考内容折叠、截断自动续写、命令与文件合并卡、内核版 CMD 模式） |
+| 系统要求 | 桌面客户端：Windows 10 1809+ / x64（推荐 Windows 11，可享亚克力毛玻璃界面）；内核版另支持 Linux（x64 / ARM64）与 macOS（Apple 芯片 / Intel） |
 | 下载 | [Releases](https://github.com/zhdezs/deepsleep/releases/latest) → `deepsleep-Setup.exe` |
 | OTA 更新源 | `zhdezs/deepsleep`（GitHub + Gitee 双源，⚙ 设置里可切换线路，默认 Gitee） |
 | 官网 / 网页版 | <https://zhdezs.github.io/deepsleep/>（网页版免安装，内置免费模型矩阵：GLM-4.7-Flash 聊天 / GLM-4.6V-Flash 看图 / CogView-3-Flash 画图） |
-| 内核版 | `deepsleep-core-<版本>-win-x64.zip`：解压即用，浏览器连上就能用完整能力操控本机 |
+| 内核版 | `deepsleep-core-<版本>-win-x64.zip`（Windows）/ `deepsleep-core-<版本>-linux-x64.tar.gz` 等（Linux · macOS）：解压即用，双击或 `./deepsleep.sh` 直接开桌面窗口，也能用浏览器连上操控本机 |
 
 ### 三种用法
 
@@ -202,8 +202,27 @@ dotnet publish -c Release -r win-x64 --self-contained true
 内核版（免安装，配合网页端）：
 
 ```powershell
-dotnet publish src\DeepSleepCore\DeepSleepCore.csproj -c Release -o src\DeepSleepCore\dist\core
+dotnet publish src\DeepSleepCore\DeepSleepCore.csproj -c Release -f net10.0-windows10.0.19041.0 -o src\DeepSleepCore\dist\core
 ```
+
+内核同时支持 **Linux / macOS**（同一个内核源码，多目标编译）：
+
+```bash
+# 在本机（Linux / macOS）上直接跑：
+dotnet publish src/DeepSleepCore/DeepSleepCore.csproj -c Release -f net10.0 -r linux-x64 --self-contained true -o dist/core-linux-x64
+./dist/core-linux-x64/deepsleep-core            # 直接开桌面窗口；服务器加 --headless 再用浏览器访问
+
+# 也可以交叉编译（Windows 上出 Linux / macOS 的包）：
+#   -r linux-x64 / linux-arm64 / osx-x64 / osx-arm64 任选
+```
+
+Linux / macOS 上运行 `deepsleep-core`（或 `./deepsleep.sh`）会直接开一个**原生桌面窗口**：窗口用 Photino 包了系统 WebView
+（Linux 是 WebKitGTK，macOS 是 WKWebView），加载的就是内核自带的同一套 HTML 界面，双击即用、和 Windows 端长得一样。
+没有桌面环境的机器（服务器 / SSH）加 `--headless` 就只跑服务，用浏览器访问 `http://127.0.0.1:8756/`；
+Linux 桌面需要 WebKitGTK（Debian/Ubuntu：`sudo apt install libwebkit2gtk-4.1-0`），缺了会自动退回浏览器模式。
+数据目录默认在 `$XDG_DATA_HOME/deepsleep`（macOS 是 `~/Library/Application Support/deepsleep`），
+命令行壳改用 `bash`，沙箱黑名单与系统目录用 Unix 那套；Windows 的行为与以前逐字一致。
+内核在 Unix 上也能自更新（OTA 会挑本平台的 `.tar.gz` 包，解包覆盖后自动重启）。
 
 发版由维护脚本一体化完成：改版本号 → 编译 → 打包（安装版 / 便携版 / 内核版）→ 生成 update.json →
 推送 GitHub + Gitee Release、源码与官网（`release\tools\publish-via-api.py` / `publish-gitee.py`，需自备令牌）。

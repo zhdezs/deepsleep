@@ -687,12 +687,13 @@ AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不�
         if (string.IsNullOrWhiteSpace(path)) return;
         try
         {
-            if (Directory.Exists(path))
-                Process.Start(new ProcessStartInfo("explorer.exe", $"\"{path}\"") { UseShellExecute = true });
-            else if (File.Exists(path))
-                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{path}\"") { UseShellExecute = true });
-            else
+            if (!Directory.Exists(path) && !File.Exists(path))
+            {
                 Toast("路径不存在：" + path, "error");
+                return;
+            }
+            // Windows 用 explorer（文件定位到所在目录并选中），macOS 用 open，Linux 用 xdg-open
+            Platform.OpenWithShell(path, File.Exists(path));
         }
         catch (Exception ex) { Toast("打开失败：" + ex.Message, "error"); }
     }
@@ -707,19 +708,27 @@ AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不�
         {
             if (!IsOllamaInstalled())
             {
-                string setup = Path.Combine(Path.GetTempPath(), "OllamaSetup.exe");
-                AddAgentSys(_agentCur.Sid, "⬇️ 正在下载 Ollama 安装包（约 200MB）…");
-                using (var hc = new HttpClient { Timeout = TimeSpan.FromMinutes(10) })
+                if (!Platform.IsWindows)
                 {
-                    byte[] bytes = await hc.GetByteArrayAsync(OllamaSetupUrl).ConfigureAwait(false);
-                    await File.WriteAllBytesAsync(setup, bytes).ConfigureAwait(false);
+                    AddAgentSys(_agentCur.Sid, "⬇️ 正在用 Ollama 官方脚本安装…");
+                    await RunInstallCmdAsync("curl -fsSL " + OllamaInstallUrl + " | sh").ConfigureAwait(false);
                 }
-                AddAgentSys(_agentCur.Sid, "⬇️ 安装包下载完成，正在静默安装…");
-                Process.Start(new ProcessStartInfo(setup) { UseShellExecute = true });
-                for (int i = 0; i < 90; i++)
+                else
                 {
-                    await Task.Delay(2000).ConfigureAwait(false);
-                    if (IsOllamaInstalled()) break;
+                    string setup = Path.Combine(Path.GetTempPath(), "OllamaSetup.exe");
+                    AddAgentSys(_agentCur.Sid, "⬇️ 正在下载 Ollama 安装包（约 200MB）…");
+                    using (var hc = new HttpClient { Timeout = TimeSpan.FromMinutes(10) })
+                    {
+                        byte[] bytes = await hc.GetByteArrayAsync(OllamaSetupUrl).ConfigureAwait(false);
+                        await File.WriteAllBytesAsync(setup, bytes).ConfigureAwait(false);
+                    }
+                    AddAgentSys(_agentCur.Sid, "⬇️ 安装包下载完成，正在静默安装…");
+                    Process.Start(new ProcessStartInfo(setup) { UseShellExecute = true });
+                    for (int i = 0; i < 90; i++)
+                    {
+                        await Task.Delay(2000).ConfigureAwait(false);
+                        if (IsOllamaInstalled()) break;
+                    }
                 }
             }
             if (!IsOllamaInstalled())
@@ -750,6 +759,8 @@ AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不�
     /// <summary>Ollama 官方安装包地址（拆开拼接，避免被当成可疑下载链接）。</summary>
     private static readonly string OllamaSetupUrl =
         "https://" + "ollama.com" + "/download/" + "Ollama" + "Setup" + ".exe";
+    /// <summary>Ollama 官方 Linux/macOS 安装脚本地址。</summary>
+    private static readonly string OllamaInstallUrl = "https://ollama.com/install.sh";
 
     private static bool IsOllamaInstalled()
     {
@@ -771,13 +782,7 @@ AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不�
     /// <summary>跑一条安装用命令（ollama pull 等），最多等 15 分钟。</summary>
     private static async Task RunInstallCmdAsync(string cmd)
     {
-        var psi = new ProcessStartInfo("cmd.exe", "/c " + cmd)
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-        };
+        var psi = Platform.ShellCommand(cmd);
         using var p = Process.Start(psi);
         if (p == null) return;
         await p.WaitForExitAsync().WaitAsync(TimeSpan.FromMinutes(15)).ConfigureAwait(false);

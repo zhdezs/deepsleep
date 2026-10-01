@@ -7,7 +7,8 @@ namespace TrollWrangler;
 /// <summary>工具沙箱：限制 AI 的危险操作，防止病毒、误删和破坏系统。</summary>
 public static class Sandbox
 {
-    private static readonly string[] AlwaysBlock =
+    // Windows 专属危险命令
+    private static readonly string[] AlwaysBlockWindows =
     {
         "format ", "diskpart", "bcdedit", "bootrec", "vssadmin", "shutdown",
         "restart-computer", "stop-computer", "clear-disk", "set-disk",
@@ -15,11 +16,29 @@ public static class Sandbox
         "reg delete",
     };
 
-    private static readonly string[] SystemDirs =
+    // Linux / macOS 专属危险命令
+    private static readonly string[] AlwaysBlockUnix =
+    {
+        "mkfs", "dd if=", "dd of=/dev/", "> /dev/sd", "shutdown", "reboot", "halt",
+        "init 0", "init 6", "systemctl poweroff", "systemctl reboot", "wipefs",
+        "fdisk ", "parted ", "chmod -r 777 /", "chown -r root /", ":(){", "fork bomb",
+    };
+
+    private static string[] AlwaysBlock => Platform.IsWindows ? AlwaysBlockWindows : AlwaysBlockUnix;
+
+    private static readonly string[] SystemDirsWindows =
     {
         @"C:\Windows", @"C:\Program Files", @"C:\Program Files (x86)", @"C:\ProgramData",
         @"C:\System Volume Information", @"C:\$Recycle.Bin",
     };
+
+    private static readonly string[] SystemDirsUnix =
+    {
+        "/etc", "/usr", "/bin", "/sbin", "/boot", "/lib", "/lib64", "/opt",
+        "/System", "/Library", "/var/lib", "/var/root", "/private/etc",
+    };
+
+    private static string[] SystemDirs => Platform.IsWindows ? SystemDirsWindows : SystemDirsUnix;
 
     public static string? CheckCommand(string cmd)
     {
@@ -38,6 +57,9 @@ public static class Sandbox
             return "沙箱拦截：禁止递归删除系统目录或盘符根目录。";
         if (Regex.IsMatch(c, @"rm\s+-rf\s+/|del\s+/f\s+/s\s+/q\s+[a-z]:\\windows", RegexOptions.IgnoreCase))
             return "沙箱拦截：检测到高危删除命令，已禁止执行。";
+        // Unix：禁止 rm -rf 打系统目录 / 根目录
+        if (Regex.IsMatch(c, @"rm\s+(-[a-z]*\s+)*-?[rf]{1,2}[a-z]*\s+(/|/\*|/etc|/usr|/bin|/boot|/var)\b", RegexOptions.IgnoreCase))
+            return "沙箱拦截：禁止递归删除根目录或系统目录。";
         return null;
     }
 
@@ -65,18 +87,26 @@ public static class Sandbox
             if (lower.StartsWith(d.ToLowerInvariant(), StringComparison.Ordinal))
                 return $"沙箱拦截：禁止向系统目录写入文件（{d}）。";
         string ext = Path.GetExtension(full).ToLowerInvariant();
-        if ((ext is ".exe" or ".dll" or ".bat" or ".cmd" or ".ps1" or ".vbs" or ".scr" or ".msi") &&
-            lower.Contains(@"\windows\", StringComparison.Ordinal))
+        if ((ext is ".exe" or ".dll" or ".bat" or ".cmd" or ".ps1" or ".vbs" or ".scr" or ".msi" or ".sh" or ".so") &&
+            (lower.Contains(@"\windows\", StringComparison.Ordinal) ||
+             (!Platform.IsWindows && lower.StartsWith("/etc/", StringComparison.Ordinal))))
             return "沙箱拦截：禁止在系统目录写入可执行文件。";
         return null;
     }
 
     /// <summary>"打开"就等于运行代码的文件类型（exe / 脚本 / 安装包 / 注册表脚本）。</summary>
-    private static readonly string[] ExecutableLike =
+    private static readonly string[] ExecutableLikeWindows =
     {
         ".exe", ".bat", ".cmd", ".ps1", ".vbs", ".vbe", ".js", ".jse", ".wsf", ".wsh",
         ".scr", ".msi", ".msp", ".com", ".cpl", ".jar", ".reg", ".hta",
     };
+
+    private static readonly string[] ExecutableLikeUnix =
+    {
+        ".sh", ".bash", ".zsh", ".command", ".run", ".bin", ".app", ".desktop", ".py", ".pl", ".rb",
+    };
+
+    private static string[] ExecutableLike => Platform.IsWindows ? ExecutableLikeWindows : ExecutableLikeUnix;
 
     /// <summary>
     /// 打开这类文件会直接执行系统里的代码，属于"要动手"的操作 —— 沙箱不再一刀切禁止，

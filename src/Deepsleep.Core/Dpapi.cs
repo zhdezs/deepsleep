@@ -1,12 +1,19 @@
 using System;
+#if WINDOWS
 using System.Runtime.InteropServices;
+#endif
 using System.Text;
 
 namespace TrollWrangler;
 
-/// <summary>Windows DPAPI（crypt32.dll）薄封装：不依赖额外 NuGet 包。</summary>
+/// <summary>
+/// Windows DPAPI（crypt32.dll）薄封装：不依赖额外 NuGet 包。
+/// 非 Windows 平台没有 DPAPI：TryProtect 返回 null、Unprotect 返回 null，
+/// 上层 TokenVault 会自动退化到 PBKDF2 派生密钥的 pbkdf 模式。
+/// </summary>
 internal static class Dpapi
 {
+#if WINDOWS
     [StructLayout(LayoutKind.Sequential)]
     private struct DataBlob
     {
@@ -64,4 +71,9 @@ internal static class Dpapi
         byte[]? plain = Unprotect(data);
         return plain == null ? "" : Encoding.UTF8.GetString(plain);
     }
+#else
+    public static byte[]? TryProtect(byte[] data) => null;
+    public static byte[]? Unprotect(byte[] data) => null;
+    public static string UnprotectToString(byte[] data) => "";
+#endif
 }

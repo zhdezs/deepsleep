@@ -118,7 +118,7 @@ public sealed partial class Kernel
             // 下载刚好结束时用户按了取消：别再往下装
             cts.Token.ThrowIfCancellationRequested();
             Emit(new { ev = "updateStatus", text = "下载完成，正在启动升级程序…", done = false });
-            string exePath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "deepsleep.exe");
+            string exePath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, Platform.HostExeName);
             string installDir = Path.GetDirectoryName(exePath) ?? AppContext.BaseDirectory;
             Updater.ApplyAndRestart(installer, installDir, exePath);
             Emit(new { ev = "restarting" });

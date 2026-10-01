@@ -29,25 +29,8 @@ public static class TokenVault
     private const int KeyLen = 32;
     private const int Pbkdf2Iterations = 200_000;
 
-    /// <summary>机器 + 用户绑定串（作为 PBKDF2 口令 / GCM 的 AAD）。</summary>
-    public static string MachineBinding()
-    {
-        string guid = "";
-        try
-        {
-            using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
-                @"SOFTWARE\Microsoft\Cryptography");
-            guid = key?.GetValue("MachineGuid")?.ToString() ?? "";
-        }
-        catch { /* 读不到就用机器名代替 */ }
-        string sid = "";
-        try
-        {
-            sid = System.Security.Principal.WindowsIdentity.GetCurrent().User?.Value ?? "";
-        }
-        catch { }
-        return guid + "|" + sid + "|" + Environment.MachineName;
-    }
+    /// <summary>机器 + 用户绑定串（作为 PBKDF2 口令 / GCM 的 AAD）。跨平台实现见 Platform。</summary>
+    public static string MachineBinding() => Platform.MachineBinding();
 
     public static string Protect(string token)
     {
@@ -154,21 +137,6 @@ public static class TokenVault
         catch { return ""; }
     }
 
-    /// <summary>④ 文件层：只留当前账号，断开继承。</summary>
-    public static void TryLockDown(string path)
-    {
-        try
-        {
-            var me = System.Security.Principal.WindowsIdentity.GetCurrent().Name;
-            var psi = new System.Diagnostics.ProcessStartInfo(System.IO.Path.Combine(
-                Environment.SystemDirectory, "icacls.exe"))
-            {
-                Arguments = "\"" + path + "\" /inheritance:r /grant:r \"" + me + ":F\"",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-            System.Diagnostics.Process.Start(psi)?.WaitForExit(5000);
-        }
-        catch { /* 非 NTFS 等情况忽略 */ }
-    }
+    /// <summary>④ 文件层：只留当前账号（Windows 断继承收紧 ACL，Unix chmod 600）。</summary>
+    public static void TryLockDown(string path) => Platform.LockDownFile(path);
 }

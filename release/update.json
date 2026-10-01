@@ -1,6 +1,6 @@
 {
-  "version": "2.2.7",
-  "url": "https://github.com/zhdezs/deepsleep/releases/download/v2.2.7/deepsleep-Setup.exe",
-  "sha256": "6dc95f6a383b318960888a00bfdaaf3d082822cb589025aa93617c7cafb9cb93",
-  "notes": "2.2.7：Agent 集群加「名片」。① 集群页顶部排出一行成员卡：谁、状态（运行中/待命/完成/失败）、此刻在干什么（正在网络搜索/正在写入文件…），一眼看清这轮谁上场谁待命。② 点开名片看细节：分工、产出、完整工具调用过程，干活时实时刷新。③ 指挥官汇总改成按人汇报：谁负责什么 → 实际做了什么 → 产出与结论，最后才是总体结论。④ 修网页版老 bug：内核推事件是并发写的，帧互相踩、连接被踢、事件丢一片；现在每个连接一条有序发送队列。其余与 2.2.6 一致：集群名册只增不减 + 按需派工、Gitee 线路加速 + 实时速度 + 续传不重下、思考内容折叠、截断自动续写、命令与文件合并卡、内核版 CMD 模式。"
+  "version": "2.3.0",
+  "url": "https://github.com/zhdezs/deepsleep/releases/download/v2.3.0/deepsleep-Setup.exe",
+  "sha256": "e3f31431770baad0f1a04c8452e83abfabc4be751eb832aa6dbc32ad137b6c9f",
+  "notes": "2.3.0：内核跨平台。① 同一份内核源码现在能编出 Windows / Linux / macOS 三平台的原生程序，Release 里新增 4 个跨平台内核包：linux-x64、linux-arm64、osx-arm64、osx-x64。② Linux / macOS 用法：解压 → chmod +x deepsleep-core && ./deepsleep.sh → 直接开一个原生桌面窗口（Photino + 系统 WebView：Linux 是 WebKitGTK、macOS 是 WKWebView），加载的就是内核自带那套 HTML 界面，双击即用；也可以浏览器打开 http://127.0.0.1:8756/。工具、命令、写文件、记忆、技能、网络搜索、深度研究全都能用，网页端可以遥控这台电脑。没有桌面环境的服务器加 --headless 只跑服务（Linux 桌面需 libwebkit2gtk-4.1-0，缺了自动退回浏览器模式）。③ 平台差异统一收进 Platform 层：命令壳（PowerShell / bash）、数据目录（%LocalAppData% / XDG / Application Support）、打开文件管理器（explorer / open / xdg-open）、令牌保险箱机器绑定、沙箱黑名单与系统目录、OTA 升级包（.exe / .tar.gz）各按平台一套。④ 内核在 Linux / macOS 上也支持 OTA：自动挑本平台的包，解包覆盖后重启。Windows 端体验与 2.2.7 完全一致：Agent 名片 + 按人汇报、集群名册只增不减 + 按需派工、Gitee 线路加速 + 实时速度 + 续传不重下、思考内容折叠、截断自动续写、命令与文件合并卡、内核版 CMD 模式。"
 }

@@ -95,7 +95,9 @@ private static void ApplyAuth(HttpClient hc)
 
 // ------------------------------------------------------------------
 // DPAPI（crypt32.dll）：不引用额外的 NuGet 包，直接用系统 API。
+// 非 Windows 平台没有 DPAPI，一律返回空串（旧格式令牌解不开，能力不受影响）。
 // ------------------------------------------------------------------
+#if WINDOWS
 [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
 private struct DataBlob
 {
@@ -139,6 +141,10 @@ private static string DpapiUnprotect(byte[] blob)
         if (outBlob.pbData != IntPtr.Zero) LocalFree(outBlob.pbData);
     }
 }
+#else
+/// <summary>非 Windows 平台没有 DPAPI，一律返回空串。</summary>
+private static string DpapiUnprotect(byte[] blob) => "";
+#endif
 
 /// <summary>
 /// 当前版本号：**以安装目录里 deepsleep.exe 的文件版本为准**，程序集版本只当兜底。
@@ -149,9 +155,10 @@ private static string ReadCurrentVersion()
 {
     try
     {
-        string exe = Path.Combine(AppContext.BaseDirectory, "deepsleep.exe");
-        if (File.Exists(exe))
+        foreach (var name in new[] { "deepsleep.exe", "deepsleep-core", "deepsleep" })
         {
+            string exe = Path.Combine(AppContext.BaseDirectory, name);
+            if (!File.Exists(exe)) continue;
             var vi = System.Diagnostics.FileVersionInfo.GetVersionInfo(exe);
             string fromExe = CleanVersion(vi.FileVersion ?? vi.ProductVersion);
             if (fromExe.Length > 0) return fromExe;
@@ -399,10 +406,8 @@ private static async Task<UpdateInfo?> CheckGiteeAsync(string owner, string repo
                     parts[partIndex] = (assetUrl, assetSize);
                     continue;
                 }
-                if (!name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) continue;
-                int score = 0;
-                if (name.Contains("Setup", StringComparison.OrdinalIgnoreCase)) score += 4;
-                if (name.Contains("deepsleep", StringComparison.OrdinalIgnoreCase)) score += 2;
+                if (!IsInstallerAsset(name)) continue;
+                int score = PlatformScore(name);
                 if (score > bestScore) { bestScore = score; best = a; }
             }
             if (bestScore >= 0)
@@ -481,11 +486,8 @@ private static async Task<UpdateInfo?> CheckGitHubAsync(string owner, string rep
             foreach (var a in assets.EnumerateArray())
             {
                 string name = a.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
-                if (!name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) continue;
-                int score = 0;
-                if (name.Contains("Setup", StringComparison.OrdinalIgnoreCase)) score += 4;
-                if (name.Contains("deepsleep", StringComparison.OrdinalIgnoreCase)) score += 2;
-                if (name.Contains("install", StringComparison.OrdinalIgnoreCase)) score += 1;
+                if (!IsInstallerAsset(name)) continue;
+                int score = PlatformScore(name);
                 if (score > bestScore) { bestScore = score; best = a; }
             }
             if (bestScore >= 0)
@@ -568,6 +570,39 @@ public static bool IsNewer(string remote, string local)
     return false;
 }
 
+/// <summary>本机平台的更新包文件名（Windows 是 Setup.exe，Unix 是 core 的 tar.gz）。</summary>
+public static string InstallerFileName =>
+    Platform.IsWindows ? "deepsleep-Setup.exe" : "deepsleep-core.tar.gz";
+
+/// <summary>这个 Release 资产是不是本机平台可用的安装包。</summary>
+private static bool IsInstallerAsset(string name)
+{
+    if (Platform.IsWindows) return name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
+    if (!name.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase)) return false;
+    string n = name.ToLowerInvariant();
+    // 认本机平台 + 架构那一份：linux-x64 / linux-arm64 / osx-arm64 / osx-x64
+    if (!n.Contains(Platform.Rid)) return false;
+    return Platform.IsMacOS || n.Contains("linux");
+}
+
+/// <summary>给候选安装包打分（分越高越优先）。</summary>
+private static int PlatformScore(string name)
+{
+    string n = name.ToLowerInvariant();
+    int score = 0;
+    if (n.Contains("deepsleep")) score += 2;
+    if (Platform.IsWindows)
+    {
+        if (n.Contains("setup")) score += 4;
+        if (n.Contains("install")) score += 1;
+    }
+    else
+    {
+        if (n.Contains("core")) score += 4;
+    }
+    return score;
+}
+
 public static string DownloadDir => Path.Combine(Path.GetTempPath(), "deepsleep-update");
 
 /// <summary>
@@ -603,7 +638,7 @@ public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double
 {
     string destDir = DownloadDirFor(info);
     Directory.CreateDirectory(destDir);
-    string dest = Path.Combine(destDir, "deepsleep-Setup.exe");
+    string dest = Path.Combine(destDir, InstallerFileName);
     CleanStaleDownloads(destDir);
 
     // ① Gitee 优先线路（默认，⚙ 设置里可切成 GitHub 线路）：只要 Gitee 上有同一个版本，
@@ -1053,8 +1088,9 @@ private static void VerifyHash(string file, string expectedHex)
 /// </summary>
 public static void ApplyAndRestart(string installerPath, string installDir, string exePath)
 {
-    BackupUserConfig(installDir);      // 升级前先把 data\config.json 备份一份
+    BackupUserConfig(installDir);      // 升级前先把 config.json 备份一份
     Directory.CreateDirectory(DownloadDir);
+    if (!Platform.IsWindows) { ApplyAndRestartUnix(installerPath, installDir, exePath); return; }
     string script = Path.Combine(DownloadDir, "apply-update.cmd");
     var sb = new StringBuilder();
     sb.AppendLine("@echo off");
@@ -1099,6 +1135,43 @@ public static void ApplyAndRestart(string installerPath, string installDir, stri
         UseShellExecute = true,
         CreateNoWindow = true,
         WindowStyle = ProcessWindowStyle.Hidden,
+    });
+}
+
+/// <summary>
+/// Linux / macOS：写一个 bash 脚本——等本进程退出 → 解包 tar.gz 覆盖安装目录 → 重新启动。
+/// </summary>
+private static void ApplyAndRestartUnix(string installerPath, string installDir, string exePath)
+{
+    string script = Path.Combine(DownloadDir, "apply-update.sh");
+    string name = Path.GetFileName(exePath);
+    var sb = new StringBuilder();
+    sb.AppendLine("#!/usr/bin/env bash");
+    sb.AppendLine("sleep 2");
+    sb.AppendLine("_ds_wait=0");
+    sb.AppendLine("while pgrep -f \"" + name + "\" >/dev/null 2>&1; do");
+    sb.AppendLine("  _ds_wait=$((_ds_wait+1))");
+    sb.AppendLine("  if [ $_ds_wait -ge 15 ]; then pkill -f \"" + name + "\" >/dev/null 2>&1; break; fi");
+    sb.AppendLine("  sleep 1");
+    sb.AppendLine("done");
+    sb.AppendLine("mkdir -p '" + installDir + "'");
+    sb.AppendLine("tar -xzf '" + installerPath + "' -C '" + installDir + "' >/dev/null 2>&1");
+    sb.AppendLine("chmod +x '" + exePath + "' >/dev/null 2>&1");
+    sb.AppendLine("nohup '" + exePath + "' >/dev/null 2>&1 &");
+    sb.AppendLine("rm -f -- \"$0\"");
+    File.WriteAllText(script, sb.ToString(), new UTF8Encoding(false));
+    try
+    {
+        File.SetUnixFileMode(script,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+    }
+    catch { /* 忽略 */ }
+
+    Process.Start(new ProcessStartInfo("/bin/bash")
+    {
+        ArgumentList = { script },
+        UseShellExecute = false,
+        CreateNoWindow = true,
     });
 }
 

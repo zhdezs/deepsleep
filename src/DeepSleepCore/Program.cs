@@ -77,7 +77,7 @@ internal static partial class Program
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; Shutdown(); };
         AppDomain.CurrentDomain.ProcessExit += (_, _) => { try { _kernel.Shutdown(); } catch { } };
 
-        Banner();
+        Banner(args);
 
         if (_cliMode)
         {
@@ -89,6 +89,27 @@ internal static partial class Program
             return 0;
         }
 
+#if !WINDOWS
+        // Linux / macOS：默认开一个原生窗口（内嵌内核自带的网页端），像正常桌面应用一样双击即用。
+        // 想只要服务不要窗口：加 --headless（服务器 / SSH 场景）；CMD 模式本来就不开窗。
+        if (!_cliMode && !args.Contains("--headless"))
+        {
+            string guiUrl = "http://127.0.0.1:" + _port + "/web/core/index.html?p=" + _port +
+                            "&t=" + Uri.EscapeDataString(_token);
+            _ = Task.Run(AcceptLoop);
+            if (Gui.TryRun(guiUrl, "deepsleep · " + _dataDir))
+            {
+                try { _listener?.Stop(); } catch { }
+                try { _kernel.Shutdown(); } catch { }
+                return 0;
+            }
+            // 窗口起不来（缺 WebKitGTK 之类）：退回纯网页模式，服务照跑，用系统浏览器打开
+            Console.WriteLine("  已退回纯网页模式：浏览器打开 http://127.0.0.1:" + _port + "/ 即可。");
+            try { TrollWrangler.Platform.OpenWithShell("http://127.0.0.1:" + _port + "/", false); } catch { }
+            System.Threading.Thread.Sleep(System.Threading.Timeout.Infinite);
+            return 0;
+        }
+#endif
         AcceptLoop();
         return 0;
     }
@@ -131,7 +152,7 @@ internal static partial class Program
         Environment.Exit(0);
     }
 
-    private static void Banner()
+    private static void Banner(string[] args)
     {
         string link = "https://zhdezs.github.io/deepsleep/web/core/#p=" + _port + "&t=" + _token;
         Console.WriteLine();
@@ -147,6 +168,12 @@ internal static partial class Program
         Console.WriteLine("      " + link);
         Console.WriteLine();
         Console.WriteLine("  退出 Ctrl+C ｜ 换端口 --port 8757 ｜ 换令牌 --new-token ｜ 换数据目录 --data 路径");
+#if !WINDOWS
+        if (args.Contains("--headless"))
+            Console.WriteLine("  无窗口模式  只跑服务（--headless），用上面的网址在浏览器里打开");
+        else
+            Console.WriteLine("  桌面窗口    已打开（关闭窗口即退出）；服务器 / SSH 请加 --headless");
+#endif
         if (_cliMode)
         {
             Console.WriteLine();
@@ -155,13 +182,7 @@ internal static partial class Program
         Console.WriteLine();
     }
 
-    private static string DefaultDataDir()
-    {
-        string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        string app = Path.Combine(local, "Programs", "deepsleep", "data");
-        if (Directory.Exists(app)) return app;
-        return Path.Combine(local, "deepsleep-core", "data");
-    }
+    private static string DefaultDataDir() => TrollWrangler.Platform.DefaultDataDir();
 
     private static string LoadOrCreateToken(bool force)
     {

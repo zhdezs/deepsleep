@@ -73,17 +73,23 @@ def source_files():
         for dirpath, dirnames, filenames in os.walk(os.path.join(ROOT, top)):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
             for fn in filenames:
-                if fn in SKIP_NAMES or os.path.splitext(fn)[1].lower() in (".zip", ".exe", ".pdb", ".dll"):
+                if fn in SKIP_NAMES or os.path.splitext(fn)[1].lower() in (".zip", ".exe", ".pdb", ".dll", ".gz", ".tar"):
                     continue
                 full = os.path.join(dirpath, fn)
                 out[os.path.relpath(full, ROOT).replace("\\", "/")] = full
     return out
 
 
+# 跨平台内核包（Linux / macOS）：整包一起推，和 Windows 三个产物走同一套上传
+UNIX_RIDS = ["linux-x64", "linux-arm64", "osx-arm64", "osx-x64"]
+
+
 def assets_for(version):
     cands = [os.path.join(ROOT, "release", "deepsleep-Setup.exe"),
              os.path.join(ROOT, "release", "deepsleep-%s-win-x64.zip" % version),
              os.path.join(ROOT, "release", "deepsleep-core-%s-win-x64.zip" % version)]
+    for rid in UNIX_RIDS:
+        cands.append(os.path.join(ROOT, "release", "deepsleep-core-%s-%s.tar.gz" % (version, rid)))
     return [p for p in cands if os.path.isfile(p)]
 
 

@@ -641,12 +641,12 @@ public sealed class Agent
     // LLM 调用
     // ------------------------------------------------------------------
 
-    private const string SystemPrompt =
-        "你是一个运行在 Windows 电脑上的 AI 助手，能力类似 Claude Code / Codex。\n" +
+    private static readonly string SystemPrompt =
+        "你是一个运行在 " + Platform.DisplayName + " 电脑上的 AI 助手，能力类似 Claude Code / Codex。\n" +
         "你可以调用工具完成实际任务。当你需要工具时，**只输出一行 JSON**，不要输出任何解释，格式：\n" +
         "{\"tool\":\"工具名\",\"args\":{...}}\n\n" +
         "可用工具：\n" +
-        "- 运行命令：参数 {\"命令\":\"要执行的 PowerShell 命令\"}。在用户电脑上执行命令并返回输出（最长 10 分钟）。\n" +
+        "- 运行命令：参数 {\"命令\":\"要执行的 " + Platform.ShellName + " 命令\"}。在用户电脑上执行命令并返回输出（最长 10 分钟）。\n" +
         "- 运行Python脚本：参数 {\"代码\":\"Python 3 源码\",\"工作目录\":\"可选\"}。自动选择 Python 3 解释器，写入临时脚本并运行，返回输出与报错。\n" +
         "- 生成图片：参数 {\"提示词\":\"详细的画面描述\",\"尺寸\":\"可选 1024x1024 / 768x1344 / 1344x768\"}。调用 CogView-3-Flash 生成图片并保存到本地，返回本地图片路径。用户要求画图/生成图片/配图时使用。\n" +
         "- 看图：参数 {\"图片路径\":\"本地图片绝对路径\",\"问题\":\"可选，要问的问题\"}。调用 GLM-4.6V-Flash 多模态模型识别/分析图片（描述内容、读图、检查截图、审查生成的图片等）。\n" +
@@ -1756,24 +1756,13 @@ public sealed class Agent
                 return "用户拒绝执行该命令。请换一种方式，或提示用户可切到 boom 模式。";
         }
 
-        // 让 PowerShell 以 UTF-8 输出，避免中文乱码
-        string full = "$OutputEncoding=[Console]::OutputEncoding=[Text.Encoding]::UTF8; " + cmd;
-        var psi = new ProcessStartInfo("powershell.exe",
-            $"-NoProfile -NonInteractive -ExecutionPolicy Bypass -Command \"{full.Replace("\"", "\\\"")}\"")
-        {
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
-        };
-        if (!string.IsNullOrWhiteSpace(workDir)) psi.WorkingDirectory = workDir;
+        // Windows 走 PowerShell（先设 UTF-8 输出防中文乱码），Linux / macOS 走 bash
+        var psi = Platform.ShellStartInfo(cmd, workDir);
 
         Process? proc = null;
         try
         {
-            proc = Process.Start(psi) ?? throw new InvalidOperationException("无法启动 PowerShell");
+            proc = Process.Start(psi) ?? throw new InvalidOperationException("无法启动 " + Platform.ShellName);
             var stdoutTask = proc.StandardOutput.ReadToEndAsync();
             var stderrTask = proc.StandardError.ReadToEndAsync();
             var timeout = Task.Delay(TimeSpan.FromSeconds(CommandTimeoutSeconds), ct);
@@ -1890,12 +1879,26 @@ public sealed class Agent
     /// <summary>查找可用的 Python 3 解释器（命令 + 常见安装路径，按顺序探测）。</summary>
     private static async Task<string?> FindPython3Async()
     {
-        var candidates = new List<string> { "py", "python3", "python" };
-        string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        foreach (var ver in new[] { "Python313", "Python312", "Python311", "Python310" })
+        var candidates = Platform.IsWindows
+            ? new List<string> { "py", "python3", "python" }
+            : new List<string> { "python3", "python" };
+        if (Platform.IsWindows)
         {
-            string full = Path.Combine(local, "Programs", "Python", ver, "python.exe");
-            if (File.Exists(full)) candidates.Add(full);
+            string local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            foreach (var ver in new[] { "Python313", "Python312", "Python311", "Python310" })
+            {
+                string full = Path.Combine(local, "Programs", "Python", ver, "python.exe");
+                if (File.Exists(full)) candidates.Add(full);
+            }
+        }
+        else
+        {
+            foreach (var full in new[]
+                     {
+                         "/usr/bin/python3", "/usr/local/bin/python3", "/opt/homebrew/bin/python3",
+                         "/usr/bin/python", "/opt/homebrew/bin/python",
+                     })
+                if (File.Exists(full)) candidates.Add(full);
         }
 
         foreach (var cand in candidates)

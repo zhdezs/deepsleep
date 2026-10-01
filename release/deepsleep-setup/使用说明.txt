@@ -400,3 +400,26 @@
     甚至把连接踢掉，导致「事件丢一片」（Agent 名片这种高频事件特别明显）。现在每个连接有一条有序发送队列。
   · 其余功能与 2.2.6 一致（集群名册只增不减 + 按需派工 / Gitee 线路加速 + 实时速度 + 续传不重下 /
     思考内容折叠 / 截断自动续写 / 命令与文件合并卡 / 内核版 CMD 模式）
+
+三十七、2.3.0 更新要点（跨平台：Windows / Linux / macOS）
+  · 内核（Core）现在是一份源码、三平台原生：Windows、Linux、macOS 都能编出能跑的内核版。
+  · Linux / macOS 用法：下载对应平台的 deepsleep-core-2.3.0-<平台>.tar.gz → 解压 →
+    chmod +x deepsleep-core && ./deepsleep.sh → 直接开一个原生桌面窗口（和 Windows 端同一套 HTML 界面，双击即用）；
+    也可以用浏览器打开 http://127.0.0.1:8756/（或网页版 core 页面填端口+令牌）。
+    工具、命令、写文件、记忆、技能、网络搜索、深度研究全部可用；网页端在哪台设备都能连。
+  · 桌面窗口用的是系统自带的 WebView（Linux = WebKitGTK，macOS = WKWebView）。Linux 桌面若缺 WebKitGTK，
+    先装：Debian/Ubuntu sudo apt install libwebkit2gtk-4.1-0；Arch sudo pacman -S webkit2gtk-4.1；
+    Fedora sudo dnf install webkit2gtk4.1。缺了会自动退回「纯网页模式」用系统浏览器打开。
+    没有桌面环境的机器（服务器 / SSH）加 --headless 只跑服务，用浏览器访问即可。
+  · 平台差异都收在一个 Platform 层里：
+      - 命令壳：Windows 走 PowerShell（行为与以前一字不差），Linux / macOS 走 bash -lc
+      - 数据目录：Windows 用 %LocalAppData%\Programs\deepsleep\data；Linux 用 XDG（~/.local/share/deepsleep）；
+        macOS 用 ~/Library/Application Support/deepsleep
+      - 打开文件管理器：explorer / open -R / xdg-open
+      - 令牌保险箱的机器绑定：Windows 用注册表 MachineGuid + 用户 SID；Unix 用 /etc/machine-id + 用户名
+      - 沙箱：危险命令黑名单、系统目录、可执行文件后缀都按平台各一套
+      - OTA：升级包按平台挑（Windows 认 .exe，Unix 认 .tar.gz），Unix 上写 bash 脚本解包覆盖并重启
+  · Release 里现在有 4 个跨平台内核包：linux-x64 / linux-arm64 / osx-arm64 / osx-x64，
+    和 Windows 的安装版 / 便携版 / 内核版一起上传，两边源（GitHub / Gitee）都有。
+  · Windows 端体验与 2.2.7 完全一致（Agent 名片 + 按人汇报、集群名册只增不减 + 按需派工、
+    Gitee 线路加速 + 实时速度 + 续传不重下、思考内容折叠、截断自动续写、命令与文件合并卡、内核版 CMD 模式）。

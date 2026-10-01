@@ -30,7 +30,7 @@ API = "https://gitee.com/api/v5"
 BRANCH = "master"
 SKIP_DIRS = {"bin", "obj", "dist", "publish", "package", ".git", "data", "__pycache__"}
 SKIP_NAMES = {"payload.zip"}
-SKIP_EXT = (".zip", ".exe", ".pdb", ".dll")
+SKIP_EXT = (".zip", ".exe", ".pdb", ".dll", ".gz", ".tar")
 PART_SIZE = 90 * 1024 * 1024        # 单个附件上限 100MB，留足余量
 # 切分片用的临时目录：固定一个，别每次 mkdtemp 留一坨 130MB 的碎块（以前攒了几十个、4GB 多），
 # 进程退出时自动删干净。
@@ -155,10 +155,16 @@ def split_installer(path):
     return parts
 
 
+# 跨平台内核包（Linux / macOS）：单个都不到 100MB，直接整包上传，不用切片
+UNIX_RIDS = ["linux-x64", "linux-arm64", "osx-arm64", "osx-x64"]
+
+
 def planned_assets(version):
     cands = [os.path.join(ROOT, "release", "deepsleep-Setup.exe"),
              os.path.join(ROOT, "release", "deepsleep-%s-win-x64.zip" % version),
              os.path.join(ROOT, "release", "deepsleep-core-%s-win-x64.zip" % version)]
+    for rid in UNIX_RIDS:
+        cands.append(os.path.join(ROOT, "release", "deepsleep-core-%s-%s.tar.gz" % (version, rid)))
     plan = []
     for p in cands:
         if os.path.isfile(p):
