@@ -1,6 +1,6 @@
 {
-  "version": "2.3.0",
-  "url": "https://github.com/zhdezs/deepsleep/releases/download/v2.3.0/deepsleep-Setup.exe",
-  "sha256": "e3f31431770baad0f1a04c8452e83abfabc4be751eb832aa6dbc32ad137b6c9f",
-  "notes": "2.3.0：内核跨平台。① 同一份内核源码现在能编出 Windows / Linux / macOS 三平台的原生程序，Release 里新增 4 个跨平台内核包：linux-x64、linux-arm64、osx-arm64、osx-x64。② Linux / macOS 用法：解压 → chmod +x deepsleep-core && ./deepsleep.sh → 直接开一个原生桌面窗口（Photino + 系统 WebView：Linux 是 WebKitGTK、macOS 是 WKWebView），加载的就是内核自带那套 HTML 界面，双击即用；也可以浏览器打开 http://127.0.0.1:8756/。工具、命令、写文件、记忆、技能、网络搜索、深度研究全都能用，网页端可以遥控这台电脑。没有桌面环境的服务器加 --headless 只跑服务（Linux 桌面需 libwebkit2gtk-4.1-0，缺了自动退回浏览器模式）。③ 平台差异统一收进 Platform 层：命令壳（PowerShell / bash）、数据目录（%LocalAppData% / XDG / Application Support）、打开文件管理器（explorer / open / xdg-open）、令牌保险箱机器绑定、沙箱黑名单与系统目录、OTA 升级包（.exe / .tar.gz）各按平台一套。④ 内核在 Linux / macOS 上也支持 OTA：自动挑本平台的包，解包覆盖后重启。Windows 端体验与 2.2.7 完全一致：Agent 名片 + 按人汇报、集群名册只增不减 + 按需派工、Gitee 线路加速 + 实时速度 + 续传不重下、思考内容折叠、截断自动续写、命令与文件合并卡、内核版 CMD 模式。"
+  "version": "2.3.1",
+  "url": "https://github.com/zhdezs/deepsleep/releases/download/v2.3.1/deepsleep-Setup.exe",
+  "sha256": "10c46d5e2b980842b48614980a60e2bf0ab8cce3a093c55609288588800e713d",
+  "notes": "2.3.1：修 4 个体验问题（都在内核里，Windows / Linux / macOS 一起生效）。① chat（纯聊天）模式彻底不落盘、不改动电脑：以前模型回答里带代码块时内核会「顺手落盘」到 cluster_workspace，还把整段正文换成一句「已写入：…」，于是聊天里莫名其妙冒出「编辑的文件」卡片、正文整段消失。② 代码块兜底落盘不再吞掉回答：正文原样保留，只在末尾附一行「存成哪个文件」，并补发一条完整气泡（以前流式气泡会被文件卡片顶掉，看起来像「AI 编辑了几下、突然给一段代码就停了」）。③ 模型不按协议走、吐自家工具标记（DeepSeek 系 DSML）时，不再把原文当正文显示成一堆尖括号——直接解析成工具调用真的执行，解析不了就走「格式修正」重试。④ 工具决策阶段被 max_tokens 截断时同样自动续写，把半截 JSON 拼回完整调用，写大文件时不再「调用到一半就中断」。其余与 2.3.0 一致：内核跨平台（Windows / Linux / macOS，Linux / macOS 解压后直接开原生桌面窗口）、Agent 名片 + 按人汇报、集群名册只增不减 + 按需派工、Gitee 线路加速、思考内容折叠、命令与文件合并卡、内核版 CMD 模式。"
 }

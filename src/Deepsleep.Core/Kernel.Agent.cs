@@ -158,8 +158,12 @@ public sealed partial class Kernel
             if (!isUser && !isTool && m.Meta.StartsWith("调用了工具", StringComparison.Ordinal))
                 return;
             bool isToolCallNotice = !isUser && !isTool && !string.IsNullOrEmpty(m.Meta);
+            // 工具调用标记（我们的 JSON，或模型自家的 DSML）没解析成功时，界面别把原文刷出来，
+            // 只显示一句"已忽略、正在继续"，否则用户会看到一堆莫名其妙的尖括号和参数。
             bool looksLikeToolJson = !isUser && !isTool && !isToolCallNotice &&
-                                     m.Content.Contains("\"tool\"", StringComparison.Ordinal);
+                                     (m.Content.Contains("\"tool\"", StringComparison.Ordinal) ||
+                                      m.Content.Contains("invoke name=\"", StringComparison.Ordinal) ||
+                                      m.Content.Contains("DSML", StringComparison.Ordinal));
 
             // 看图识别结果：作为 AI 气泡展示（带图片 + 识别文字），而不是系统消息
             bool isVisionResult = isTool && m.Meta == Agent.ToolVision;

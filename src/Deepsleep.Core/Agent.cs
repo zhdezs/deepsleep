@@ -433,8 +433,10 @@ public sealed class Agent
                     if (suppressToolStream) return;   // 已判定为工具调用，后续全部不显示
                     string t = streamBuffer.ToString();
                     // 疑似工具调用（出现 "tool" 键）→ 停止流式显示，交给工具提示
-                    if (t.Contains("\"tool\"", StringComparison.Ordinal) &&
-                        (t.Contains('{') || t.Contains('[')))
+                    if ((t.Contains("\"tool\"", StringComparison.Ordinal) &&
+                         (t.Contains('{') || t.Contains('['))) ||
+                        t.Contains("DSML", StringComparison.Ordinal) ||
+                        t.Contains("invoke name=\"", StringComparison.Ordinal))
                     {
                         suppressToolStream = true;
                         return;
@@ -512,8 +514,26 @@ public sealed class Agent
                 reply = final;
             }
 
-            bool malformedCall = useDecision && !isToolCall && !decisionDone &&
-                                 reply.Contains("\"tool\"", StringComparison.Ordinal);
+            // 工具调用标记（我们的 JSON，或模型自家的 DSML）没解析成功 → 这是格式问题，不能当最终回答
+            bool looksLikeToolMarkup = reply.Contains("\"tool\"", StringComparison.Ordinal) ||
+                                       reply.Contains("invoke name=\"", StringComparison.Ordinal) ||
+                                       reply.Contains("DSML", StringComparison.Ordinal);
+            bool malformedCall = useDecision && !isToolCall && !decisionDone && looksLikeToolMarkup;
+            // 最终回答里含代码块 → 顺手落盘（保证 LLM 随口给的代码也有对应文件）；
+            // chat（纯聊天）模式是「不改动电脑」，不落盘。
+            // 关键：提示并进正文，绝不替换正文——以前是拿"已写入…"当整条回复返回，
+            // 用户就只看到"写入了文件 + 一段被截断的代码"，看起来像 AI 突然停了。
+            bool codeSaved = false;
+            if (!isToolCall && !malformedCall && RunMode != "chat" && !LooksLikeJson(reply))
+            {
+                string? note = TrySaveCodeBlock(sid, reply, history);
+                if (note != null)
+                {
+                    reply = reply.TrimEnd() + "\n\n> 💾 " + note;
+                    codeSaved = true;
+                }
+            }
+
             // 历史里保留模型原始输出（上下文需要），界面只显示 Meta 提示，避免暴露 {JSON}
             var assistantMsg = new AgentMessage
             {
@@ -523,7 +543,11 @@ public sealed class Agent
                      : malformedCall ? "工具调用格式修正中…" : "",
             };
             history.Add(assistantMsg);
-            if (!streamed) MessageAdded?.Invoke(sid, assistantMsg);
+            // 格式错的内容要重发一次：把流式已经刷到界面上的原文覆盖掉
+            // 格式错的内容要重发一次：把流式已经刷到界面上的原文覆盖掉；
+            // 存过代码的也要重发一次：上面那张"编辑的文件"卡片会把流式气泡顶掉，
+            // 不补一条正文，用户就只剩一张文件卡片、正文整段消失（就是他说的"突然变成编辑了文件"）。
+            if (!streamed || malformedCall || codeSaved) MessageAdded?.Invoke(sid, assistantMsg);
 
             // 形似工具调用但解析失败 → 注入格式修正并重试，保证"调用了就一定会执行"
             if (malformedCall)
@@ -555,9 +579,6 @@ public sealed class Agent
                     MessageAdded?.Invoke(sid, corr);
                     continue;
                 }
-                // 最终回答里含代码块 → 自动写入文件（保证 LLM 给的代码一定落盘）
-                string? saved = TrySaveCodeBlock(sid, reply, history);
-                if (saved != null) return saved;
                 // 模型说"不会/做不到"且存在相关技能 → 注入技能说明重试
                 string? boost = SuggestSkill(reply, history, injectedSkills) ??
                                 SuggestUnusedSkill(reply, history, injectedSkills);
@@ -790,7 +811,9 @@ public sealed class Agent
             ? history.Select(m => (m.Role, MaybeAttachImage(m))).ToList()
             : history.Select(m => (m.Role, m.Content)).ToList();
         string sys = SystemPromptForMode() + BuildSkillsPrompt(history, injectedSkills) + ToolDecisionPrompt;
-        return await CallOnceAsync(sys, msgs, ct, null, emitReasoning: true);
+        // 决策这一轮也会被 max_tokens 截断（模型一口气把整个文件内容塞进参数里就会）：
+        // 截断后 JSON 只剩半截、工具根本执行不了，所以这里同样自动续写拼回完整调用。
+        return await CallOnceAutoContinueAsync(sys, msgs, ct, null, emitReasoning: true);
     }
 
     /// <summary>
@@ -1206,7 +1229,9 @@ public sealed class Agent
         return t;
     }
 
-    /// <summary>兜底落盘：LLM 直接在回答里吐代码块时，把代码写入工作区文件并返回路径。</summary>
+    /// <summary>兜底落盘：LLM 直接在回答里吐代码块时，把代码写入工作区文件。
+    /// 返回一句「存到哪儿了」的提示（调用方附在正文后面），**不替换正文**——
+    /// 以前是拿它当整条回复返回，用户就只看到"写入了文件 + 一段被截断的代码"，像是突然停了。</summary>
     private string? TrySaveCodeBlock(int sid, string reply, List<AgentMessage> history)
     {
         var m = Regex.Match(reply ?? "", @"```([\w+#-]*)\s*\r?\n([\s\S]*?)```");
@@ -1238,8 +1263,7 @@ public sealed class Agent
         });
         TrimHistory(history);
         MessageAdded?.Invoke(sid, history[^1]);
-        string preview = code.Length > 800 ? code[..800] + "…" : code;
-        return $"已将代码写入文件：{path}\n\n```{lang}\n{preview}\n```";
+        return $"已把上面的代码存成文件：{path}（{code.Length} 字符）。要改的话直接说文件名。";
     }
 
     private static string GuessCodeFileName(List<AgentMessage> history, string lang, string ext)
@@ -1532,7 +1556,30 @@ public sealed class Agent
         string repaired = Regex.Replace(reply ?? "", @"\r?\n", "\\n");
         if (TryParseToolObject(repaired, out tool, out args)) return true;
 
-        // ④ 只抠出工具名（args 为空 → 工具返回参数错误，模型会据此修正重试）
+        // ④ 模型自家的工具标记（DeepSeek 系会吐 …DSML… invoke name="运行命令" …参数 JSON…）
+        //    模型偶尔不按我们的 JSON 协议走，直接吐自家标记：以前这段会被原样显示成一堆尖括号，
+        //    工具也不会执行——用户看到的"AI 说了一段奇怪的话就停了"就是它。这里直接解析成工具调用。
+        var dm = Regex.Match(reply ?? "", "invoke\\s+name=\"([^\"]+)\"");
+        if (dm.Success)
+        {
+            string markName = dm.Groups[1].Value.Trim();
+            var pm = Regex.Match(reply ?? "", "parameter\\s+name=\"(?:arguments|args)\"[^>]*>([\\s\\S]*?)</");
+            if (pm.Success)
+            {
+                try
+                {
+                    using var d2 = JsonDocument.Parse(pm.Groups[1].Value.Trim());
+                    tool = markName;
+                    args = d2.RootElement.Clone();
+                    return true;
+                }
+                catch { /* 参数不是合法 JSON → 只认工具名，让工具回一句参数错误提示模型重试 */ }
+            }
+            tool = markName;
+            return true;
+        }
+
+        // ⑤ 只抠出工具名（args 为空 → 工具返回参数错误，模型会据此修正重试）
         var m = Regex.Match(reply ?? "", @"""tool""\s*:\s*""([^""]+)""");
         if (m.Success)
         {
