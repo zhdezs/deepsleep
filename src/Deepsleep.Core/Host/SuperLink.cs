@@ -34,6 +34,8 @@ public static class SuperLink
 
     private static CancellationTokenSource? _cts;
     private static bool _tunnelWanted;
+    /// <summary>配对前本来的监听姿态：本来开着 --public 的，配对完要还给人家，别一律退回只听本机。</summary>
+    private static bool _wasPublic;
     private static DateTime _startedAt = DateTime.Now;
 
     // ------------------------------------------------------------------ 被控端
@@ -57,6 +59,7 @@ public static class SuperLink
             _startedAt = DateTime.Now;
         }
         CoreServer.AddExtraToken(EphemeralToken);
+        _wasPublic = CoreServer.PublicBound;     // 记下原样，Stop 时还原
         CoreServer.Rebind(IPAddress.Any);        // 要能在局域网里被连到
         _cts = new CancellationTokenSource();    // 自己管生命周期，别让 5 分钟把已连上的会话掐了
         var ct = _cts.Token;
@@ -357,7 +360,11 @@ public static class SuperLink
             CoreServer.StopTunnel();
             _tunnelWanted = false;
         }
-        if (Role == "host") CoreServer.Rebind(IPAddress.Loopback);
+        if (Role == "host")
+        {
+            CoreServer.Rebind(_wasPublic ? IPAddress.Any : IPAddress.Loopback);
+            _wasPublic = false;
+        }
         lock (Gate)
         {
             if (State != "idle")
