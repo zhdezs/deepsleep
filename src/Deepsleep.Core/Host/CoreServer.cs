@@ -105,6 +105,34 @@ public static partial class CoreServer
         return _running;
     }
 
+    private static readonly HashSet<string> ExtraTokens = new(StringComparer.Ordinal);
+
+    /// <summary>超级连接的一次性令牌（只在这一轮配对里有效，配对结束就撤掉）。</summary>
+    public static void AddExtraToken(string t) { if (t.Length > 0) lock (ExtraTokens) ExtraTokens.Add(t); }
+    public static void RemoveExtraToken(string t) { if (t.Length > 0) lock (ExtraTokens) ExtraTokens.Remove(t); }
+    internal static bool ExtraTokenOk(string t) { lock (ExtraTokens) return ExtraTokens.Contains(t); }
+
+    /// <summary>
+    /// 换绑监听地址。超级连接要在局域网里被对方直连，必须临时监听所有网卡；
+    /// 配对结束再换回 127.0.0.1。
+    /// </summary>
+    public static bool Rebind(IPAddress addr)
+    {
+        var old = _listener;
+        try
+        {
+            var nl = new TcpListener(addr, _port);
+            nl.Start();
+            _listener = nl;
+            _public = !IPAddress.IsLoopback(addr);
+            _running = true;
+            Task.Run(AcceptLoop);
+            try { old?.Stop(); } catch { }
+            return true;
+        }
+        catch { return false; }
+    }
+
     public static void Stop()
     {
         _running = false;

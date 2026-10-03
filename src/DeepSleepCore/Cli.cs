@@ -87,6 +87,17 @@ internal static partial class Program
                 if (!await CliSlashAsync(line)) break;
                 continue;
             }
+            string plain = line.Replace(" ", "").TrimEnd('。', '.', '！', '!');
+            if (plain is "打开超级连接" or "超级连接" or "superlink")
+            {
+                CliSuperLink("");
+                continue;
+            }
+            if (plain.StartsWith("超级连接", StringComparison.Ordinal) && plain.Length == 10)
+            {
+                CliSuperLink(plain[4..]);          // 「超级连接123456」= 直接连对方
+                continue;
+            }
             if (_cliAskId != null) { await CliAnswerAsync(line); continue; }
             _ = SendCliAsync(line);                       // 不阻塞：运行中还能继续输入（停止 / 新指令）
         }
@@ -189,10 +200,103 @@ internal static partial class Program
             case "/version":
                 Console.WriteLine("deepsleep 内核版 " + CoreServer.VersionString());
                 return true;
+            case "/superlink" or "/sl":
+                if (arg is "stop" or "off" or "断开" or "关闭")
+                {
+                    SuperLink.Stop();
+                    Console.WriteLine("→ 超级连接已断开");
+                    return true;
+                }
+                if (arg is "status" or "状态")
+                {
+                    CliSlPrint(true);
+                    return true;
+                }
+                CliSuperLink(arg);
+                return true;
+            case "/rd":
+                CliSlPrint(true);
+                if (SuperLink.State == "connected" && SuperLink.BaseUrl.Length > 0 && SuperLink.RemoteToken.Length > 0)
+                    Console.WriteLine("  远程桌面：" + SuperLink.BaseUrl + "/web/core/rd.html?t=" + SuperLink.RemoteToken);
+                else if (SuperLink.State == "waiting" || SuperLink.State == "connected")
+                    Console.WriteLine("  本机被控中：把配对码给对方，对方连上后会自动弹出远程桌面地址。");
+                return true;
             default:
                 Console.WriteLine("未知命令：" + c + "（/help 看全部）");
                 return true;
         }
+    }
+
+    /// <summary>「打开超级连接」：生成配对码等对方来连；带参数就是去连别人。</summary>
+    private static void CliSuperLink(string code)
+    {
+        if (code.Length == 0)
+        {
+            SuperLink.StartHost();
+            Console.WriteLine();
+            Console.WriteLine("  ╭─ 超级连接 ────────────────────────────────────────");
+            Console.WriteLine("  │  配对码：  " + SuperLink.Code);
+            Console.WriteLine("  │  把 6 位数字给对方；对方在桌面版点 🔗「超级连接」输入，");
+            Console.WriteLine("  │  也可以让他打开：");
+            Console.WriteLine("  │  https://zhdezs.github.io/deepsleep/superlink/?type=" + SuperLink.Code);
+            Console.WriteLine("  │  连上之后对方就能操作这台电脑（远程桌面），5 分钟内有效。");
+            Console.WriteLine("  ╰──────────────────────────────────────────────────");
+            Console.WriteLine();
+        }
+        else
+        {
+            SuperLink.Connect(code);
+            Console.WriteLine("→ 正在连配对码 " + code + " 的设备…");
+        }
+        CliSlWatch();
+    }
+
+    private static bool _slWatching;
+    private static string _slShown = "";
+
+    /// <summary>盯一会儿状态，连着的时候把远程桌面地址打出来。</summary>
+    private static void CliSlWatch()
+    {
+        if (_slWatching) return;
+        _slWatching = true;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                for (int i = 0; i < 2400; i++)
+                {
+                    string key = SuperLink.State + "|" + SuperLink.Message;
+                    if (key != _slShown)
+                    {
+                        _slShown = key;
+                        if (SuperLink.State == "idle") { Console.WriteLine("→ 超级连接：已结束"); break; }
+                        Console.WriteLine("→ 超级连接[" + SuperLink.State + "] " + SuperLink.Message);
+                        if (SuperLink.State == "connected")
+                        {
+                            if (SuperLink.Role == "host")
+                                Console.WriteLine("  （对方已连上，它那边可以打开远程桌面控制这台电脑）");
+                            else if (SuperLink.BaseUrl.Length > 0)
+                                Console.WriteLine("  远程桌面：" + SuperLink.BaseUrl + "/web/core/rd.html?t=" +
+                                                  SuperLink.RemoteToken);
+                        }
+                    }
+                    await Task.Delay(1500);
+                }
+            }
+            catch { }
+            _slWatching = false;
+        });
+    }
+
+    private static void CliSlPrint(bool brief)
+    {
+        Console.WriteLine("→ 超级连接：角色=" + (SuperLink.Role.Length > 0 ? SuperLink.Role : "-") +
+                          " 状态=" + SuperLink.State + (brief ? "" : " " + SuperLink.Message));
+        if (SuperLink.Code.Length > 0) Console.WriteLine("  配对码：" + SuperLink.Code);
+        if (SuperLink.PeerName.Length > 0) Console.WriteLine("  对方：" + SuperLink.PeerName);
+        if (SuperLink.BaseUrl.Length > 0) Console.WriteLine("  对方地址：" + SuperLink.BaseUrl);
+        if (SuperLink.State == "connected")
+            Console.WriteLine("  连接方式：" + (SuperLink.P2P ? "点对点直连" : "临时加密通道"));
     }
 
     private static void CliHelp()
@@ -209,6 +313,8 @@ internal static partial class Program
         Console.WriteLine("  /regenerate          重新生成上一条回复");
         Console.WriteLine("  /list                列出所有对话");
         Console.WriteLine("  /status              看当前状态");
+        Console.WriteLine("  /superlink [配对码]  超级连接：不带参数=生成配对码等人连；带 6 位码=连对方");
+        Console.WriteLine("  /rd                  看超级连接状态 / 远程桌面地址");
         Console.WriteLine("  /exit                退出（等价于 Ctrl+C）");
         Console.WriteLine();
         Console.WriteLine("  直接输入文字就是发消息；命令需要确认时，输入 y / n / a 回答。");

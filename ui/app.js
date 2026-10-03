@@ -816,6 +816,87 @@ function openSkills(m) {
   row.append(b1, b2);
   body.appendChild(row);
 }
+/* ---------------- 超级连接 ---------------- */
+let slTimer = null;
+function stopSlPoll() { if (slTimer) { clearInterval(slTimer); slTimer = null; } }
+
+function openSuperLink() {
+  const body = openModal('superlink', '🔗 超级连接', [{ t: '关闭', fn: stopSlPoll }]);
+  const box = document.createElement('div');
+  box.innerHTML =
+    '<div class="hint">让另一台设备（手机 / 平板 / 另一台电脑）也能用这台机器上的 deepsleep，远程桌面连上就能用：<br>' +
+    '· 想让别人连你 → 点「生成配对码」，把 6 位数字给对方；<br>' +
+    '· 想连别人 → 在下面输入对方显示的 6 位数字。</div>' +
+    '<div class="field" style="display:flex;gap:8px;margin-top:12px">' +
+      '<button class="btn" id="slHost">生成配对码</button>' +
+      '<button class="btn" id="slStop">断开</button>' +
+    '</div>' +
+    '<div id="slCodeBox" style="display:none;text-align:center;margin:4px 0 12px">' +
+      '<div class="hint">把这 6 位数字给对方（5 分钟内有效）</div>' +
+      '<div id="slCode" style="font:700 40px/1.45 ui-monospace,Consolas,monospace;letter-spacing:.22em"></div>' +
+    '</div>' +
+    '<div class="field"><label>配对：输入对方的 6 位配对码</label>' +
+      '<div style="display:flex;gap:8px">' +
+        '<input id="slJoinCode" maxlength="6" inputmode="numeric" placeholder="000000" style="flex:1">' +
+        '<button class="btn" id="slJoin">连接</button>' +
+      '</div></div>' +
+    '<div id="slState" class="hint" style="margin-top:12px;min-height:20px"></div>' +
+    '<div id="slActions" style="display:none;gap:8px;margin-top:6px">' +
+      '<button class="btn" id="slRd">🖥 打开远程桌面</button>' +
+      '<button class="btn" id="slFull">💬 打开完整控制台</button>' +
+    '</div>';
+  body.appendChild(box);
+
+  $('#slHost').onclick = () => { $('#slHost').disabled = true; call('superlinkHost').then(updateSl); };
+  $('#slStop').onclick = () => call('superlinkStop').then(updateSl);
+  $('#slJoin').onclick = () => {
+    const c = ($('#slJoinCode').value || '').replace(/\D/g, '');
+    if (c.length !== 6) { $('#slState').textContent = '配对码是 6 位数字。'; return; }
+    call('superlinkJoin', { code: c }).then(updateSl);
+  };
+  $('#slJoinCode').addEventListener('input', function () {
+    this.value = this.value.replace(/\D/g, '').slice(0, 6);
+    if (this.value.length === 6) $('#slJoin').click();
+  });
+
+  stopSlPoll();
+  slTimer = setInterval(() => {
+    if (modalName !== 'superlink') { stopSlPoll(); return; }
+    call('superlinkStatus').then(updateSl);
+  }, 1500);
+  call('superlinkStatus').then(updateSl);
+}
+
+function updateSl(st) {
+  if (!st || !st.state) return;
+  S.sl = st;
+  const codeEl = $('#slCode');
+  if (!codeEl) return;
+  const isHost = st.role === 'host';
+  const active = st.state !== 'idle';
+  codeEl.textContent = st.code || '';
+  $('#slCodeBox').style.display = (isHost && st.code && active) ? 'block' : 'none';
+  $('#slHost').disabled = (st.state === 'waiting' || st.state === 'connecting');
+  const txt = {
+    idle: '没在连接。',
+    waiting: st.message || '等对方连过来…',
+    connecting: st.message || '正在连…',
+    connected: st.message || '已连上。',
+    error: st.message || '出错了。',
+  }[st.state] || st.message || '';
+  $('#slState').textContent = (active && st.role ? '【' + (isHost ? '被连' : '去连') + '】' : '') + txt;
+  const acts = $('#slActions');
+  if (st.state === 'connected' && st.baseUrl) {
+    acts.style.display = 'flex';
+    const base = String(st.baseUrl).replace(/\/+$/, '');
+    const tk = encodeURIComponent(st.remoteToken || '');
+    $('#slRd').onclick = () => call('openUrl', { url: base + '/web/core/rd.html?t=' + tk });
+    $('#slFull').onclick = () => call('openUrl', { url: base + '/web/core/?u=' + encodeURIComponent(base) + '&t=' + tk });
+  } else {
+    acts.style.display = 'none';
+  }
+}
+
 /* ---------------- 设置 ---------------- */
 function applySettings() {
   const s = S.settings || {};
@@ -1131,6 +1212,7 @@ function wire() {
   $('#seg').onclick = e => { const b = e.target.closest('button'); if (b) call('tab', { tab: +b.dataset.tab }); };
   $('#btnTheme').onclick = () => call('setTheme', { theme: document.body.classList.contains('dark') ? 'light' : 'dark' });
   $('#btnSettings').onclick = () => openSettings();
+  $('#btnLink').onclick = () => openSuperLink();
   $('#btnNew').onclick = () => call('newConv', { kind: kind() });
   $('#btnMemory').onclick = () => openMemory();
   $('#btnSkills').onclick = () => openSkills();

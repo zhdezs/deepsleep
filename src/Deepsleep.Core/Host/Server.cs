@@ -63,6 +63,18 @@ public static partial class CoreServer
             return;
         }
 
+        // ---- 超级连接（配对码 / 直连状态） ----
+        if (path == "/api/superlink/status") { await res.SendJsonAsync(SuperLink.StatusJson()); return; }
+        if (path == "/api/superlink/host") { SuperLink.StartHost(); await res.SendJsonAsync(SuperLink.StatusJson()); return; }
+        if (path == "/api/superlink/join") { SuperLink.Connect(req.Q("code") ?? ""); await res.SendJsonAsync(SuperLink.StatusJson()); return; }
+        if (path == "/api/superlink/stop") { SuperLink.Stop(); await res.SendJsonAsync("{\"ok\":true}"); return; }
+
+        // ---- 内置远程桌面 ----
+        if (path == "/api/rd/info") { await res.SendJsonAsync(RdInfoJson()); return; }
+        if (path == "/api/rd/frame") { await RdFrameAsync(res, req); return; }
+        if (path == "/api/rd/stream") { await RdStreamAsync(res, req); return; }
+        if (path == "/api/rd/input" && req.Method == "POST") { RemoteInput(req.Text); await res.SendJsonAsync("{\"ok\":true}"); return; }
+
         string? relData = SubPath(req.Path, "/data");
         if (relData != null) { await ServeFileAsync(res, _dataDir, relData); return; }
         string? relWeb = SubPath(req.Path, "/web");

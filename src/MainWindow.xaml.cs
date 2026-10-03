@@ -295,8 +295,28 @@ public sealed partial class MainWindow : Window
 
         switch (cmd)
         {
+            case "superlinkStatus":
+                return WithId(SuperLink.StatusJson(), id);
+            case "superlinkHost":
+                SuperLink.StartHost();
+                return WithId(SuperLink.StatusJson(), id);
+            case "superlinkJoin":
+            {
+                string code = "";
+                try
+                {
+                    using var d2 = JsonDocument.Parse(json);
+                    code = d2.RootElement.TryGetProperty("code", out var c2) ? c2.GetString() ?? "" : "";
+                }
+                catch { }
+                SuperLink.Connect(code);
+                return WithId(SuperLink.StatusJson(), id);
+            }
+            case "superlinkStop":
+                SuperLink.Stop();
+                return WithId(SuperLink.StatusJson(), id);
             case "coreStatus":
-                return CoreHostInfoJson();
+                return WithId(CoreHostInfoJson(), id);
             case "coreTunnel":
             {
                 bool on = false;
@@ -490,6 +510,13 @@ public sealed partial class MainWindow : Window
         }
         catch { }
         return "127.0.0.1";
+    }
+
+    /// <summary>给返回的 JSON 补上 id —— 界面层要凭 id 才会把 Promise 兑现。</summary>
+    private static string WithId(string json, int id)
+    {
+        if (id <= 0 || json.Length == 0 || json[json.Length - 1] != '}') return json;
+        return json[..^1] + ",\"id\":" + id + "}";
     }
 
     private static string Ok(int id) => "{\"id\":" + id + ",\"ok\":true}";

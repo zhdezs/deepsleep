@@ -78,16 +78,20 @@ internal sealed class Res
         await HeadAsync(200, "text/event-stream; charset=utf-8", null, true);
     }
 
-    public async Task SseAsync(string payload)
+    /// <summary>开始一段分块流（SSE / MJPEG 都用它）。</summary>
+    public async Task StartStreamAsync(string type) => await HeadAsync(200, type, null, true);
+
+    /// <summary>往分块流里写一块。</summary>
+    public async Task ChunkAsync(byte[] b)
     {
-        byte[] b = Encoding.UTF8.GetBytes(payload);
-        byte[] head = Encoding.UTF8.GetBytes(b.Length.ToString("x") + "\r\n");
-        byte[] tail = Encoding.UTF8.GetBytes("\r\n");
-        await _s.WriteAsync(head);
+        if (b.Length == 0) return;
+        await _s.WriteAsync(Encoding.UTF8.GetBytes(b.Length.ToString("x") + "\r\n"));
         await _s.WriteAsync(b);
-        await _s.WriteAsync(tail);
+        await _s.WriteAsync(Encoding.UTF8.GetBytes("\r\n"));
         await _s.FlushAsync();
     }
+
+    public async Task SseAsync(string payload) => await ChunkAsync(Encoding.UTF8.GetBytes(payload));
 
     // --- SSE 有序发送队列 ---------------------------------------------------
     // 以前每个事件都 Task.Run 直接往同一个 socket 写，多个事件并发写会互相踩坏帧、

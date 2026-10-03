@@ -34,6 +34,26 @@ public static partial class CoreServer
 
         switch (cmd)
         {
+            case "superlinkStatus":
+                return SuperLink.StatusJson();
+            case "superlinkHost":
+                SuperLink.StartHost();
+                return SuperLink.StatusJson();
+            case "superlinkJoin":
+            {
+                string code = "";
+                try
+                {
+                    using var d2 = JsonDocument.Parse(json);
+                    code = d2.RootElement.TryGetProperty("code", out var c2) ? c2.GetString() ?? "" : "";
+                }
+                catch { }
+                SuperLink.Connect(code);
+                return SuperLink.StatusJson();
+            }
+            case "superlinkStop":
+                SuperLink.Stop();
+                return SuperLink.StatusJson();
             case "openUrl":
                 if (!string.IsNullOrWhiteSpace(url) && url!.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                 {

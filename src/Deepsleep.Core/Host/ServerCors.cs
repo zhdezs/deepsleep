@@ -8,7 +8,17 @@ public static partial class CoreServer
     /// <summary>内核版本号（网页端 / 桌面端显示用）。</summary>
     public static string VersionString()
     {
-        try { return typeof(Kernel).Assembly.GetName().Version?.ToString(3) ?? "0.0.0"; }
+        try
+        {
+            var asm = typeof(Kernel).Assembly;
+            var info = (System.Reflection.AssemblyInformationalVersionAttribute?)Attribute.GetCustomAttribute(
+                asm, typeof(System.Reflection.AssemblyInformationalVersionAttribute));
+            string v = info?.InformationalVersion ?? "";
+            int cut = v.IndexOf('+');                     // 去掉 SourceLink 那串 +commit
+            if (cut > 0) v = v[..cut];
+            if (v.Length > 0) return v;                   // 能显示 2.4.1-alpha 这种
+            return asm.GetName().Version?.ToString(3) ?? "0.0.0";
+        }
         catch { return "0.0.0"; }
     }
 
@@ -17,7 +27,8 @@ public static partial class CoreServer
         string t = req.Header("X-DS-Token");
         if (t.Length == 0) t = req.Q("token") ?? "";
         if (t.Length == 0) t = req.Q("t") ?? "";
-        bool ok = t.Length > 0 && string.Equals(t, _token, StringComparison.Ordinal);
+        bool ok = t.Length > 0 &&
+                  (string.Equals(t, _token, StringComparison.Ordinal) || ExtraTokenOk(t));
         if (ok) Interlocked.Exchange(ref _tokenFails, 0);
         return ok;
     }
