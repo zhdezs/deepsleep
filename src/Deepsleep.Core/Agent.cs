@@ -61,6 +61,8 @@ public sealed class Agent
 
     private const int MaxTurns = 500;   // 工具调用无实际次数限制（仅作为防止失控的极高层安全网）
     private const int MaxToolOutput = 4000;
+    // 界面卡片里那份可以更宽（点开「运行的命令」能看到完整输出），喂给模型的那份仍然按 MaxToolOutput 截断
+    private const int MaxToolDisplay = 20000;
     private const int CommandTimeoutSeconds = 600;
 
     private readonly ApiClient _api = new();
@@ -72,6 +74,7 @@ public sealed class Agent
     private readonly Dictionary<int, List<AgentMessage>> _sessions = new();
     private int _counterSid = 900001;
     private string? _lastImagePath;
+    private string? _lastToolFull;   // 本次工具输出全文：只给界面卡片用
     /// <summary>chat 模式下这一轮是否允许调用「网络搜索 / 深度研究」（用户消息带搜索/研究意图时开启）。</summary>
     private bool _chatToolMode;
     private SemaphoreSlim? _callGate;
@@ -637,7 +640,7 @@ public sealed class Agent
                 Role = "tool",
                 Content = result,
                 Meta = tool,
-                Detail = tool == ToolWriteFile ? WriteFileDetail(args) : "",
+                Detail = tool == ToolWriteFile ? WriteFileDetail(args) : (_lastToolFull ?? ""),
                 ImagePath = tool == ToolImage ? _lastImagePath : null,
             });
             TrimHistory(history);
@@ -1704,6 +1707,7 @@ public sealed class Agent
                                                  CancellationToken ct)
     {
         tool = NormalizeToolName(tool);
+        _lastToolFull = null;   // 每次工具调用重新记，免得上一个工具的输出串到下一张卡片
         try
         {
             return tool switch
@@ -1810,8 +1814,9 @@ public sealed class Agent
         try
         {
             proc = Process.Start(psi) ?? throw new InvalidOperationException("无法启动 " + Platform.ShellName);
-            var stdoutTask = proc.StandardOutput.ReadToEndAsync();
-            var stderrTask = proc.StandardError.ReadToEndAsync();
+            // 按字节解（见 Platform.ReadProcessOutputAsync）：老式程序吐 GBK，硬按 UTF-8 解会出乱码
+            var stdoutTask = Platform.ReadProcessOutputAsync(proc.StandardOutput);
+            var stderrTask = Platform.ReadProcessOutputAsync(proc.StandardError);
             var timeout = Task.Delay(TimeSpan.FromSeconds(CommandTimeoutSeconds), ct);
             if (await Task.WhenAny(proc.WaitForExitAsync(ct), timeout) == timeout)
             {
@@ -1829,6 +1834,7 @@ public sealed class Agent
             string fullResult =
                 $"命令：{cmd}\n工作目录：{(string.IsNullOrWhiteSpace(workDir) ? "（默认）" : workDir)}\n" +
                 (string.IsNullOrWhiteSpace(result) ? "（命令无输出）" : result);
+            _lastToolFull = Truncate(fullResult, MaxToolDisplay);
             return Truncate(fullResult, MaxToolOutput);
         }
         catch (OperationCanceledException)
@@ -1897,8 +1903,9 @@ public sealed class Agent
         try
         {
             proc = Process.Start(psi) ?? throw new InvalidOperationException("无法启动 Python");
-            var stdoutTask = proc.StandardOutput.ReadToEndAsync();
-            var stderrTask = proc.StandardError.ReadToEndAsync();
+            // 同上：Python 在中文 Windows 上也可能按 GBK 写管道
+            var stdoutTask = Platform.ReadProcessOutputAsync(proc.StandardOutput);
+            var stderrTask = Platform.ReadProcessOutputAsync(proc.StandardError);
             var timeout = Task.Delay(TimeSpan.FromSeconds(120), ct);
             if (await Task.WhenAny(proc.WaitForExitAsync(ct), timeout) == timeout)
             {
@@ -1914,6 +1921,7 @@ public sealed class Agent
             if (proc.ExitCode != 0)
                 result = $"（退出码 {proc.ExitCode}）\n" + result;
             result = $"脚本：{file}\n" + result;
+            _lastToolFull = Truncate(string.IsNullOrWhiteSpace(result) ? "（脚本无输出）" : result, MaxToolDisplay);
             return Truncate(string.IsNullOrWhiteSpace(result) ? "（脚本无输出）" : result, MaxToolOutput);
         }
         catch (OperationCanceledException)

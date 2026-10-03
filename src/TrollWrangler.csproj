@@ -55,7 +55,8 @@
     <Content Include="tools\websearch.py" CopyToOutputDirectory="PreserveNewest" Link="tools\websearch.py" />
   </ItemGroup>
   <!-- 瘦身：WindowsAppSDK 会带进 Windows ML / ONNX 推理运行时（本程序不使用），发布后剔除 -->
-  <Target Name="TrimUnusedAiRuntime" AfterTargets="Publish">
+  <!-- 默认不删；要保留这些运行时（自己接了视觉/推理功能）就加 /p:TrimAiRuntime=false -->
+  <Target Name="TrimUnusedAiRuntime" AfterTargets="Publish" Condition="'$(TrimAiRuntime)' != 'false'">
     <ItemGroup>
       <TrimFiles Include="$(PublishDir)onnxruntime.dll" />
       <TrimFiles Include="$(PublishDir)DirectML.dll" />
@@ -64,6 +65,6 @@
       <TrimFiles Include="$(PublishDir)PerceptiveStreaming.dll" />
     </ItemGroup>
     <Delete Files="@(TrimFiles)" />
-    <Message Importance="high" Text="已剔除未使用的 AI/ONNX 运行时（瘦身）" />
+    <Message Importance="high" Text="已剔除未使用的 AI/ONNX 运行时（瘦身）；想保留请加 /p:TrimAiRuntime=false" />
   </Target>
 </Project>

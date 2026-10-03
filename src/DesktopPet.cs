@@ -81,6 +81,9 @@ public sealed class DesktopPet : IDisposable
     private readonly Action<bool>? _onVisible;    // 显示 / 隐藏状态变化
     private readonly Action<int, int>? _onMoved;  // 拖拽结束：把位置记进配置
     private IntPtr _hwnd = IntPtr.Zero, _prevProc = IntPtr.Zero, _memDC = IntPtr.Zero, _bmp = IntPtr.Zero;
+    // _memDC 里原本选中的位图。位图还选在 DC 里时 DeleteObject 会直接失败（GDI 不允许删在用对象），
+    // 所以 Dispose 必须先把 _bmp 选回去，否则这块 DIB 永远回收不掉。
+    private IntPtr _oldBmp = IntPtr.Zero;
     private WndProcDelegate? _proc;
     private int _w, _h, _x, _y, _phase;
     /// <summary>缩小后每个像素的 alpha（命中判定用；0/低 = 该点鼠标穿透）。</summary>
@@ -142,7 +145,7 @@ public sealed class DesktopPet : IDisposable
         _bmp = CreateDIBSection(screen, ref bmi, 0, out IntPtr bits, IntPtr.Zero, 0);
         ReleaseDC(IntPtr.Zero, screen);
         Marshal.Copy(pixels, 0, bits, pixels.Length);
-        SelectObject(_memDC, _bmp);
+        _oldBmp = SelectObject(_memDC, _bmp);
         Paint();
 
         _proc = Hook;
@@ -322,8 +325,27 @@ public sealed class DesktopPet : IDisposable
 
     public void Dispose()
     {
-        if (_hwnd != IntPtr.Zero) { KillTimer(_hwnd, 1); DestroyWindow(_hwnd); _hwnd = IntPtr.Zero; }
+        if (_hwnd != IntPtr.Zero)
+        {
+            KillTimer(_hwnd, 1);
+            // 销毁窗口前把窗口过程还原回去（_proc 是字段，实例活着时委托不会被 GC 回收）
+            if (_prevProc != IntPtr.Zero)
+            {
+                try { SetWindowLongPtrW(_hwnd, -4, _prevProc); } catch { }
+                _prevProc = IntPtr.Zero;
+            }
+            DestroyWindow(_hwnd);
+            _hwnd = IntPtr.Zero;
+        }
+        if (_memDC != IntPtr.Zero)
+        {
+            // 先取消选中再删位图，顺序反了 DeleteObject 会静默失败，DIB 就泄漏了
+            if (_bmp != IntPtr.Zero && _oldBmp != IntPtr.Zero) { try { SelectObject(_memDC, _oldBmp); } catch { } }
+            DeleteDC(_memDC);
+            _memDC = IntPtr.Zero;
+            _oldBmp = IntPtr.Zero;
+        }
         if (_bmp != IntPtr.Zero) { DeleteObject(_bmp); _bmp = IntPtr.Zero; }
-        if (_memDC != IntPtr.Zero) { DeleteDC(_memDC); _memDC = IntPtr.Zero; }
+        _proc = null;
     }
 }

@@ -117,11 +117,20 @@ public sealed partial class MainWindow : Window
         _ = WatchdogAsync();
     }
 
-    /// <summary>界面 20 秒还没渲染出来（WebView2 起不来）→ 显示兜底面板，别让用户看着白窗口。</summary>
+    /// <summary>界面迟迟没渲染出来（WebView2 起不来）→ 显示兜底面板，别让用户看着白窗口。
+    /// 低配机 / 首次初始化 WebView2 会很慢，所以先等 90 秒；引擎对象已经建出来、只是页面
+    /// 还没加载完的，再给 60 秒。老版本只等 20 秒，慢机器上经常误报。</summary>
     private async Task WatchdogAsync()
     {
-        for (int i = 0; i < 40 && !_webReady; i++) await Task.Delay(500);
-        if (_webReady || _closing) return;
+        for (int i = 0; i < 180 && !_closing && !_webReady; i++) await Task.Delay(500);
+        if (_closing) return;
+        if (_webReady) { HideFallback(); return; }
+        if (_web?.CoreWebView2 != null)
+        {
+            for (int i = 0; i < 120 && !_closing && !_webReady; i++) await Task.Delay(500);
+            if (_closing) return;
+            if (_webReady) { HideFallback(); return; }
+        }
         ShowFallback("界面引擎（WebView2）没能启动 —— 本程序用 Edge WebView2 渲染界面，"
             + "如果系统里缺它或它被安全软件拦了，就会这样。\n\n"
             + "可以点「重试」再试一次；还是不行的话，装一下微软的 Edge WebView2 运行时再启动本程序。\n"
@@ -137,6 +146,12 @@ public sealed partial class MainWindow : Window
             Fallback.Visibility = Visibility.Visible;
         }
         catch { }
+    }
+
+    /// <summary>界面真起来了就把兜底面板收掉，免得盖在能用的界面上。</summary>
+    private void HideFallback()
+    {
+        try { if (Fallback.Visibility == Visibility.Visible) Fallback.Visibility = Visibility.Collapsed; } catch { }
     }
 
     private async void RetryClick(object sender, RoutedEventArgs e)
@@ -197,7 +212,7 @@ public sealed partial class MainWindow : Window
             core.ProcessFailed += OnWebProcessFailed;
             core.NavigationCompleted += (sender, e) =>
             {
-                if (e.IsSuccess) _webReady = true;
+                if (e.IsSuccess) { _webReady = true; HideFallback(); }
                 Log($"nav success={e.IsSuccess} err={e.WebErrorStatus} compat={compat}");
                 try { sender.PostWebMessageAsJson("{\"ev\":\"uiReady\"}"); } catch { }
             };
@@ -256,7 +271,7 @@ public sealed partial class MainWindow : Window
     {
         string res;
         try { res = await HandleAsync(e.WebMessageAsJson); }
-        catch (Exception ex) { res = "{\"ok\":false,\"err\":" + JsonSerializer.Serialize(ex.Message) + "}"; }
+        catch (Exception ex) { Log("处理界面消息失败：" + ex); res = "{\"ok\":false,\"err\":" + JsonSerializer.Serialize(ex.Message) + "}"; }
         try { sender.PostWebMessageAsJson(res); } catch { }
     }
 

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 
@@ -85,6 +86,53 @@ public static class Platform
         psi.StandardErrorEncoding = Encoding.UTF8;
         if (!string.IsNullOrWhiteSpace(workDir)) psi.WorkingDirectory = workDir;
         return psi;
+    }
+
+    static Platform()
+    {
+        // .NET Core 默认不带非 Unicode 代码页，不注册就拿不到 936（GBK）。
+        // 命令输出里的中文能不能正常显示（nvidia-smi 那种乱码）全靠它。
+        try { Encoding.RegisterProvider(CodePagesEncodingProvider.Instance); } catch { /* 拿不到就算了，下面有兜底 */ }
+    }
+
+    /// <summary>
+    /// 读子进程输出（按原始字节解码）。
+    /// 我们给 ProcessStartInfo 设了 StandardOutputEncoding=UTF8 —— 这对 PowerShell 自己的输出是对的，
+    /// 但老式 Windows 程序（nvidia-smi、7z、部分国产软件）根本不理它，照样按系统 ANSI 代码页
+    /// （简体中文是 GBK/936）把字节直接写进管道。按 UTF-8 硬解就成了「…\��������.exe」这种乱码。
+    /// 所以这里拿原始字节：先按严格 UTF-8 解（解不通会抛），失败再按本机 ANSI / GBK 解。
+    /// </summary>
+    public static async Task<string> ReadProcessOutputAsync(StreamReader reader, CancellationToken ct = default)
+    {
+        using var ms = new MemoryStream();
+        await reader.BaseStream.CopyToAsync(ms, 81920, ct).ConfigureAwait(false);
+        return DecodeOutput(ms.ToArray());
+    }
+
+    /// <summary>字节 → 文字：严格 UTF-8 优先，失败则按本机 ANSI 代码页（中文 Windows = 936）解。</summary>
+    public static string DecodeOutput(byte[] bytes)
+    {
+        if (bytes.Length == 0) return "";
+        try { return new UTF8Encoding(false, true).GetString(bytes); }
+        catch (DecoderFallbackException) { /* 不是合法 UTF-8 → 多半是本地代码页 */ }
+        foreach (int cp in OutputCodePages())
+        {
+            try { return Encoding.GetEncoding(cp).GetString(bytes); } catch { /* 该代码页不可用 */ }
+        }
+        return Encoding.UTF8.GetString(bytes);
+    }
+
+    private static IEnumerable<int> OutputCodePages()
+    {
+        var cps = new List<int>();
+        if (IsWindows)
+        {
+            try { cps.Add(CultureInfo.CurrentCulture.TextInfo.ANSICodePage); } catch { }
+        }
+        cps.Add(936);    // 简体中文 GBK
+        cps.Add(950);    // 繁体中文 Big5
+        cps.Add(1252);   // 西欧
+        return cps.Distinct();
     }
 
     /// <summary>把 shell 命令交给系统执行（安装、批处理等），调用方自己等退出。</summary>
