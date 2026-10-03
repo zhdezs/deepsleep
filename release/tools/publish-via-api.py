@@ -62,14 +62,15 @@ def source_files():
     """按仓库范围收集源码：src / ui / installer / release + 根目录 README.md 与 .gitignore。
 
     注意：AGENTS.md **不进仓库**（只留本地，属于 AI 的开发约定），别加回来。
-    web/ 是官网 + 网页版（GitHub Pages 直接用），根目录 index.html 负责跳转到 web/。
+    web/ 是官网 + 网页版（GitHub Pages 直接用），根目录 index.html 负责跳转到 web/；
+    superlink/ 是 zhdezs.github.io/deepsleep/superlink/?type=配对码 的跳转页（转给 web/superlink/）。
     """
     out = {}
     for rel in ("README.md", ".gitignore", "index.html"):
         p = os.path.join(ROOT, rel)
         if os.path.isfile(p):
             out[rel] = p
-    for top in ("src", "ui", "installer", "release", "web"):
+    for top in ("src", "ui", "installer", "release", "web", "superlink"):
         for dirpath, dirnames, filenames in os.walk(os.path.join(ROOT, top)):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
             for fn in filenames:
