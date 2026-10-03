@@ -27,7 +27,7 @@ window.chrome.webview.addEventListener('message', e => {
 const S = {
   tab: 0, conv: null, items: [], convs: [], settings: {},
   prompts: [], clusterTemplates: [], skills: [], state: 'idle', agents: [],
-  update: null, pet: true, version: ''
+  update: null, pet: true, version: '', host: null
 };
 const kind = () => (S.tab === 1 ? 2 : 0);
 
@@ -625,6 +625,12 @@ function handleEvent(m) {
     case 'restarting': restarting(); break;
     case 'openMain': call('showWindow'); break;
     case 'pet': S.pet = !!m.enabled; if (modalName === 'settings') applySettings(); break;
+    case 'hostInfo': S.host = m; if (modalName === 'settings') openSettings(); break;
+    case 'coreLog': {
+      const b = $('#coreLogBox');
+      if (b) { b.textContent = (b.textContent + '\n' + m.text).split('\n').slice(-8).join('\n'); b.scrollTop = b.scrollHeight; }
+      break;
+    }
   }
 }
 
@@ -942,6 +948,44 @@ function openSettings(fresh) {
 
   sect('桌面桌宠');
   body.appendChild(ck('显示桌面鲸鱼桌宠（透明窗口、可拖拽；单击弹出聊天浮窗、右键有菜单）', 'petEnabled', s.petEnabled));
+
+  // 超远程提问：桌面客户端自带内核服务（和内核版 deepsleep-core 是同一份实现）
+  if (S.host && S.host.desktop) {
+    const h = S.host;
+    const link = h.pairLink || h.lanLink || '';
+    sect('超远程提问（内网穿透）');
+    const box = document.createElement('div');
+    box.className = 'field';
+    box.innerHTML = '<label>手机 / 别的电脑打开这条链接，就能操控这台电脑</label>' +
+      '<div class="hint" style="word-break:break-all;user-select:text">' + esc(link) + '</div>' +
+      '<div class="hint">本机服务端口 ' + esc(String(h.corePort || '')) + '，令牌已经带在链接里 —— 等于这台电脑的钥匙，别外传。' +
+      (h.tunnelUrl ? '' : '现在这条是局域网地址，只有在同一个网络里能打开。') + '</div>';
+    body.appendChild(box);
+    const row = document.createElement('div');
+    row.className = 'field';
+    const bTun = document.createElement('button');
+    bTun.className = 'btn';
+    bTun.textContent = h.tunnelUrl ? '🌐 关闭公网隧道' : '🌐 开启公网隧道（免注册，外网可用）';
+    bTun.onclick = () => {
+      bTun.disabled = true;
+      bTun.textContent = h.tunnelUrl ? '正在关闭…' : '正在建隧道…第一次要下 cloudflared，可能有点慢';
+      call('coreTunnel', { on: !h.tunnelUrl });
+    };
+    row.appendChild(bTun);
+    const bCopy = document.createElement('button');
+    bCopy.className = 'btn';
+    bCopy.style.marginLeft = '8px';
+    bCopy.textContent = '📋 复制配对链接';
+    bCopy.onclick = () => { try { navigator.clipboard.writeText(link); toast('配对链接已复制'); } catch (e) { toast('复制失败，手动选中吧'); } };
+    row.appendChild(bCopy);
+    body.appendChild(row);
+    const logBox = document.createElement('div');
+    logBox.className = 'hint';
+    logBox.id = 'coreLogBox';
+    logBox.style.cssText = 'white-space:pre-wrap;max-height:90px;overflow:auto;font-family:ui-monospace,Consolas,monospace';
+    logBox.textContent = h.tunnelUrl ? ('公网地址：' + h.tunnelUrl) : '';
+    body.appendChild(logBox);
+  }
 }
 
 function saveSettings() {

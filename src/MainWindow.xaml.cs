@@ -10,6 +10,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.Web.WebView2.Core;
 using TrollWrangler.Core;
+using TrollWrangler.CoreHost;
 using Windows.Graphics;
 using Windows.Storage.Pickers;
 using Windows.UI;
@@ -32,6 +33,7 @@ public sealed partial class MainWindow : Window
     private const string CompatArgs = "--no-sandbox --disable-gpu --disable-gpu-compositing " +
         "--use-angle=swiftshader --enable-unsafe-swiftshader --disable-features=RendererCodeIntegrity";
     private DesktopPet? _pet;
+    private bool _tunnelOn;
     private PetChatWindow? _petChat;
     private bool _closing;
 
@@ -55,6 +57,7 @@ public sealed partial class MainWindow : Window
         _kernel.Push += OnKernelPush;
         try { _kernel.Init(_dataDir); }
         catch (Exception ex) { Log("内核初始化失败：" + ex); }
+        StartCoreServer();
 
         ApplyTheme(_kernel.Config.Theme == "dark");
         _ = StartWebAsync();
@@ -63,6 +66,7 @@ public sealed partial class MainWindow : Window
         Closed += (_, _) =>
         {
             _closing = true;
+            try { CoreServer.Stop(); } catch { }
             try { _kernel.Shutdown(); } catch { }
             try { _petChat?.Close(); } catch { }
             try { _pet?.Dispose(); } catch { }
@@ -215,6 +219,7 @@ public sealed partial class MainWindow : Window
                 if (e.IsSuccess) { _webReady = true; HideFallback(); }
                 Log($"nav success={e.IsSuccess} err={e.WebErrorStatus} compat={compat}");
                 try { sender.PostWebMessageAsJson("{\"ev\":\"uiReady\"}"); } catch { }
+                try { sender.PostWebMessageAsJson(CoreHostInfoJson()); } catch { }
             };
             core.Navigate($"https://{Kernel.UiHost}/index.html");
             return true;
@@ -290,6 +295,22 @@ public sealed partial class MainWindow : Window
 
         switch (cmd)
         {
+            case "coreStatus":
+                return CoreHostInfoJson();
+            case "coreTunnel":
+            {
+                bool on = false;
+                try
+                {
+                    using var doc = JsonDocument.Parse(json);
+                    on = doc.RootElement.TryGetProperty("on", out var o) && o.GetBoolean();
+                }
+                catch { }
+                _tunnelOn = on;
+                if (on) _ = Task.Run(() => { try { CoreServer.StartTunnel(true, null, null); } catch (Exception ex) { Log("隧道启动失败：" + ex.Message); } });
+                else CoreServer.StopTunnel();
+                return CoreHostInfoJson();
+            }
             case "pickFile":
             {
                 string? path = await PickFileAsync();
@@ -332,6 +353,143 @@ public sealed partial class MainWindow : Window
             default:
                 return await _kernel.InvokeAsync(json);
         }
+    }
+
+    // ------------------------------------------------------------------
+    // 内核服务（HTTP + 内网穿透）：桌面版和内核版跑的是同一份 CoreServer
+    // ------------------------------------------------------------------
+
+    /// <summary>
+    /// 桌面版自带内核服务：默认只监听本机，装上就能用网页端 / 手机连上来操控这台电脑；
+    /// 设置里开「公网隧道」后，人在外面也能连。能力和内核版（deepsleep-core）完全一致。
+    /// </summary>
+    private void StartCoreServer()
+    {
+        try
+        {
+            CoreServer.ShellOverride = OnShellCommandAsync;
+            CoreServer.TunnelReady += () => PostToUi(CoreHostInfoJson());
+            CoreServer.Log = line => PostToUi(JsonSerializer.Serialize(new { ev = "coreLog", text = line }));
+            string token = LoadCoreToken();
+            int port = PickFreePort(8756);
+            bool up = CoreServer.Start(new CoreServerOptions
+            {
+                Kernel = _kernel,
+                Port = port,
+                Token = token,
+                RootDir = AppContext.BaseDirectory,
+                DataDir = _dataDir,
+                Bind = System.Net.IPAddress.Loopback,
+                Tunnel = false,
+            });
+            Log(up ? ("内核服务已启动：端口 " + CoreServer.Port) : "内核服务没起来（端口被占？）");
+        }
+        catch (Exception ex) { Log("内核服务启动失败：" + ex.Message); }
+    }
+
+    /// <summary>桌宠 / 网页端发来的窗口类命令（内核版没有外壳，这些只有桌面版能真做）。</summary>
+    private Task<string?> OnShellCommandAsync(string cmd, int id, string? url)
+    {
+        switch (cmd)
+        {
+            case "showWindow":
+                try { DispatcherQueue.TryEnqueue(() => { try { AppWindow.Show(); Activate(); } catch { } }); } catch { }
+                return Task.FromResult<string?>("{\"id\":" + id + ",\"ok\":true}");
+            case "hideWindow":
+                try { DispatcherQueue.TryEnqueue(() => { try { AppWindow.Hide(); } catch { } }); } catch { }
+                return Task.FromResult<string?>("{\"id\":" + id + ",\"ok\":true}");
+            case "quitApp":
+                try { DispatcherQueue.TryEnqueue(() => App.ExitApp()); } catch { }
+                return Task.FromResult<string?>("{\"id\":" + id + ",\"ok\":true}");
+            default:
+                return Task.FromResult<string?>(null);
+        }
+    }
+
+    /// <summary>配对信息：端口 / 令牌 / 局域网链接 / 公网配对链接（界面「超远程提问」用）。</summary>
+    private string CoreHostInfoJson()
+    {
+        string token = CoreServer.Token;
+        string tunnel = CoreServer.TunnelUrl;
+        return JsonSerializer.Serialize(new
+        {
+            ev = "hostInfo",
+            ok = true,
+            desktop = true,
+            corePort = CoreServer.Port,
+            coreToken = token,
+            coreRunning = CoreServer.Running,
+            tunnelUrl = tunnel,
+            pairLink = tunnel.Length > 0 ? tunnel + "/web/core/#t=" + token : "",
+            lanLink = "http://" + LanIp() + ":" + CoreServer.Port + "/web/core/#t=" + token,
+        });
+    }
+
+    /// <summary>在界面线程上推一条消息给 WebView（内核服务的日志 / 状态都用它）。</summary>
+    private void PostToUi(string json)
+    {
+        if (_closing) return;
+        try
+        {
+            DispatcherQueue.TryEnqueue(() =>
+            {
+                try { _web?.CoreWebView2?.PostWebMessageAsJson(json); } catch { }
+            });
+        }
+        catch { }
+    }
+
+    /// <summary>内核服务的令牌：和内核版共用 data\core-token.txt，两边一致。</summary>
+    private string LoadCoreToken()
+    {
+        string file = Path.Combine(_dataDir, "core-token.txt");
+        try
+        {
+            if (File.Exists(file))
+            {
+                string t = File.ReadAllText(file).Trim();
+                if (t.Length >= 16) return t;
+            }
+            string nt = Guid.NewGuid().ToString("N");
+            File.WriteAllText(file, nt, new System.Text.UTF8Encoding(false));
+            return nt;
+        }
+        catch { return Guid.NewGuid().ToString("N"); }
+    }
+
+    /// <summary>挑一个没被占用的端口（内核版可能已经占着 8756）。</summary>
+    private static int PickFreePort(int start)
+    {
+        for (int p = start; p < start + 20 && p < 65536; p++)
+        {
+            try
+            {
+                var l = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, p);
+                l.Start();
+                l.Stop();
+                return p;
+            }
+            catch { }
+        }
+        return start;
+    }
+
+    /// <summary>局域网地址：取第一块已启用网卡的 IPv4。</summary>
+    private static string LanIp()
+    {
+        try
+        {
+            foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (ni.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
+                if (ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback) continue;
+                foreach (var ua in ni.GetIPProperties().UnicastAddresses)
+                    if (ua.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                        return ua.Address.ToString();
+            }
+        }
+        catch { }
+        return "127.0.0.1";
     }
 
     private static string Ok(int id) => "{\"id\":" + id + ",\"ok\":true}";

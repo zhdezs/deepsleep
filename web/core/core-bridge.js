@@ -10,12 +10,34 @@
   var saved = {};
   try { saved = JSON.parse(localStorage.getItem(LS) || '{}') || {}; } catch (e) { saved = {}; }
 
+  /* 内核地址怎么定（优先级从高到低）：
+     1. ?u=https://xxx.trycloudflare.com —— 公网隧道 / 内网穿透地址（也能填 http://192.168.1.5:8756）
+     2. ?h=主机&p=端口（老链接）—— 本机 127.0.0.1:8756
+     3. 页面就是内核自己发出来的（/web/core/）→ 用当前页面的 origin：
+        公网隧道域名、局域网 IP 打开时自动连自己，不用再填
+     4. 都没有 → 本机 127.0.0.1:8756 */
+  var hostedOnPages = /(^|\.)(github\.io|gitee\.io)$/i.test(location.hostname);
+  var pageOrigin = (location.protocol === 'http:' || location.protocol === 'https:') ? location.origin : '';
+  function normalUrl(u) {
+    u = String(u || '').trim().replace(/\/+$/, '');
+    if (!u) return 'http://127.0.0.1:8756';
+    if (!/^https?:\/\//i.test(u)) u = 'http://' + u;
+    return u;
+  }
+  var qh = qs.get('h') || hs.get('h');
+  var qp = qs.get('p') || hs.get('p');
+  var qu = qs.get('u') || hs.get('u');
+  var defUrl = (pageOrigin && !hostedOnPages)
+    ? pageOrigin
+    : ('http://' + (saved.host || '127.0.0.1') + ':' + (saved.port || '8756'));
   var cfg = {
-    host: qs.get('h') || hs.get('h') || saved.host || '127.0.0.1',
-    port: qs.get('p') || hs.get('p') || saved.port || '8756',
+    url: qu ? normalUrl(qu)
+       : (qh || qp) ? normalUrl('http://' + (qh || saved.host || '127.0.0.1') + ':' + (qp || saved.port || '8756'))
+       : normalUrl(saved.url || defUrl),
     token: qs.get('t') || hs.get('t') || saved.token || ''
   };
-  var base = function () { return 'http://' + cfg.host + ':' + cfg.port; };
+  var base = function () { return cfg.url; };
+  function showUrl() { return cfg.url.replace(/^https?:\/\//, ''); }
   var listeners = [];
   var pending = new Map();
   var seq = 0;
@@ -123,12 +145,12 @@
     wrap.innerHTML =
       '<div style="width:520px;max-width:92vw;background:var(--panel,#fff);color:var(--text,#111);border:1px solid var(--border,#ddd);' +
       'border-radius:16px;padding:22px 24px;font:13.5px/1.7 -apple-system,\'Segoe UI\',\'Microsoft YaHei\',sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.35)">' +
-      '<h3 style="margin:0 0 6px;font-size:16px">连接本机内核（Core）</h3>' +
+      '<h3 style="margin:0 0 6px;font-size:16px">连接内核（Core）</h3>' +
       '<div style="color:var(--muted,#777);font-size:12px;margin-bottom:14px">' +
-      '  在这台电脑上运行 <b>deepsleep-core.exe</b>，它会把端口和<b>配对令牌</b>打印在窗口里，填到下面即可（令牌也会写进 data\\core-token.txt）。' +
+      '  本机填 <b>http://127.0.0.1:8756</b>；人在外面就把内核用 <b>--tunnel</b> 开出来的公网地址' +
+      '（https://xxx.trycloudflare.com）填进来。配对令牌在 Core 窗口里打印，也在 data\\core-token.txt。' +
       '</div>' +
-      '<div class="field"><label>主机</label><input id="cpHost" type="text"></div>' +
-      '<div class="field"><label>端口</label><input id="cpPort" type="text"></div>' +
+      '<div class="field"><label>内核地址</label><input id="cpUrl" type="text" placeholder="http://127.0.0.1:8756 或 https://xxx.trycloudflare.com"></div>' +
       '<div class="field"><label>配对令牌</label><input id="cpToken" type="text"></div>' +
       '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">' +
       '  <a class="btn" style="text-decoration:none;padding:8px 14px" target="_blank" href="https://zhdezs.github.io/deepsleep/#core">还没有 Core？去下载</a>' +
@@ -136,12 +158,11 @@
       '  <button class="btn primary" id="cpGo">连接</button>' +
       '</div></div>';
     document.body.appendChild(wrap);
-    var iHost = wrap.querySelector('#cpHost'), iPort = wrap.querySelector('#cpPort'), iTok = wrap.querySelector('#cpToken');
-    iHost.value = cfg.host; iPort.value = cfg.port; iTok.value = cfg.token;
+    var iUrl = wrap.querySelector('#cpUrl'), iTok = wrap.querySelector('#cpToken');
+    iUrl.value = cfg.url; iTok.value = cfg.token;
     wrap.querySelector('#cpCancel').onclick = function () { wrap.remove(); };
     wrap.querySelector('#cpGo').onclick = function () {
-      cfg.host = iHost.value.trim() || '127.0.0.1';
-      cfg.port = iPort.value.trim() || '8756';
+      cfg.url = normalUrl(iUrl.value);
       cfg.token = iTok.value.trim();
       wrap.remove();
       connect(false);
@@ -150,17 +171,17 @@
 
   /* ---------- 连接与事件流 ---------- */
   function connect(quiet) {
-    setBadge('正在连接 ' + cfg.host + ':' + cfg.port + ' …');
+    setBadge('正在连接 ' + showUrl() + ' …');
     fetch(base() + '/api/ping', { cache: 'no-store' })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function (info) {
         if (!cfg.token) { setBadge('需要配对令牌', true); openPair(); return; }
         saveCfg();
-        setBadge('内核 ' + (info.version || '') + ' · ' + cfg.host + ':' + cfg.port);
+        setBadge('内核 ' + (info.version || '') + ' · ' + showUrl());
         startSse();
       })
       .catch(function () {
-        setBadge('没连上内核（' + cfg.host + ':' + cfg.port + '）', true);
+        setBadge('没连上内核（' + showUrl() + '）', true);
         if (!quiet) openPair();
       });
   }
@@ -171,7 +192,7 @@
     es = new EventSource(base() + '/api/events?token=' + encodeURIComponent(cfg.token));
     es.onopen = function () {
       connected = true;
-      setBadge('内核已连接 · ' + cfg.host + ':' + cfg.port);
+      setBadge('内核已连接 · ' + showUrl());
       setTimeout(function () { dispatch({ ev: 'uiReady' }); }, 260);
     };
     es.onmessage = function (ev) { dispatch(ev.data); };

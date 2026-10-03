@@ -1,8 +1,5 @@
-using System.Diagnostics;
 using System.Net;
-using System.Net.Sockets;
 using System.Text;
-using System.Text.Json;
 using TrollWrangler.Core;
 
 namespace TrollWrangler.CoreHost;
@@ -10,7 +7,7 @@ namespace TrollWrangler.CoreHost;
 /// <summary>
 /// deepsleep 内核版（Core）：本机跑一个内核，浏览器里的网页版连上来就能用完整能力
 /// （工具 / 文件 / 命令 / 记忆 / 技能 / 网络搜索 / 深度研究）。
-/// 只监听 127.0.0.1；所有接口要配对令牌；跨域只放行自家网页版和本机页面。
+/// 服务端（HTTP + 内网穿透）都在 Deepsleep.Core 的 CoreServer 里 —— 桌面客户端用的是同一份实现。
 /// </summary>
 internal static partial class Program
 {
@@ -19,18 +16,6 @@ internal static partial class Program
     private static string _rootDir = "";
     private static string _dataDir = "";
     private static int _port = 8756;
-    private static TcpListener? _listener;
-    private static readonly DateTime Started = DateTime.Now;
-    private static readonly object SseGate = new();
-    private static readonly List<Res> SseClients = new();
-
-    /// <summary>允许跨域调用的来源（只放行自家网页版，别的一律拒）。</summary>
-    private static readonly string[] AllowOrigins =
-    {
-        "https://zhdezs.github.io",
-        "https://zhdezs.gitee.io",
-        "https://gitee.com",
-    };
 
     private static int Main(string[] args)
     {
@@ -50,23 +35,25 @@ internal static partial class Program
 
         _cliMode = CliWanted(args);
         _kernel = new Kernel();
-        _kernel.Push += OnPush;
         if (_cliMode) _kernel.Push += OnCliPush;      // CMD 模式：同一份内核事件流
         try { _kernel.Init(_dataDir); }
         catch (Exception ex) { Console.WriteLine("内核初始化失败：" + ex.Message); return 2; }
 
-        try
+        bool up = CoreServer.Start(new CoreServerOptions
         {
-            _listener = new TcpListener(IPAddress.Loopback, _port);
-            _listener.Start();
-        }
-        catch (Exception ex)
+            Kernel = _kernel,
+            Port = _port,
+            Token = _token,
+            RootDir = _rootDir,
+            DataDir = _dataDir,
+            Bind = ListenAddress(args),
+            Tunnel = args.Contains("--tunnel"),
+            TunnelCmd = ArgStr(args, "--tunnel-cmd"),
+            TunnelCfPath = ArgStr(args, "--tunnel-cf"),
+        });
+        if (!up)
         {
-            Console.WriteLine("端口 " + _port + " 起不来：" + ex.Message);
-            if (_cliMode)
-            {
-                Console.WriteLine("CMD 模式下先不管端口，继续启动。");
-            }
+            if (_cliMode) Console.WriteLine("CMD 模式下先不管端口，继续启动。");
             else
             {
                 Console.WriteLine("换一个端口再试，例如：deepsleep-core --port 8757");
@@ -75,16 +62,19 @@ internal static partial class Program
         }
 
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; Shutdown(); };
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => { try { _kernel.Shutdown(); } catch { } };
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        {
+            try { CoreServer.Stop(); } catch { }
+            try { _kernel.Shutdown(); } catch { }
+        };
 
         Banner(args);
 
         if (_cliMode)
         {
             // CMD 模式：HTTP 服务照旧在后台跑（网页版/桌面端可以同时连），前台变成命令行聊天
-            _ = Task.Run(AcceptLoop);
             RunCli(args);
-            try { _listener?.Stop(); } catch { }
+            CoreServer.Stop();
             try { _kernel.Shutdown(); } catch { }
             return 0;
         }
@@ -92,14 +82,13 @@ internal static partial class Program
 #if !WINDOWS
         // Linux / macOS：默认开一个原生窗口（内嵌内核自带的网页端），像正常桌面应用一样双击即用。
         // 想只要服务不要窗口：加 --headless（服务器 / SSH 场景）；CMD 模式本来就不开窗。
-        if (!_cliMode && !args.Contains("--headless"))
+        if (!args.Contains("--headless"))
         {
             string guiUrl = "http://127.0.0.1:" + _port + "/web/core/index.html?p=" + _port +
                             "&t=" + Uri.EscapeDataString(_token);
-            _ = Task.Run(AcceptLoop);
             if (Gui.TryRun(guiUrl, "deepsleep · " + _dataDir))
             {
-                try { _listener?.Stop(); } catch { }
+                CoreServer.Stop();
                 try { _kernel.Shutdown(); } catch { }
                 return 0;
             }
@@ -110,51 +99,24 @@ internal static partial class Program
             return 0;
         }
 #endif
-        AcceptLoop();
+        System.Threading.Thread.Sleep(System.Threading.Timeout.Infinite);
         return 0;
-    }
-
-    private static void AcceptLoop()
-    {
-        if (_listener == null) return;
-        while (true)
-        {
-            TcpClient client;
-            try { client = _listener.AcceptTcpClient(); }
-            catch { break; }
-            _ = Task.Run(() => ServeAsync(client));
-        }
-    }
-
-    private static async Task ServeAsync(TcpClient client)
-    {
-        try
-        {
-            using (client)
-            {
-                client.NoDelay = true;
-                using NetworkStream s = client.GetStream();
-                Req? req = await ReadRequestAsync(s);
-                if (req == null) return;
-                var res = new Res(s);
-                await HandleAsync(req, res);
-            }
-        }
-        catch { }
     }
 
     private static void Shutdown()
     {
         Console.WriteLine();
         Console.WriteLine("正在退出内核…");
-        try { _listener?.Stop(); } catch { }
+        CoreServer.Stop();
         try { _kernel.Shutdown(); } catch { }
         Environment.Exit(0);
     }
 
     private static void Banner(string[] args)
     {
-        string link = "https://zhdezs.github.io/deepsleep/web/core/#p=" + _port + "&t=" + _token;
+        string link = CoreServer.PublicBound
+            ? "http://" + LanHint() + ":" + _port + "/web/core/#t=" + _token
+            : "https://zhdezs.github.io/deepsleep/web/core/#p=" + _port + "&t=" + _token;
         Console.WriteLine();
         Console.WriteLine("┌──────────────────────────────────────────────────────────────┐");
         Console.WriteLine("│  deepsleep 内核版（Core）已启动                              │");
@@ -166,6 +128,18 @@ internal static partial class Program
         Console.WriteLine("  用法一（本机）：浏览器打开 http://127.0.0.1:" + _port + "/ ，点「内核版网页」");
         Console.WriteLine("  用法二（外网）：打开下面的网址，端口和令牌自动填好（这条链接别外传）：");
         Console.WriteLine("      " + link);
+        if (CoreServer.PublicBound)
+        {
+            Console.WriteLine("      已监听所有网卡（--public / --host），上面的地址局域网内就能打开。");
+            Console.WriteLine("      要跨网络超远程提问，加 --tunnel 让内核自动建公网隧道并打印配对链接。");
+        }
+        else
+        {
+            Console.WriteLine("      默认只监听本机，所以这条链接只有这台电脑能用。手机在外网提问：");
+            Console.WriteLine("      加 --tunnel 重启即可（内置免注册隧道，启动后会打印手机收藏用的配对链接）。");
+        }
+        Console.WriteLine();
+        Console.WriteLine("  超远程  --tunnel 内置隧道 ｜ --tunnel-cmd \"自备穿透命令\" ｜ --public 监听所有网卡");
         Console.WriteLine();
         Console.WriteLine("  退出 Ctrl+C ｜ 换端口 --port 8757 ｜ 换令牌 --new-token ｜ 换数据目录 --data 路径");
 #if !WINDOWS
@@ -183,6 +157,36 @@ internal static partial class Program
     }
 
     private static string DefaultDataDir() => TrollWrangler.Platform.DefaultDataDir();
+
+    /// <summary>局域网提示地址：取第一块已启用网卡上的 IPv4，取不到就退回机器名。</summary>
+    private static string LanHint()
+    {
+        try
+        {
+            foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
+            {
+                if (ni.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
+                if (ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback) continue;
+                foreach (var ua in ni.GetIPProperties().UnicastAddresses)
+                {
+                    if (ua.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                        return ua.Address.ToString();
+                }
+            }
+        }
+        catch { }
+        return Environment.MachineName;
+    }
+
+    /// <summary>监听地址：默认只监听本机；--public 监听所有网卡（配合隧道或局域网直连）。</summary>
+    private static IPAddress ListenAddress(string[] args)
+    {
+        string? host = ArgStr(args, "--host");
+        if (string.IsNullOrWhiteSpace(host) && args.Contains("--public")) host = "0.0.0.0";
+        if (string.IsNullOrWhiteSpace(host)) return IPAddress.Loopback;
+        if (!IPAddress.TryParse(host, out var ip)) return IPAddress.Loopback;
+        return ip;
+    }
 
     private static string LoadOrCreateToken(bool force)
     {

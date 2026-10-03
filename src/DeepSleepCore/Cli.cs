@@ -44,7 +44,7 @@ internal static partial class Program
         Console.WriteLine();
         Console.WriteLine("deepsleep 内核版 · CMD 模式");
         Console.WriteLine("──────────────────────────────────────────────────────");
-        Console.WriteLine("  版本      " + Version());
+        Console.WriteLine("  版本      " + CoreServer.VersionString());
         Console.WriteLine("  数据目录  " + _dataDir);
         Console.WriteLine("  会话数据  和桌面端 / 网页版完全共用（同一个内核）");
         if (oneShot == null)
@@ -184,10 +184,10 @@ internal static partial class Program
                 CliList();
                 return true;
             case "/status":
-                Console.WriteLine("→ 状态：" + _cliState + "　模式：" + _cliModeName + "　版本：" + Version());
+                Console.WriteLine("→ 状态：" + _cliState + "　模式：" + _cliModeName + "　版本：" + CoreServer.VersionString());
                 return true;
             case "/version":
-                Console.WriteLine("deepsleep 内核版 " + Version());
+                Console.WriteLine("deepsleep 内核版 " + CoreServer.VersionString());
                 return true;
             default:
                 Console.WriteLine("未知命令：" + c + "（/help 看全部）");
