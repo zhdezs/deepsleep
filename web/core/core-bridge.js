@@ -39,7 +39,6 @@
   var base = function () { return cfg.url; };
   function showUrl() { return cfg.url.replace(/^https?:\/\//, ''); }
   var listeners = [];
-  var pending = new Map();
   var seq = 0;
   var es = null;
   var connected = false;
@@ -71,13 +70,12 @@
       .then(function (t) { var o = null; try { o = JSON.parse(t); } catch (e) { o = { ok: false, err: t }; } respond(msg, !!(o && o.ok), o); })
       .catch(function (e) { respond(msg, false, { err: String(e) }); });
   }
+  /* 外壳（Windows 的 WebView2 / Photino）对每条 invoke 都会回一条带 id 的 JSON，
+     ui/app.js 靠 waiting[id] 那个 Promise 才能继续往下跑；网页端必须照做。
+     以前这里去查一个从没写入过的 pending Map，响应等于被吞掉 —— 表现就是
+     「连上了、界面也在，但一发消息就卡住，什么反应都没有」。 */
   function respond(msg, ok, extra) {
-    var id = msg && msg.id;
-    if (id == null) return;
-    var cb = pending.get(id);
-    if (!cb) return;
-    pending.delete(id);
-    cb(Object.assign({ id: id, ok: ok }, extra || {}));
+    dispatch(Object.assign({ id: msg && msg.id }, extra || {}, { ok: ok }));
   }
 
   function pickFile(msg) {

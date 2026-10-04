@@ -25,6 +25,8 @@ internal sealed class AppShell : IDisposable
     private PhotinoWindow? _win;
     private PhotinoWindow? _chat;
     private PetWindow? _pet;
+    private readonly ManualResetEventSlim _winReady = new(false);
+    private bool _petScheduled;
     private volatile bool _closing;
     private bool _tunnelOn;
 
@@ -64,6 +66,9 @@ internal sealed class AppShell : IDisposable
         try { win.SetIconFile(Path.Combine(_rootDir, "pet.png")); } catch { }
         try { win.RegisterWebMessageReceivedHandler((_, message) => OnMessage(message)); }
         catch (Exception ex) { Log("注册界面通道失败：" + ex.Message); }
+        // 主窗口原生窗口建好才算就绪：桌宠只能在它之后、且在 UI 线程上建
+        try { win.WindowCreatedHandler += (_, _) => _winReady.Set(); }
+        catch (Exception ex) { Log("注册窗口就绪回调失败：" + ex.Message); }
         try { win.Load(new Uri(UiPath(), UriKind.Absolute)); }
         catch (Exception ex) { Log("加载界面失败：" + ex.Message); }
 
@@ -445,20 +450,54 @@ internal sealed class AppShell : IDisposable
     {
         try
         {
-            bool want = _kernel.Config.PetEnabled;
-            var pet = _pet;
-            if (!want)
+            if (!_kernel.Config.PetEnabled)
             {
+                var pet = _pet;
                 _pet = null;
                 pet?.Dispose();
                 HideChat();
                 return;
             }
-            if (pet != null)
+            if (_pet != null)
             {
-                pet.Show();
+                _pet.Show();
                 return;
             }
+            EnsurePetScheduled();
+        }
+        catch (Exception ex) { _pet = null; Log("桌宠启动失败：" + ex.Message); }
+    }
+
+    /// <summary>
+    /// 桌宠窗口只能等主窗口的原生窗口 + 消息循环都就绪之后再建：Photino 全局只有一个消息循环
+    /// （静态字段），提前建或者在别的线程建第二个窗口，GTK 会直接断言失败 abort 掉整个进程
+    /// —— 表现就是「双击图标完全没反应」。这里等到就绪再派发到 UI 线程。
+    /// </summary>
+    private void EnsurePetScheduled()
+    {
+        lock (_chatGate)
+        {
+            if (_petScheduled) return;
+            _petScheduled = true;
+        }
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                if (!_winReady.Wait(TimeSpan.FromSeconds(30))) { _petScheduled = false; return; }
+                Thread.Sleep(400);                        // 让主窗口真正进消息循环
+                _win?.Invoke(ApplyPetNow);                // 派发到 UI 线程
+            }
+            catch (Exception ex) { Log("桌宠调度失败：" + ex.Message); _petScheduled = false; }
+        });
+    }
+
+    /// <summary>只允许在 UI 线程调用（由 EnsurePetScheduled 派发）。</summary>
+    private void ApplyPetNow()
+    {
+        try
+        {
+            if (!_kernel.Config.PetEnabled || _pet != null) return;
             string img = Path.Combine(_rootDir, "pet.png");
             if (!File.Exists(img)) return;
             var cfg = _kernel.Config;
@@ -468,7 +507,9 @@ internal sealed class AppShell : IDisposable
                 onOpenMain: ShowMain,
                 onMoved: (x, y) => { try { _kernel.NotePetPosition(x, y); } catch { } },
                 startX: cfg.PetX < 0 ? int.MinValue : cfg.PetX,
-                startY: cfg.PetY < 0 ? int.MinValue : cfg.PetY);
+                startY: cfg.PetY < 0 ? int.MinValue : cfg.PetY,
+                transparent: !Platform.IsLinux);
+            _pet.Start();
         }
         catch (Exception ex) { _pet = null; Log("桌宠启动失败：" + ex.Message); }
     }

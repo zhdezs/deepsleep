@@ -17,27 +17,37 @@ internal sealed class PetWindow : IDisposable
     private readonly Action _onChat, _onMenu, _onOpenMain;
     private readonly Action<int, int> _onMoved;
     private readonly int _startX, _startY;
+    private readonly bool _transparent;
     private readonly string _html;
     private PhotinoWindow? _win;
     private int _x, _y;
     private volatile bool _closed;
 
     public PetWindow(string imgPath, Action onChat, Action onMenu, Action onOpenMain,
-                     Action<int, int> onMoved, int startX, int startY)
+                     Action<int, int> onMoved, int startX, int startY, bool transparent)
     {
-        _html = BuildHtml(imgPath);
+        _transparent = transparent;
+        _html = BuildHtml(imgPath, transparent);
         _onChat = onChat; _onMenu = onMenu; _onOpenMain = onOpenMain;
         _onMoved = onMoved; _startX = startX; _startY = startY;
-        var th = new Thread(Run) { IsBackground = true, Name = "deepsleep-pet" };
-        th.Start();
+        // 这里不自己开线程：GTK 只允许在 UI 线程建窗口，而且 Photino 全局只有一个消息循环。
+        // 由外壳在主窗口消息循环起来之后调用 Start()（见 AppShell.EnsurePetScheduled）。
     }
 
-    private static string BuildHtml(string imgPath)
+    /// <summary>必须在 UI 线程、且主窗口消息循环已启动之后调用，否则 GTK 会 abort 整个进程。</summary>
+    public void Start() => Run();
+
+    private static string BuildHtml(string imgPath, bool transparent)
     {
         string url = new Uri(imgPath, UriKind.Absolute).AbsoluteUri;
+        // 透明窗口在无 3D 加速 / 无合成器的 X 上会让 GTK 断言失败并 abort 掉整个进程
+        // （实测 VMware 无 3D 的 Debian：GLib-GObject-CRITICAL 刷屏后「已中止」），
+        // 所以 Linux 上退化成实色底 —— 桌宠外面是一块深色圆角卡片，功能完全一样。
+        string bg = transparent ? "transparent" : "#0f1115";
+        string radius = transparent ? "0" : "50%";
         return """
 <!DOCTYPE html><html><head><meta charset="utf-8"><style>
-  html,body{margin:0;padding:0;background:transparent;overflow:hidden;
+  html,body{margin:0;padding:0;background:BGCOLOR;overflow:hidden;border-radius:BORDER;
             -webkit-user-select:none;user-select:none;cursor:grab}
   img{width:100%;height:100%;display:block;-webkit-user-drag:none}
 </style></head><body>
@@ -67,7 +77,7 @@ window.addEventListener('mouseup', function (e) {
 window.addEventListener('dblclick', function () { post({ cmd: 'showWindow' }); });
 window.addEventListener('contextmenu', function (e) { e.preventDefault(); post({ cmd: 'petMenu' }); });
 </script></body></html>
-""".Replace("IMGPATH", url);
+""".Replace("IMGPATH", url).Replace("BGCOLOR", bg).Replace("BORDER", radius);
     }
 
     private void Run()
@@ -80,7 +90,7 @@ window.addEventListener('contextmenu', function (e) { e.preventDefault(); post({
                 .SetSize(Size, Size)
                 .SetResizable(false)
                 .SetChromeless(true)
-                .SetTransparent(true)
+                .SetTransparent(_transparent)
                 .SetTopMost(true)
                 .SetContextMenuEnabled(false)
                 .SetLogVerbosity(0);
@@ -154,13 +164,25 @@ window.addEventListener('contextmenu', function (e) { e.preventDefault(); post({
 
     public void Show()
     {
-        try { _win?.SetMinimized(false); } catch { }
+        var w = _win;
+        if (w == null) return;
+        try { w.Invoke(() => { try { w.SetMinimized(false); } catch { } }); } catch { }
     }
 
     public void Dispose()
     {
         if (_closed) return;
-        try { _win?.SetTopMost(false); } catch { }
-        try { _win?.Close(); } catch { }
+        _closed = true;
+        var w = _win;
+        if (w == null) return;
+        try
+        {
+            w.Invoke(() =>
+            {
+                try { w.SetTopMost(false); } catch { }
+                try { w.Close(); } catch { }
+            });
+        }
+        catch { }
     }
 }
