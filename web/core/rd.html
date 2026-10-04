@@ -12,22 +12,51 @@
     padding:0 11px; background:rgba(28,28,30,.94); backdrop-filter:blur(14px); z-index:10;
     border-bottom:1px solid #3a3a3c; }
   #bar .grow { flex:1; }
-  #bar b { font-size:13.5px; font-weight:600; }
-  select, button { background:#3a3a3c; color:#f2f2f7; border:0; border-radius:9px; padding:6px 10px;
+  #bar b { font-size:13.5px; font-weight:600; white-space:nowrap; }
+  select, button, textarea { background:#3a3a3c; color:#f2f2f7; border:0; border-radius:9px; padding:6px 10px;
     font-size:12.5px; cursor:pointer; font-family:inherit; }
   button:hover, select:hover { background:#48484a; }
   button.on { background:#0a84ff; color:#fff; }
-  #stat { color:#98989d; font-size:11.5px; min-width:120px; text-align:right; }
+  #stat { color:#98989d; font-size:11.5px; min-width:110px; text-align:right; white-space:nowrap; }
   #stage { position:absolute; inset:44px 0 0 0; overflow:auto; display:flex; align-items:flex-start;
     justify-content:center; cursor:crosshair; }
   #stage.fit img { max-width:100%; max-height:100%; }
-  #screen { display:block; width:auto; height:auto; user-select:none; -webkit-user-drag:none; }
+  #screen { display:block; width:auto; height:auto; user-select:none; -webkit-user-drag:none; background:#000; }
   body.immersive #bar { transform:translateY(-100%); transition:transform .2s; }
   body.immersive:hover #bar { transform:none; }
   body.immersive #stage { inset:0; }
   #tip { position:fixed; left:50%; bottom:14px; transform:translateX(-50%); background:rgba(28,28,30,.9);
     padding:7px 14px; border-radius:20px; font-size:12px; color:#c7c7cc; pointer-events:none;
-    transition:opacity .4s; }
+    transition:opacity .4s; max-width:80vw; text-align:center; }
+
+  /* ---- 对话面板 ---- */
+  #chat { position:fixed; top:44px; right:0; bottom:0; width:330px; background:rgba(24,24,26,.97);
+    border-left:1px solid #3a3a3c; display:flex; flex-direction:column; z-index:9;
+    transform:translateX(100%); transition:transform .2s; }
+  body.chat-open #chat { transform:none; }
+  body.chat-open #stage { right:330px; }
+  #chatHead { height:36px; display:flex; align-items:center; gap:8px; padding:0 10px;
+    border-bottom:1px solid #3a3a3c; font-size:12.5px; color:#c7c7cc; }
+  #chatHead .grow { flex:1; }
+  #chatState { color:#98989d; font-size:11px; }
+  #chatLog { flex:1; overflow:auto; padding:10px; display:flex; flex-direction:column; gap:8px; }
+  .bub { max-width:88%; padding:7px 10px; border-radius:12px; font-size:12.5px; white-space:pre-wrap;
+    word-break:break-word; line-height:1.45; }
+  .bub.me { align-self:flex-end; background:#0a84ff; color:#fff; border-bottom-right-radius:4px; }
+  .bub.ai { align-self:flex-start; background:#2c2c2e; color:#f2f2f7; border-bottom-left-radius:4px; }
+  .bub.sys { align-self:center; background:transparent; color:#8e8e93; font-size:11.5px; }
+  #chatIn { display:flex; gap:7px; padding:9px; border-top:1px solid #3a3a3c; }
+  #chatText { flex:1; resize:none; height:56px; cursor:text; background:#2c2c2e; }
+  #chatSend { align-self:flex-end; height:34px; background:#0a84ff; color:#fff; }
+
+  /* ---- 配对 / 报错面板 ---- */
+  #pair { position:fixed; inset:0; background:rgba(10,10,12,.96); z-index:30; display:none;
+    align-items:center; justify-content:center; }
+  #pair.show { display:flex; }
+  #pairBox { width:min(420px, 92vw); background:#1c1c1e; border:1px solid #3a3a3c; border-radius:14px; padding:18px; }
+  #pairBox h3 { margin:0 0 6px; font-size:15px; }
+  #pairBox p { margin:0 0 12px; color:#98989d; font-size:12px; line-height:1.6; }
+  #pairBox input { width:100%; margin-bottom:9px; cursor:text; }
 </style>
 </head>
 <body>
@@ -44,50 +73,179 @@
     <option value="1920">原画 1920</option>
   </select>
   <select id="fps">
-    <option value="8">8 帧</option>
-    <option value="4">4 帧</option>
-    <option value="12">12 帧</option>
+    <option value="30" selected>30 帧</option>
     <option value="20">20 帧</option>
+    <option value="12">12 帧</option>
+    <option value="6">6 帧</option>
   </select>
+  <button id="btnChat">💬 对话</button>
   <button id="btnFit">适应窗口</button>
   <button id="btnFull">全屏</button>
   <button id="btnHide">沉浸</button>
   <span id="stat"></span>
 </div>
 <div id="stage" class="fit"><img id="screen" alt=""></div>
+<div id="chat">
+  <div id="chatHead"><span>💬 对话</span><span class="grow"></span><span id="chatState"></span><button id="chatClose">✕</button></div>
+  <div id="chatLog"></div>
+  <div id="chatIn">
+    <textarea id="chatText" placeholder="给这台电脑发消息…（Enter 发送 / Shift+Enter 换行）"></textarea>
+    <button id="chatSend">发送</button>
+  </div>
+</div>
 <div id="tip">点击画面开始操作 · Ctrl+Alt+Del 这类系统键在浏览器里发不过去</div>
+<div id="pair"><div id="pairBox">
+  <h3>连接这台电脑</h3>
+  <p>从「超级连接」打开本页会自动带上地址；也可以手动填对端内核的公网地址与配对令牌。</p>
+  <input id="pUrl" type="text" placeholder="https://xxx.serveo.net 或 http://127.0.0.1:8756">
+  <input id="pToken" type="text" placeholder="配对令牌">
+  <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:6px">
+    <button id="pCancel">关闭</button><button id="pGo" class="on">连接</button>
+  </div>
+</div></div>
 <script>
 (function () {
   'use strict';
   var $ = function (s) { return document.querySelector(s); };
   var q = new URLSearchParams(location.search);
-  var token = q.get('t') || '';
-  if (!token && location.hash) {
-    var m = location.hash.match(/[#&?]t=([^&]+)/);
-    if (m) token = decodeURIComponent(m[1]);
+  var hs = new URLSearchParams((location.hash || '').replace(/^#/, ''));
+  var hostedOnPages = /(^|\.)(github\.io|gitee\.io)$/i.test(location.hostname);
+  var hostOrigin = (location.protocol === 'http:' || location.protocol === 'https:') ? location.origin : '';
+  var LS = 'ds.rd.cfg';
+  var saved = {};
+  try { saved = JSON.parse(localStorage.getItem(LS) || '{}') || {}; } catch (e) { saved = {}; }
+
+  function normUrl(u) {
+    u = String(u || '').trim().replace(/\/+$/, '');
+    if (!u) return '';
+    if (!/^https?:\/\//i.test(u)) u = 'http://' + u;
+    return u;
   }
-  // 兜底：隧道商的浏览器警告页 / 聊天软件转发可能会吃掉查询串，那就用上次这个域名下记住的令牌。
-  var LSKEY = 'ds.rd.token.' + location.host;
-  try {
-    if (token) localStorage.setItem(LSKEY, token);
-    else token = localStorage.getItem(LSKEY) || '';
-  } catch (e) { }
+  var token = q.get('t') || hs.get('t') || saved.token || '';
+  var base = normUrl(q.get('u') || hs.get('u') || saved.base ||
+    (hostOrigin && !hostedOnPages ? hostOrigin : ''));
+  if (hostedOnPages && !(q.get('u') || hs.get('u') || saved.base)) base = '';
+
+  function saveCfg() {
+    try { localStorage.setItem(LS, JSON.stringify({ base: base, token: token })); } catch (e) { }
+    try { if (location.hash) history.replaceState(null, '', location.pathname + location.search); } catch (e) { }
+  }
+  function api(p) { return base + p + (p.indexOf('?') < 0 ? '?' : '&') + 't=' + encodeURIComponent(token); }
+
   var img = $('#screen'), stage = $('#stage'), stat = $('#stat');
-  var w = 960, fps = 8, sent = 0, moved = 0;
+  var w = 960, fps = 30, frames = 0, imgW = 0, imgH = 0;
+  var es = null, chatEs = null;
+  var bubbles = {};
 
-  if (!token) {
-    document.body.innerHTML = '<div style="padding:40px;color:#f2f2f7;font-size:15px">' +
-      '缺少配对令牌：请从「超级连接」里打开这个页面。</div>';
-    return;
+  /* ---------- base64 工具（中文 / emoji 都安全） ---------- */
+  function b64enc(s) {
+    var u = new TextEncoder().encode(s), bin = '';
+    for (var i = 0; i < u.length; i++) bin += String.fromCharCode(u[i]);
+    return btoa(bin);
+  }
+  function b64dec(b) {
+    var bin = atob(b), u = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    return new TextDecoder().decode(u);
   }
 
-  function stream() {
-    img.src = '/api/rd/stream?t=' + encodeURIComponent(token) + '&w=' + w + '&fps=' + fps + '&r=' + Date.now();
+  /* ---------- 画面：SSE 推 base64 帧 ---------- */
+  function connectStream() {
+    if (es) { try { es.close(); } catch (e) { } }
+    es = new EventSource(api('/api/rd/stream?w=' + w + '&fps=' + fps));
+    es.onmessage = function (ev) {
+      var j = null;
+      try { j = JSON.parse(ev.data); } catch (e) { return; }
+      if (!j || !j.img) return;
+      imgW = j.w || imgW; imgH = j.h || imgH; frames++;
+      img.src = 'data:image/png;base64,' + j.img;
+    };
+    es.onerror = function () {
+      stat.textContent = '画面断了，正在重连…';
+      try { es.close(); } catch (e) { }
+      setTimeout(connectStream, 2500);
+    };
   }
 
+  /* ---------- 对话：控制端 → 被控端（base64），被控端 → 控制端（base64 事件） ---------- */
+  function bubble(cls, text) {
+    var d = document.createElement('div');
+    d.className = 'bub ' + cls;
+    d.textContent = text;
+    $('#chatLog').appendChild(d);
+    $('#chatLog').scrollTop = $('#chatLog').scrollHeight;
+    return d;
+  }
+  function findBubble(id) {
+    if (bubbles[id]) return bubbles[id];
+    var d = bubble('ai', '');
+    bubbles[id] = d;
+    return d;
+  }
+  function onEvent(m) {
+    if (!m || !m.ev) return;
+    if (m.ev === 'add' && m.item) {
+      var it = m.item;
+      var d = bubble(it.self ? 'me' : (it.sys ? 'sys' : 'ai'), it.text || '');
+      if (it.id != null) bubbles[it.id] = d;
+    } else if (m.ev === 'delta' && m.id != null) {
+      findBubble(m.id).textContent = m.text || '';
+      $('#chatLog').scrollTop = $('#chatLog').scrollHeight;
+    } else if (m.ev === 'msgUpdate' && m.id != null) {
+      if (m.text != null) findBubble(m.id).textContent = m.text;
+    } else if (m.ev === 'status') {
+      $('#chatState').textContent = m.busy || '';
+    }
+  }
+  function connectChat() {
+    if (chatEs) { try { chatEs.close(); } catch (e) { } }
+    chatEs = new EventSource(api('/api/rd/chat'));
+    chatEs.onopen = function () { $('#chatState').textContent = ''; };
+    chatEs.onmessage = function (ev) {
+      var j = null;
+      try { j = JSON.parse(ev.data); } catch (e) { return; }
+      if (!j || !j.b) return;
+      var m = null;
+      try { m = JSON.parse(b64dec(j.b)); } catch (e) { return; }
+      onEvent(m);
+    };
+    chatEs.onerror = function () { $('#chatState').textContent = '对话断开，重连中…'; };
+  }
+  function sendMsg() {
+    var el = $('#chatText'), text = el.value.replace(/\s+$/, '');
+    if (!text) return;
+    el.value = '';
+    bubble('me', text);
+    fetch(api('/api/rd/msg'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-DS-Token': token },
+      body: JSON.stringify({ b: b64enc(text) })
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      if (!j || j.ok !== true) bubble('sys', '发送失败：' + ((j && j.err) || '未知错误'));
+    }).catch(function (e) { bubble('sys', '发送失败：' + e); });
+  }
+
+  /* ---------- 配对面板 ---------- */
+  function openPair() {
+    $('#pUrl').value = base || '';
+    $('#pToken').value = token || '';
+    $('#pair').classList.add('show');
+  }
+  $('#pCancel').onclick = function () { $('#pair').classList.remove('show'); };
+  $('#pGo').onclick = function () {
+    base = normUrl($('#pUrl').value);
+    token = $('#pToken').value.trim();
+    if (!base || !token) { alert('地址和令牌都要填。'); return; }
+    $('#pair').classList.remove('show');
+    saveCfg();
+    start();
+  };
+
+  /* ---------- 鼠标 / 键盘注入 ---------- */
   function send(msg) {
+    if (!base) return;
     try {
-      fetch('/api/rd/input', {
+      fetch(api('/api/rd/input'), {
         method: 'POST',
         headers: { 'X-DS-Token': token, 'Content-Type': 'application/json' },
         body: JSON.stringify(msg),
@@ -95,7 +253,6 @@
       }).catch(function () { });
     } catch (e) { }
   }
-
   function norm(e) {
     var r = img.getBoundingClientRect();
     if (r.width <= 0 || r.height <= 0) return null;
@@ -103,50 +260,38 @@
     if (x < 0 || x > 1 || y < 0 || y > 1) return null;
     return { x: Math.round(x * 10000) / 10000, y: Math.round(y * 10000) / 10000 };
   }
-
+  var moved = 0;
   stage.addEventListener('mousemove', function (e) {
-    var p = norm(e);
-    if (!p) return;
-    var t = Date.now();
-    if (t - moved < 45) return;
-    moved = t;
+    var p = norm(e); if (!p) return;
+    var t = Date.now(); if (t - moved < 45) return; moved = t;
     send({ type: 'move', x: p.x, y: p.y });
   });
-
   stage.addEventListener('mousedown', function (e) {
     e.preventDefault();
-    var p = norm(e);
-    if (p) send({ type: 'move', x: p.x, y: p.y });
+    var p = norm(e); if (p) send({ type: 'move', x: p.x, y: p.y });
     var btn = e.button === 2 ? 'right' : (e.button === 1 ? 'middle' : 'left');
     send({ type: 'down', button: btn });
   });
-
   window.addEventListener('mouseup', function (e) {
     var btn = e.button === 2 ? 'right' : (e.button === 1 ? 'middle' : 'left');
     send({ type: 'up', button: btn });
   });
-
   stage.addEventListener('contextmenu', function (e) { e.preventDefault(); });
-
-  stage.addEventListener('wheel', function (e) {
-    e.preventDefault();
-    send({ type: 'wheel', dy: e.deltaY });
-  }, { passive: false });
-
+  stage.addEventListener('wheel', function (e) { e.preventDefault(); send({ type: 'wheel', dy: e.deltaY }); }, { passive: false });
   window.addEventListener('keydown', function (e) {
+    if ($('#chat').contains(document.activeElement)) return;   // 在输入框里打字不要转发
     if (e.keyCode === 0) return;
-    if (e.ctrlKey && e.altKey && e.keyCode === 46) return;   // Ctrl+Alt+Del 发不过去
+    if (e.ctrlKey && e.altKey && e.keyCode === 46) return;
     e.preventDefault();
     send({ type: 'key', vk: e.keyCode, down: true });
   });
   window.addEventListener('keyup', function (e) {
+    if ($('#chat').contains(document.activeElement)) return;
     if (e.keyCode === 0) return;
     if (e.ctrlKey && e.altKey && e.keyCode === 46) return;
     e.preventDefault();
     send({ type: 'key', vk: e.keyCode, down: false });
   });
-
-  // 手机 / 平板：触摸当作鼠标
   stage.addEventListener('touchstart', function (e) {
     e.preventDefault();
     var t = e.touches[0], p = norm(t);
@@ -157,13 +302,25 @@
     var t = e.touches[0], p = norm(t);
     if (p) send({ type: 'move', x: p.x, y: p.y });
   }, { passive: false });
-  stage.addEventListener('touchend', function (e) {
-    e.preventDefault();
-    send({ type: 'up', button: 'left' });
-  }, { passive: false });
+  stage.addEventListener('touchend', function (e) { e.preventDefault(); send({ type: 'up', button: 'left' }); }, { passive: false });
 
-  $('#quality').addEventListener('change', function () { w = +this.value; stream(); });
-  $('#fps').addEventListener('change', function () { fps = +this.value; stream(); });
+  /* ---------- 顶栏按钮 ---------- */
+  $('#quality').addEventListener('change', function () { w = +this.value; connectStream(); });
+  $('#fps').addEventListener('change', function () { fps = +this.value; connectStream(); });
+  $('#btnChat').addEventListener('click', function () {
+    var on = !document.body.classList.contains('chat-open');
+    document.body.classList.toggle('chat-open', on);
+    this.classList.toggle('on', on);
+    if (on) { $('#chatText').focus(); if (!chatEs) connectChat(); }
+  });
+  $('#chatClose').addEventListener('click', function () {
+    document.body.classList.remove('chat-open');
+    $('#btnChat').classList.remove('on');
+  });
+  $('#chatSend').addEventListener('click', sendMsg);
+  $('#chatText').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+  });
   $('#btnFit').addEventListener('click', function () {
     stage.classList.toggle('fit');
     this.classList.toggle('on', stage.classList.contains('fit'));
@@ -179,27 +336,28 @@
   });
 
   setInterval(function () {
-    var n = Date.now();
-    if (img.naturalWidth > 0) {
-      stat.textContent = img.naturalWidth + '×' + img.naturalHeight + ' · ' + w + 'px/' + fps + 'fps';
-    }
+    if (imgW > 0) stat.textContent = imgW + '×' + imgH + ' · ' + w + 'px/' + fps + 'fps';
   }, 1500);
-  img.addEventListener('error', function () {
-    stat.textContent = '画面断了，正在重连…';
-    setTimeout(stream, 2500);
-  });
 
-  stage.classList.add('fit');
-  $('#btnFit').classList.add('on');
-  fetch('/api/rd/info?t=' + encodeURIComponent(token)).then(function (r) { return r.json(); })
-    .then(function (j) {
+  /* ---------- 启动 ---------- */
+  function start() {
+    if (!base || !token) { openPair(); return; }
+    saveCfg();
+    stage.classList.add('fit');
+    $('#btnFit').classList.add('on');
+    $('#who').textContent = base.replace(/^https?:\/\//, '').slice(0, 40);
+    fetch(api('/api/rd/info')).then(function (r) { return r.json(); }).then(function (j) {
       if (j && j.name) $('#who').textContent = '（' + j.name + '）';
-      if (j && j.available === false) {
-        stat.textContent = '这台机器不支持远程桌面';
-        img.alt = '不支持';
-      }
-    }).catch(function () { });
-  stream();
+      if (j && j.available === false) { stat.textContent = '这台机器不支持远程桌面'; img.alt = '不支持'; }
+      else { $('#who').textContent = (j && j.name ? '（' + j.name + '）' : '') + ' ' + base.replace(/^https?:\/\//, ''); }
+    }).catch(function () {
+      stat.textContent = '连不上对端内核';
+      $('#who').textContent = base.replace(/^https?:\/\//, '');
+    });
+    connectStream();
+    connectChat();
+  }
+  start();
 })();
 </script>
 </body>

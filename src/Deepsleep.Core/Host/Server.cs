@@ -11,6 +11,7 @@ public static partial class CoreServer
         lock (SseGate) clients = SseClients.ToArray();
         foreach (var c in clients)
             c.PushSse("data: " + json + "\n\n");
+        PushRdChat(json);   // 远控端：同样的事件 base64 再发一份（被控端把上下文回传）
     }
 
     private static async Task HandleAsync(Req req, Res res)
@@ -81,6 +82,8 @@ public static partial class CoreServer
         if (path == "/api/rd/frame") { await RdFrameAsync(res, req); return; }
         if (path == "/api/rd/stream") { await RdStreamAsync(res, req); return; }
         if (path == "/api/rd/input" && req.Method == "POST") { RemoteInput(req.Text); await res.SendJsonAsync("{\"ok\":true}"); return; }
+        if (path == "/api/rd/msg" && req.Method == "POST") { await RdMsgAsync(res, req); return; }
+        if (path == "/api/rd/chat") { await RdChatAsync(res); return; }
 
         string? relData = SubPath(req.Path, "/data");
         if (relData != null) { await ServeFileAsync(res, _dataDir, relData); return; }

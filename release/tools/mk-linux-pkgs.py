@@ -14,7 +14,7 @@ r"""deepsleep Linux 安装包打包器：把发布目录打成 .deb（Debian / U
 写完会把自己产出的包**重新解析一遍**自检（verify_* 段），头里的文件表、cpio 顺序、摘要、大小全都对得上才算过。
 
 用法（一般由 publish.py 调）：
-  python mk-linux-pkgs.py --src <发布目录> --out <输出目录> --version 3.0.3 --arch x64 --icon <ico>
+  python mk-linux-pkgs.py --src <发布目录> --out <输出目录> --version 3.0.4 --arch x64 --icon <ico>
 """
 import argparse
 import gzip

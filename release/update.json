@@ -1,6 +1,6 @@
 {
-  "version": "3.0.3",
-  "url": "https://github.com/zhdezs/deepsleep/releases/download/v3.0.3/deepsleep-Setup.exe",
-  "sha256": "28794f8356bac2af9f539217e84ada6b327d9e307ae8fee7979bdaba60fe4a77",
-  "notes": "3.0.3：Linux 版 OTA 真正打通（之前完全没在工作）+ 版本比较修正。\n\n① Linux 版以前根本没有 OTA：安装包里没有预置 config.json（只有 Windows 安装程序带模板），首启更新源为空，自动检查更新的第一行就直接返回，等于永远不查更新。现在更新源有默认值，老配置里的空值也会被顶回默认。\n② 就算检查到新版本也装不上：deb / rpm 把程序装在 /opt/deepsleep（root 所有），普通用户就地覆盖必然 permission denied；而且升级脚本用 pgrep -f deepsleep 等旧进程退出时会匹配到脚本自己（脚本路径里就含 deepsleep），15 秒后把自己一起 kill 掉，解包和重启都执行不到。现在 Linux 自更新先探测安装目录能不能写：写不进去就静默落到用户目录 ~/.local/share/deepsleep/app（不需要 root、不用输密码），并写好用户级启动项（~/.local/share/applications/deepsleep.desktop + ~/.local/bin/deepsleep），菜单和终端里拉起的都是新版本；启动脚本也优先拉起用户目录的这份。整个过程写 data/update.log，失败有据可查。\n③ 版本比较修正：原来只比前 3 段数字，3.0.3-alpha 和 3.0.3 被判为同级 —— 按 .alpha 约定装的测试版永远收不到同名正式版更新。现在正式版排在预发布版前面（3.0.3 > 3.0.3-alpha）。\n④ Windows 的安装流程没改（就地覆盖、静默安装照旧），其余与 3.0.2 一致：超级连接（6 位配对码 · 点对点直连 · 内置远程桌面）、超远程提问（--tunnel + 手机配对链接 + 令牌防暴破）、CMD 模式、Agent 集群名片、长期记忆、技能、网络搜索 + 深度研究、AGENT.md 初始提示词、命令与文件合并成可展开卡片、思考折叠、截断自动续写、Gitee 线路加速、跨平台桌面版三件套（Linux deb/rpm、macOS dmg、免安装 tar.gz）。\n\n⚠️ 过渡说明：已经用 deb / rpm 装在 /opt 的 3.0.2 没法自己 OTA 到 3.0.3（3.0.2 里跑的是旧升级代码），需要手动装一次 3.0.3 的安装包；之后 Linux OTA 全程可用。"
+  "version": "3.0.4",
+  "url": "https://github.com/zhdezs/deepsleep/releases/download/v3.0.4/deepsleep-Setup.exe",
+  "sha256": "5f6fd669eaecbc23102bc2386130bebf1d6efca31fa4907ad11b7ec74d9160c3",
+  "notes": "3.0.4：超级连接的远控真正能用了（远程桌面 + 对话）。\n\n① 远程桌面以前\"过隧道就黑屏\"：帧流用的是 multipart/x-mixed-replace 长连，SSH 反向隧道那类中间设备会把它攒着不吐，浏览器就一直等不到画面（本机直连正常，过隧道才废）。现在改成 SSE 推 base64 帧——每帧一张 PNG 的 base64，默认 30fps；画面没变就跳过、最多 5 秒补一帧，静止时几乎不吃带宽。\n\n② 超级连接的远控页以前根本没有消息通道：只能在远处看画面、动鼠标键盘，没法说话。现在右侧多了「💬 对话」面板：控制端发的消息按 base64 编码传给被控端，喂给被控端的 AI（等同本机输入一条消息）；被控端的回答、状态和上下文同样 base64 回推，实时显示。发消息不等 AI 答完就立刻返回，长回答不会被隧道超时掐断。\n\n③ 远控页现在能拿到对端地址：以前只走相对路径，从 GitHub Pages 打开必然连到自己身上（黑屏）。现在超级连接生成的远程桌面链接自带对端地址，页面从哪打开都能连对；没有地址时会弹配对面板手填。\n\n④ 其余与 3.0.3 一致：Linux 版 OTA 已打通、版本比较修正、超级连接（6 位配对码 · 点对点直连）、超远程提问、CMD 模式、Agent 集群名片、长期记忆、技能、网络搜索 + 深度研究、AGENT.md 初始提示词、命令与文件合并成可展开卡片、思考折叠、截断自动续写、跨平台桌面版三件套（Linux deb/rpm、macOS dmg、免安装 tar.gz）。"
 }

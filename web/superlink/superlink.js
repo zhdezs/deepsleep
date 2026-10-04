@@ -57,7 +57,9 @@
   function showDone(base, token, p2p, peer) {
     // 令牌放 # 片段：隧道商（serveo 免费版）会给浏览器导航插一个警告页，
     // 它的「Continue」是按 action="" 做 GET 提交 —— 会整条顶掉 ?查询串，令牌就丢了。
-    var rd = base.replace(/\/+$/, '') + '/web/core/rd.html#t=' + encodeURIComponent(token);
+    var rdBase = base.replace(/\/+$/, '');
+    // 把对端地址也塞进 # 里：从 GitHub Pages 的 rd.html 打开时，页面才知道该连谁的 /api/rd/*
+    var rd = rdBase + '/web/core/rd.html#u=' + encodeURIComponent(rdBase) + '&t=' + encodeURIComponent(token);
     var full = base.replace(/\/+$/, '') + '/web/core/#u=' + encodeURIComponent(base) + '&t=' + encodeURIComponent(token);
     $('#peerName').textContent = peer ? '（' + peer + '）' : '';
     $('#modeHint').textContent = p2p
