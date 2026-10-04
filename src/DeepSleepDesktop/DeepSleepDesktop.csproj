@@ -1,0 +1,40 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- deepsleep 桌面版（Linux / macOS）：外壳从 Windows 桌面版（src\TrollWrangler.csproj）改来，
+       同一套 ui\ HTML 界面、同一份 Deepsleep.Core 内核，只把窗口后端换成系统自带的 WebView（Photino：
+       Linux = WebKitGTK，macOS = WKWebView）。Windows 仍然用 src\TrollWrangler.csproj（WPF + WebView2）。 -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>DeepSleep.Desktop</RootNamespace>
+    <AssemblyName>deepsleep</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <DebugType>none</DebugType>
+    <SatelliteResourceLanguages>zh-Hans;en</SatelliteResourceLanguages>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <ApplicationTitle>deepsleep · AI 助手</ApplicationTitle>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != ''">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Deepsleep.Core\Deepsleep.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Photino.NET" Version="4.0.16" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\pet.png" Link="pet.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\ui\**" Link="ui\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\web\**" Link="web\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\tools\websearch.py" Link="tools\websearch.py" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

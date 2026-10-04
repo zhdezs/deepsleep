@@ -37,6 +37,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- 跨平台桌面版（src\DeepSleepDesktop，Linux / macOS 用）同理，外壳不编译它 -->
+    <Compile Remove="DeepSleepDesktop\**" />
+    <Content Remove="DeepSleepDesktop\**" />
+    <None Remove="DeepSleepDesktop\**" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="Deepsleep.Core\Deepsleep.Core.csproj" />
   </ItemGroup>
 

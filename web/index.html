@@ -185,7 +185,7 @@ table.dl th{color:var(--muted);font-weight:600;font-size:12.5px}</style>
   <div class="grid g2">
     <div>
       <div class="step"><b class="n">1</b><div>下载并解压内核版<strong>（解压即用，免安装）</strong>
-        <p class="hint" style="margin:6px 0">Windows 用 <code>deepsleep-core-3.0.1-win-x64.zip</code>；Linux / macOS 下 <code>deepsleep-3.0.1-linux-x64.tar.gz</code> / <code>deepsleep-3.0.1-osx-arm64.tar.gz</code> 等<strong>桌面版</strong>包，解压后 <code>chmod +x deepsleep-core &amp;&amp; ./deepsleep.sh</code>（直接开原生桌面窗口；Linux 桌面需要 <code>libwebkit2gtk-4.1-0</code>，服务器加 <code>--headless</code>）。</p>
+        <p class="hint" style="margin:6px 0">Windows 用 <code>deepsleep-core-3.0.1-win-x64.zip</code>；Linux 用 <code>deepsleep_3.0.1_amd64.deb</code> / <code>deepsleep-3.0.1-1.x86_64.rpm</code>（或免安装的 <code>deepsleep-3.0.1-linux-x64.tar.gz</code>）；macOS 用 <code>deepsleep-3.0.1-osx-arm64.dmg</code>。桌面版和内核版能力完全一样，区别只是桌面版默认开窗口；没有桌面环境就加 <code>--headless</code> 只跑服务（Linux 桌面需要 <code>libwebkit2gtk-4.1-0</code>）。</p>
         <p><a class="btn pri sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-core-3.0.1-win-x64.zip" target="_blank" rel="noreferrer">⬇ deepsleep-core-3.0.1-win-x64.zip</a></p></div></div>
       <div class="step"><b class="n">2</b><div>运行内核：Windows 双击 <code>deepsleep-core.exe</code>，Linux / macOS 执行 <code>./deepsleep.sh</code>
         <p>Windows 会打开本机首页；Linux / macOS 会直接开一个<strong>原生桌面窗口</strong>，双击即用（服务器 / SSH 加 <code>--headless</code> 只跑服务）。</p>
@@ -261,20 +261,34 @@ table.dl th{color:var(--muted);font-weight:600;font-size:12.5px}</style>
         <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-3.0.1-win-x64.zip">下载</a></td></tr>
     <tr><td><code>deepsleep-core-3.0.1-win-x64.zip</code></td><td>内核版（Windows）：解压即用，配合网页端操控本机</td>
         <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-core-3.0.1-win-x64.zip">下载</a></td></tr>
-    <tr><td><code>deepsleep-3.0.1-linux-x64.tar.gz</code></td><td>桌面版 · Linux x86_64：解压后 <code>./deepsleep.sh</code> 直接开窗口（服务器加 <code>--headless</code> 当内核版）</td>
+    <tr><td><code>deepsleep_3.0.1_amd64.deb</code></td><td>桌面版 · Debian / Ubuntu（x86_64）：<code>sudo apt install ./deepsleep_3.0.1_amd64.deb</code>，装完在应用菜单里搜 deepsleep</td>
+        <td><a class="btn pri sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep_3.0.1_amd64.deb">下载</a></td></tr>
+    <tr><td><code>deepsleep_3.0.1_arm64.deb</code></td><td>桌面版 · Debian / Ubuntu（ARM64）：同上</td>
+        <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep_3.0.1_arm64.deb">下载</a></td></tr>
+    <tr><td><code>deepsleep-3.0.1-1.x86_64.rpm</code></td><td>桌面版 · Fedora / RHEL / openSUSE（x86_64）：<code>sudo dnf install ./deepsleep-3.0.1-1.x86_64.rpm</code></td>
+        <td><a class="btn pri sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-3.0.1-1.x86_64.rpm">下载</a></td></tr>
+    <tr><td><code>deepsleep-3.0.1-1.aarch64.rpm</code></td><td>桌面版 · Fedora / RHEL / openSUSE（aarch64）：同上</td>
+        <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-3.0.1-1.aarch64.rpm">下载</a></td></tr>
+    <tr><td><code>deepsleep-3.0.1-osx-arm64.dmg</code></td><td>桌面版 · macOS（Apple 芯片）：打开 .dmg，把 deepsleep 拖进「应用程序」</td>
+        <td><a class="btn pri sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-3.0.1-osx-arm64.dmg">下载</a></td></tr>
+    <tr><td><code>deepsleep-3.0.1-osx-x64.dmg</code></td><td>桌面版 · macOS（Intel）：同上</td>
+        <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-3.0.1-osx-x64.dmg">下载</a></td></tr>
+    <tr><td><code>deepsleep-3.0.1-linux-x64.tar.gz</code></td><td>免安装 · Linux x86_64：解压后 <code>./deepsleep.sh</code> 直接开窗口（服务器加 <code>--headless</code> 只跑服务）</td>
         <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-3.0.1-linux-x64.tar.gz">下载</a></td></tr>
-    <tr><td><code>deepsleep-3.0.1-linux-arm64.tar.gz</code></td><td>桌面版 · Linux ARM64（同上，加 <code>--headless</code> 当内核版）</td>
+    <tr><td><code>deepsleep-3.0.1-linux-arm64.tar.gz</code></td><td>免安装 · Linux ARM64（同上）</td>
         <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-3.0.1-linux-arm64.tar.gz">下载</a></td></tr>
-    <tr><td><code>deepsleep-3.0.1-osx-arm64.tar.gz</code></td><td>桌面版 · macOS（Apple 芯片）：解压后 <code>./deepsleep.sh</code> 直接开原生窗口</td>
+    <tr><td><code>deepsleep-3.0.1-osx-arm64.tar.gz</code></td><td>免安装 · macOS（Apple 芯片）：解压后 <code>./deepsleep.sh</code></td>
         <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-3.0.1-osx-arm64.tar.gz">下载</a></td></tr>
-    <tr><td><code>deepsleep-3.0.1-osx-x64.tar.gz</code></td><td>桌面版 · macOS（Intel）：同上</td>
+    <tr><td><code>deepsleep-3.0.1-osx-x64.tar.gz</code></td><td>免安装 · macOS（Intel）：同上</td>
         <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-3.0.1-osx-x64.tar.gz">下载</a></td></tr>
     <tr><td>网页版</td><td>不用下载，直接用浏览器打开</td>
         <td><a class="btn gho sm" href="app/">打开网页版</a></td></tr>
   </table>
   </div>
   <p class="hint">第一次运行 Windows 可能提示「未知发布者」，点「更多信息 → 仍要运行」即可。安装包 SHA256 写在 Release 说明里。<br>
-      Linux / macOS 的 <code>.tar.gz</code> 里已带执行位，解压后直接 <code>./deepsleep.sh</code>（或 <code>./deepsleep-core</code>）即可，会直接打开桌面窗口；没有桌面环境用 <code>--headless</code> 只跑服务。</p>
+      Linux 上桌面包依赖系统自带的 WebView：Debian / Ubuntu 装 <code>libwebkit2gtk-4.1-0</code> 与 <code>libgtk-3-0</code>，Fedora / RHEL 装 <code>webkit2gtk4.1</code>（<code>.deb</code> / <code>.rpm</code> 会自动带上 Debian 侧的依赖）。<br>
+      macOS 的 <code>.dmg</code> 是临时签名（没有 Apple 开发者证书），第一次打开要右键 →「打开」，或到「系统设置 → 隐私与安全性」点「仍要打开」。<br>
+      <code>.tar.gz</code> 是免安装版，里面已带执行位，解压后直接 <code>./deepsleep.sh</code> 就会打开桌面窗口；没有桌面环境就加 <code>--headless</code> 只跑内核服务（浏览器打开 <code>http://127.0.0.1:8756/web/core/</code>）。</p>
 </div></section>
 
 <section id="faq" class="alt"><div class="wrap">
@@ -291,7 +305,8 @@ table.dl th{color:var(--muted);font-weight:600;font-size:12.5px}</style>
     <dt>为什么有时候会「限流 / 429」？</dt>
     <dd>免费模型有并发限制，人多了就排队。填自己的 Key 或稍等重试即可。</dd>
     <dt>支持 macOS / Linux 吗？</dt>
-    <dd>支持。<strong>桌面版</strong>有 Linux（x64 / ARM64）与 macOS（Apple 芯片 / Intel）的原生包，解压 <code>./deepsleep.sh</code> 直接开原生桌面窗口（Linux 桌面需 <code>libwebkit2gtk-4.1-0</code>）；服务器 / SSH 加 <code>--headless</code> 用浏览器连。macOS 只发行桌面版（不再单独发内核版），Linux 同一个包 <code>--headless</code> 就是内核版；Windows 是功能最全的完整客户端。</dd>
+    <dd>支持。<strong>桌面版</strong>有 Linux（.deb / .rpm，x64 与 ARM64）和 macOS（.dmg，Apple 芯片与 Intel），和 Windows 客户端是同一套外壳、同一份内核，功能一个不少。Linux 上 <code>sudo apt install ./deepsleep_*.deb</code> 或 <code>sudo dnf install ./deepsleep-*.rpm</code>，macOS 上打开 .dmg 把 deepsleep 拖进「应用程序」。<br>
+      也可以下免安装的 <code>.tar.gz</code>，解压后 <code>./deepsleep.sh</code> 直接开原生桌面窗口；服务器 / SSH 加 <code>--headless</code> 就只跑内核服务、用浏览器连（Linux 桌面需要系统自带 <code>libwebkit2gtk-4.1-0</code>）。macOS 只发行桌面版，不再单独发内核版。</dd>
   </dl>
 </div></section>
 

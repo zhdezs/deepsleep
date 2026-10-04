@@ -30,7 +30,7 @@ API = "https://gitee.com/api/v5"
 BRANCH = "master"
 SKIP_DIRS = {"bin", "obj", "dist", "publish", "package", ".git", "data", "__pycache__"}
 SKIP_NAMES = {"payload.zip"}
-SKIP_EXT = (".zip", ".exe", ".pdb", ".dll", ".gz", ".tar")
+SKIP_EXT = (".zip", ".exe", ".pdb", ".dll", ".gz", ".tar", ".deb", ".rpm", ".dmg")
 PART_SIZE = 90 * 1024 * 1024        # 单个附件上限 100MB，留足余量
 # 切分片用的临时目录：固定一个，别每次 mkdtemp 留一坨 130MB 的碎块（以前攒了几十个、4GB 多），
 # 进程退出时自动删干净。
@@ -126,7 +126,7 @@ def source_files():
         p = os.path.join(ROOT, rel)
         if os.path.isfile(p):
             out[rel] = p
-    for top in ("src", "ui", "installer", "release", "web"):
+    for top in ("src", "ui", "installer", "release", "web", ".github"):
         for dirpath, dirnames, filenames in os.walk(os.path.join(ROOT, top)):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
             for fn in filenames:
@@ -178,6 +178,13 @@ def planned_assets(version):
              os.path.join(ROOT, "release", "deepsleep-core-%s-win-x64.zip" % version)]
     for rid in UNIX_RIDS:
         cands.append(os.path.join(ROOT, "release", "deepsleep-%s-%s.tar.gz" % (version, rid)))
+    # Linux 安装包（debian / redhat）与 macOS 磁盘映像
+    cands += [os.path.join(ROOT, "release", "deepsleep_%s_amd64.deb" % version),
+              os.path.join(ROOT, "release", "deepsleep_%s_arm64.deb" % version),
+              os.path.join(ROOT, "release", "deepsleep-%s-1.x86_64.rpm" % version),
+              os.path.join(ROOT, "release", "deepsleep-%s-1.aarch64.rpm" % version),
+              os.path.join(ROOT, "release", "deepsleep-%s-osx-arm64.dmg" % version),
+              os.path.join(ROOT, "release", "deepsleep-%s-osx-x64.dmg" % version)]
     plan = []
     for p in cands:
         if os.path.isfile(p):

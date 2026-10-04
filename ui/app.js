@@ -8,7 +8,34 @@ if (petMode) document.body.classList.add('pet');
 /* ---------------- 与内核的通道 ---------------- */
 let seq = 0;
 const waiting = new Map();
-function host(obj) { try { window.chrome.webview.postMessage(obj); } catch (e) { } }
+
+/* 外壳有两种：
+   · Windows 桌面版 = WPF + WebView2 → window.chrome.webview
+   · Linux / macOS 桌面版 = Photino（系统自带 WebView）→ window.external
+   两边协议完全一样（JSON），所以这里只换通道，界面代码一行不用改。 */
+const bridge = (() => {
+  const wv = window.chrome && window.chrome.webview;
+  if (wv && typeof wv.postMessage === 'function') {
+    return {
+      kind: 'webview2',
+      send: o => { try { wv.postMessage(o); } catch (e) { } },
+      on: f => wv.addEventListener('message', e => {
+        f(typeof e.data === 'string' ? JSON.parse(e.data) : e.data);
+      })
+    };
+  }
+  const ex = window.external;
+  if (ex && typeof ex.sendMessage === 'function' && typeof ex.receiveMessage === 'function') {
+    return {
+      kind: 'photino',
+      send: o => { try { ex.sendMessage(JSON.stringify(o)); } catch (e) { } },
+      on: f => { try { ex.receiveMessage(s => { try { f(JSON.parse(s)); } catch (e) { } }); } catch (e) { } }
+    };
+  }
+  return { kind: 'none', send: () => { }, on: () => { } };
+})();
+
+function host(obj) { bridge.send(obj); }
 function call(cmd, args) {
   return new Promise(res => {
     const id = ++seq;
@@ -16,8 +43,7 @@ function call(cmd, args) {
     host(Object.assign({ id, cmd }, args || {}));
   });
 }
-window.chrome.webview.addEventListener('message', e => {
-  const m = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+bridge.on(m => {
   if (!m) return;
   if (m.ev) handleEvent(m);
   else if (m.id != null) { const r = waiting.get(m.id); if (r) { waiting.delete(m.id); r(m); } }
@@ -1268,3 +1294,7 @@ function wire() {
 }
 
 wire();
+
+/* Windows 版由外壳在导航完成后推 {"ev":"uiReady"}；Photino 没有导航回调，
+   由界面主动报个到（外壳收到 shellReady 会立刻回 uiReady + hostInfo）。 */
+if (bridge.kind === 'photino') host({ cmd: 'shellReady' });

@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <!-- deepsleep 内核版（Core）：本机跑一个内核，浏览器（含 GitHub Pages 上的网页版）连上来就能用完整能力 -->
   <!-- 多目标：Windows（默认 win-x64，与改造前一致）+ net10.0（Linux / macOS，发布时用 -r 指定平台）。 -->
@@ -30,11 +30,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Deepsleep.Core\Deepsleep.Core.csproj" />
-  </ItemGroup>
-
-  <!-- Linux / macOS 的桌面窗口：Photino 用系统自带的 WebView（Windows 不用它，Windows 走 WPF 外壳） -->
-  <ItemGroup Condition="'$(TargetFramework)' == 'net10.0'">
-    <PackageReference Include="Photino.NET" Version="4.0.16" />
   </ItemGroup>
 
   <!-- 界面文件随内核一起发布：本地打开 http://127.0.0.1:8756/ 就能用（离线可用） -->

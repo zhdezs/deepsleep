@@ -1,0 +1,66 @@
+name: macOS dmg
+
+# macOS 的 .dmg 只能在 macOS 上生成（hdiutil / codesign），Windows 上做不出来。
+# 这里在 GitHub 的 macos-14 runner 上把 Release 里的 osx tar.gz 拼成 deepsleep.app，
+# 打成 .dmg 再传回同一个 Release。也可以在 Actions 页面手动 Run workflow。
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（例如 3.0.1）"
+        required: true
+        type: string
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  dmg:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 解析版本号
+        id: ver
+        run: |
+          V="${{ github.event.inputs.version }}"
+          if [ -z "$V" ]; then V="${GITHUB_REF_NAME#v}"; fi
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "版本号 $V"
+
+      - name: 下载两个 macOS 包（Release 可能刚建好，最多等 5 分钟）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          mkdir -p in
+          for rid in osx-arm64 osx-x64; do
+            for i in 1 2 3 4 5 6 7 8 9 10; do
+              if gh release download "v$V" -R "$GITHUB_REPOSITORY" \
+                   -p "deepsleep-$V-$rid.tar.gz" -D in --clobber 2>/dev/null; then
+                break
+              fi
+              echo "第 $i 次没拿到 deepsleep-$V-$rid.tar.gz，等 30 秒"
+              sleep 30
+            done
+          done
+          ls -l in
+
+      - name: 打包 .app + .dmg
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          mkdir -p out
+          for rid in osx-arm64 osx-x64; do
+            bash release/tools/mk-macos-dmg.sh "in/deepsleep-$V-$rid.tar.gz" "$rid" "$V" out "src/deepsleep.ico"
+          done
+          ls -l out
+
+      - name: 传回 Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          gh release upload "v$V" out/*.dmg -R "$GITHUB_REPOSITORY" --clobber

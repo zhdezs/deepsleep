@@ -6,12 +6,12 @@
 
 | | |
 | --- | --- |
-| 当前版本 | **3.0.1**（① **超级连接（6 位配对码 · 点对点直连 · 内置远程桌面）** —— 桌面版工具栏点 🔗「超级连接」，内核版在 CMD 里输入「打开超级连接」（或 `/superlink`），生成一串 6 位配对码；另一台设备打开 `https://zhdezs.github.io/deepsleep/superlink/?type=配对码`（或在它自己的「超级连接」里输入这 6 位数字）就连上：同一网络走**点对点局域网直连**（延迟最低），不同网络自动开一条**内置隧道**（手写：直接驱动系统自带的 ssh 建反向隧道，**零下载**；多个免费入口自动择优、连上先自检、断了自动重建）、连上后立刻关掉保持 P2P；连上即可在浏览器里用**内置远程桌面**看画面并用鼠标 / 键盘 / 手机触屏操控。配对码 5 分钟有效、用完即撤，信令只传几 KB 握手消息（默认 ntfy.sh，可用 `DEEPSLEEP_SIGNAL_BASE` 换自建）。② **超远程提问（内网穿透）** —— 内核加 `--tunnel` 就自动建一条免注册的公网隧道（**手写隧道**：用系统自带的 ssh 反向隧道，serveo.net / localhost.run 自动择优，不用下任何组件），启动后直接打印一条带令牌的**配对链接**，手机存成书签，人在外面也能指挥这台电脑；想用自己的穿透工具就 `--public --tunnel-cmd "frpc …"`（或者 `--tunnel-cf 路径` 用已有的 cloudflared），frp / cpolar / ngrok / ssh -R 都行，内核会从命令输出里自己抓公网地址。② **只有你主动要求才对外** —— 默认依然只听 `127.0.0.1`，加 `--public` / `--host` 才监听网卡，加 `--tunnel` 才挂公网；隧道域名同源放行（网页端能正常调 API），别家网站照样 403。③ **令牌防暴破** —— 令牌输错会递增延迟（400ms×次数，封顶 5 秒）再返回 401；不封 IP，因为隧道下来的来源都是 127.0.0.1，封了会误伤。④ **桌面客户端也能被远程连** —— 桌面版内置的内核服务和内核版是**同一份实现**（`CoreServer` 抽到了共用的 `Deepsleep.Core`），装上就默认监听本机，设置里「超远程提问」点一下就能开 / 关公网隧道，手机在外网一样能连；窗口类命令（showWindow / hideWindow / quitApp）走外壳接管，所以桌面版不会有「Core 有而我没有」的功能。⑤ **不带令牌的 `/api/ping` 只说名字和版本**，端口 / 运行时长 / 数据目录都要带令牌才给。其余与 2.3.2 一致：命令输出中文不乱码、运行的命令点开看完整输出、桌宠资源回收、兜底面板不再误报、chat 模式不落盘、代码块兜底不吞正文、DSML 工具标记直接执行、截断自动续写、Agent 名片 + 按需派工、集群名册只增不减、内核跨平台（Windows / Linux / macOS）；⑥ **跨平台桌面版** —— Linux（x64 / ARM64）与 macOS（Apple 芯片 / Intel）解压即用，`./deepsleep.sh` 直接开原生桌面窗口（同一个包加 `--headless` 就是内核版；macOS 只发行桌面版） |
-| 系统要求 | 桌面客户端：Windows 10 1809+ / x64（推荐 Windows 11，可享亚克力毛玻璃界面）；桌面版另支持 Linux（x64 / ARM64）与 macOS（Apple 芯片 / Intel） |
-| 下载 | [Releases](https://github.com/zhdezs/deepsleep/releases/latest) → `deepsleep-Setup.exe` |
+| 当前版本 | **3.0.1**（① **超级连接（6 位配对码 · 点对点直连 · 内置远程桌面）** —— 桌面版工具栏点 🔗「超级连接」，内核版在 CMD 里输入「打开超级连接」（或 `/superlink`），生成一串 6 位配对码；另一台设备打开 `https://zhdezs.github.io/deepsleep/superlink/?type=配对码`（或在它自己的「超级连接」里输入这 6 位数字）就连上：同一网络走**点对点局域网直连**（延迟最低），不同网络自动开一条**内置隧道**（手写：直接驱动系统自带的 ssh 建反向隧道，**零下载**；多个免费入口自动择优、连上先自检、断了自动重建）、连上后立刻关掉保持 P2P；连上即可在浏览器里用**内置远程桌面**看画面并用鼠标 / 键盘 / 手机触屏操控。配对码 5 分钟有效、用完即撤，信令只传几 KB 握手消息（默认 ntfy.sh，可用 `DEEPSLEEP_SIGNAL_BASE` 换自建）。② **超远程提问（内网穿透）** —— 内核加 `--tunnel` 就自动建一条免注册的公网隧道（**手写隧道**：用系统自带的 ssh 反向隧道，serveo.net / localhost.run 自动择优，不用下任何组件），启动后直接打印一条带令牌的**配对链接**，手机存成书签，人在外面也能指挥这台电脑；想用自己的穿透工具就 `--public --tunnel-cmd "frpc …"`（或者 `--tunnel-cf 路径` 用已有的 cloudflared），frp / cpolar / ngrok / ssh -R 都行，内核会从命令输出里自己抓公网地址。② **只有你主动要求才对外** —— 默认依然只听 `127.0.0.1`，加 `--public` / `--host` 才监听网卡，加 `--tunnel` 才挂公网；隧道域名同源放行（网页端能正常调 API），别家网站照样 403。③ **令牌防暴破** —— 令牌输错会递增延迟（400ms×次数，封顶 5 秒）再返回 401；不封 IP，因为隧道下来的来源都是 127.0.0.1，封了会误伤。④ **桌面客户端也能被远程连** —— 桌面版内置的内核服务和内核版是**同一份实现**（`CoreServer` 抽到了共用的 `Deepsleep.Core`），装上就默认监听本机，设置里「超远程提问」点一下就能开 / 关公网隧道，手机在外网一样能连；窗口类命令（showWindow / hideWindow / quitApp）走外壳接管，所以桌面版不会有「Core 有而我没有」的功能。⑤ **不带令牌的 `/api/ping` 只说名字和版本**，端口 / 运行时长 / 数据目录都要带令牌才给。其余与 2.3.2 一致：命令输出中文不乱码、运行的命令点开看完整输出、桌宠资源回收、兜底面板不再误报、chat 模式不落盘、代码块兜底不吞正文、DSML 工具标记直接执行、截断自动续写、Agent 名片 + 按需派工、集群名册只增不减、内核跨平台（Windows / Linux / macOS）；⑥ **跨平台桌面版** —— Linux（x64 / ARM64）与 macOS（Apple 芯片 / Intel）解压即用，`./deepsleep.sh` 直接开原生桌面窗口（Linux 直接发 `.deb` / `.rpm`，macOS 发 `.dmg`，也都有免安装的 `.tar.gz`；同一个包加 `--headless` 就是内核版；macOS 只发行桌面版） |
+| 系统要求 | 桌面客户端：Windows 10 1809+ / x64（推荐 Windows 11，可享亚克力毛玻璃界面）；Linux（x64 / ARM64，需要系统自带 WebKitGTK + GTK3）与 macOS 11+（Apple 芯片 / Intel）都有原生桌面版 |
+| 下载 | [Releases](https://github.com/zhdezs/deepsleep/releases/latest) → Windows `deepsleep-Setup.exe`；Linux `deepsleep_<版本>_amd64.deb` / `deepsleep-<版本>-1.x86_64.rpm`（另有 arm64 / aarch64）；macOS `deepsleep-<版本>-osx-arm64.dmg` / `deepsleep-<版本>-osx-x64.dmg` |
 | OTA 更新源 | `zhdezs/deepsleep`（GitHub + Gitee 双源，⚙ 设置里可切换线路，默认 Gitee） |
 | 官网 / 网页版 | <https://zhdezs.github.io/deepsleep/>（网页版免安装，内置免费模型矩阵：GLM-4.7-Flash 聊天 / GLM-4.6V-Flash 看图 / CogView-3-Flash 画图） |
-| 内核版 | `deepsleep-core-<版本>-win-x64.zip`（Windows）；桌面版 `deepsleep-<版本>-linux-x64.tar.gz` / `deepsleep-<版本>-osx-arm64.tar.gz` 等（Linux · macOS）：解压即用，`./deepsleep.sh` 直接开原生桌面窗口，加 `--headless` 就是内核模式（用浏览器连上操控本机） |
+| 内核版 | `deepsleep-core-<版本>-win-x64.zip`（Windows）；Linux · macOS 直接给 `src/DeepSleepDesktop` 编译出来的**桌面版**：装 `.deb` / `.rpm` / `.dmg`，或者下免安装的 `deepsleep-<版本>-<平台>.tar.gz` 解压即用（`./deepsleep.sh` 直接开原生桌面窗口，加 `--headless` 就是内核模式，用浏览器连上操控本机） |
 
 ### 三种用法
 
@@ -148,6 +148,11 @@ src/                      WinUI 3 外壳（.NET 10）
   ├─ PetChatWindow.cs     桌宠专属聊天浮窗（HTML，与主界面同一条会话）
   └─ tools/               set-github-token.ps1、publish-github-release.ps1、download-update.ps1
 
+src/DeepSleepDesktop/    跨平台桌面版外壳（Linux / macOS；照 Windows 桌面版 src/ 改，不是内核套壳）
+  ├─ Program.cs           入口：解析 --data，构造 AppShell
+  ├─ AppShell.cs          Photino 窗口 + CoreServer + 界面通道 + 桌宠浮窗（对齐 src/MainWindow.xaml.cs）
+  └─ PetWindow.cs         桌宠（透明无边框置顶小窗：拖拽 / 单击 / 右键菜单）
+
 src/DeepSleepCore/        内核版宿主（自带 HTTP/SSE 服务，供浏览器连接；零界面依赖）
   ├─ Program.cs           启动参数（--port / --data / --token / --new-token）+ 令牌管理
   ├─ Http.cs / Server.cs  手写 HTTP/1.1 解析 + 路由（/api/* /data/ /web/ /ui/）
@@ -205,27 +210,37 @@ dotnet publish -c Release -r win-x64 --self-contained true
 dotnet publish src\DeepSleepCore\DeepSleepCore.csproj -c Release -f net10.0-windows10.0.19041.0 -o src\DeepSleepCore\dist\core
 ```
 
-内核同时支持 **Linux / macOS**（同一个内核源码，多目标编译）：
+### 跨平台桌面版（Linux / macOS）
+
+Linux 与 macOS 用的是 **`src/DeepSleepDesktop`**：外壳照 Windows 桌面版（`src\MainWindow.xaml.cs`）改，
+只把窗口后端换成 Photino（Linux = WebKitGTK，macOS = WKWebView），界面还是 `ui/` 那一套 HTML，
+内核还是 `src/Deepsleep.Core` —— 所以桌面版有的功能它一个不少（工具、文件、命令、记忆、技能、
+网络搜索 + 深度研究、Agent 集群、桌宠、超级连接、超远程提问），**不是「内核版套个窗口」**。
 
 ```bash
-# 在本机（Linux / macOS）上直接跑：
-dotnet publish src/DeepSleepCore/DeepSleepCore.csproj -c Release -f net10.0 -r linux-x64 --self-contained true -o dist/core-linux-x64
-./dist/core-linux-x64/deepsleep-core            # 直接开桌面窗口；服务器加 --headless 再用浏览器访问
-
-# 也可以交叉编译（Windows 上出 Linux / macOS 的包）：
+# 交叉编译（Windows 上也能出 Linux / macOS 的包）：
+dotnet publish src/DeepSleepDesktop/DeepSleepDesktop.csproj -c Release -r linux-x64 --self-contained true -o dist/desktop-linux-x64
 #   -r linux-x64 / linux-arm64 / osx-x64 / osx-arm64 任选
+./dist/desktop-linux-x64/deepsleep.sh              # 直接开原生桌面窗口
+./dist/desktop-linux-x64/deepsleep.sh --headless   # 只跑内核服务：浏览器打开 http://127.0.0.1:8756/web/core/
 ```
 
-Linux / macOS 上运行 `deepsleep-core`（或 `./deepsleep.sh`）会直接开一个**原生桌面窗口**：窗口用 Photino 包了系统 WebView
-（Linux 是 WebKitGTK，macOS 是 WKWebView），加载的就是内核自带的同一套 HTML 界面，双击即用、和 Windows 端长得一样。
-没有桌面环境的机器（服务器 / SSH）加 `--headless` 就只跑服务，用浏览器访问 `http://127.0.0.1:8756/`；
-Linux 桌面需要 WebKitGTK（Debian/Ubuntu：`sudo apt install libwebkit2gtk-4.1-0`），缺了会自动退回浏览器模式。
-数据目录默认在 `$XDG_DATA_HOME/deepsleep`（macOS 是 `~/Library/Application Support/deepsleep`），
-命令行壳改用 `bash`，沙箱黑名单与系统目录用 Unix 那套；Windows 的行为与以前逐字一致。
-内核在 Unix 上也能自更新（OTA 会挑本平台的 `.tar.gz` 包，解包覆盖后自动重启）。
+- 安装包：Linux 出 `.deb`（Debian / Ubuntu）与 `.rpm`（Fedora / RHEL / openSUSE），macOS 出 `.dmg`。
+  deb / rpm 的格式是**手写**的（`release\tools\mk-linux-pkgs.py`，本机没有 dpkg-deb / rpmbuild），
+  写完会自己再解析一遍自检：头里的文件表、cpio 顺序、摘要、大小全对上才算过。
+- `.dmg` 只能在 macOS 上生成（hdiutil / codesign），所以交给 `.github/workflows/macos-dmg.yml`
+  在 GitHub 的 `macos-14` runner 上跑：下载 Release 里的 `osx-*.tar.gz` → 拼成 `deepsleep.app`
+  （带 Info.plist 与 .icns）→ ad-hoc 签名 → `hdiutil` 压成 `.dmg` → 传回同一个 Release。
+  `发布.cmd` 发完版会自动触发它，也可以在 Actions 页面手动 Run。
+- Linux 桌面需要系统自带 WebKitGTK：Debian / Ubuntu `sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0`，
+  Fedora / RHEL `sudo dnf install webkit2gtk4.1`（`.deb` 已把 Debian 侧的依赖写进 Depends）。
+- macOS 的 `.dmg` 是临时签名（没有 Apple 开发者证书），第一次打开要右键 →「打开」。
+- 数据目录默认在 `$XDG_DATA_HOME/deepsleep`（macOS 是 `~/Library/Application Support/deepsleep`）。
+- Unix 上的 OTA 仍然挑本平台的 `.tar.gz`（`.deb` / `.rpm` / `.dmg` 只用于首次安装）。
 
-发版由维护脚本一体化完成：改版本号 → 编译 → 打包（安装版 / 便携版 / 内核版）→ 生成 update.json →
-推送 GitHub + Gitee Release、源码与官网（`release\tools\publish-via-api.py` / `publish-gitee.py`，需自备令牌）。
+发版由维护脚本一体化完成：改版本号 → 编译 → 打包（安装版 / 便携版 / 内核版 / deb / rpm）→ 生成 update.json →
+推送 GitHub + Gitee Release、源码与官网（`release\tools\publish-via-api.py` / `publish-gitee.py`，需自备令牌）→
+自动触发 macOS `.dmg` 构建。
 
 ---
 

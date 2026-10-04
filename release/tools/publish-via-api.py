@@ -86,11 +86,12 @@ def source_files():
         p = os.path.join(ROOT, rel)
         if os.path.isfile(p):
             out[rel] = p
-    for top in ("src", "ui", "installer", "release", "web", "superlink"):
+    for top in ("src", "ui", "installer", "release", "web", "superlink", ".github"):
         for dirpath, dirnames, filenames in os.walk(os.path.join(ROOT, top)):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
             for fn in filenames:
-                if fn in SKIP_NAMES or os.path.splitext(fn)[1].lower() in (".zip", ".exe", ".pdb", ".dll", ".gz", ".tar"):
+                if fn in SKIP_NAMES or os.path.splitext(fn)[1].lower() in (".zip", ".exe", ".pdb", ".dll", ".gz", ".tar",
+                                                                             ".deb", ".rpm", ".dmg"):
                     continue
                 full = os.path.join(dirpath, fn)
                 out[os.path.relpath(full, ROOT).replace("\\", "/")] = full
@@ -107,6 +108,13 @@ def assets_for(version):
              os.path.join(ROOT, "release", "deepsleep-core-%s-win-x64.zip" % version)]
     for rid in UNIX_RIDS:
         cands.append(os.path.join(ROOT, "release", "deepsleep-%s-%s.tar.gz" % (version, rid)))
+    # Linux 安装包（debian / redhat）与 macOS 磁盘映像：整包一起推，和 Windows 三个产物走同一套上传
+    cands += [os.path.join(ROOT, "release", "deepsleep_%s_amd64.deb" % version),
+              os.path.join(ROOT, "release", "deepsleep_%s_arm64.deb" % version),
+              os.path.join(ROOT, "release", "deepsleep-%s-1.x86_64.rpm" % version),
+              os.path.join(ROOT, "release", "deepsleep-%s-1.aarch64.rpm" % version),
+              os.path.join(ROOT, "release", "deepsleep-%s-osx-arm64.dmg" % version),
+              os.path.join(ROOT, "release", "deepsleep-%s-osx-x64.dmg" % version)]
     return [p for p in cands if os.path.isfile(p)]
 
 

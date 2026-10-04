@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text;
 using TrollWrangler.Core;
 
@@ -79,26 +79,10 @@ internal static partial class Program
             return 0;
         }
 
-#if !WINDOWS
-        // Linux / macOS：默认开一个原生窗口（内嵌内核自带的网页端），像正常桌面应用一样双击即用。
-        // 想只要服务不要窗口：加 --headless（服务器 / SSH 场景）；CMD 模式本来就不开窗。
+        // 内核版就是「服务 + CMD」：桌面窗口由桌面版（Windows = deepsleep.exe；
+        // Linux / macOS = deepsleep 桌面版）负责，内核自己不开窗，服务器 / SSH 上也一样用。
         if (!args.Contains("--headless"))
-        {
-            string guiUrl = "http://127.0.0.1:" + _port + "/web/core/index.html?p=" + _port +
-                            "&t=" + Uri.EscapeDataString(_token);
-            if (Gui.TryRun(guiUrl, "deepsleep · " + _dataDir))
-            {
-                CoreServer.Stop();
-                try { _kernel.Shutdown(); } catch { }
-                return 0;
-            }
-            // 窗口起不来（缺 WebKitGTK 之类）：退回纯网页模式，服务照跑，用系统浏览器打开
-            Console.WriteLine("  已退回纯网页模式：浏览器打开 http://127.0.0.1:" + _port + "/ 即可。");
-            try { TrollWrangler.Platform.OpenWithShell("http://127.0.0.1:" + _port + "/", false); } catch { }
-            System.Threading.Thread.Sleep(System.Threading.Timeout.Infinite);
-            return 0;
-        }
-#endif
+            Console.WriteLine("  浏览器打开上面的网址就能用（桌面窗口请用桌面版；这里是内核版）。");
         System.Threading.Thread.Sleep(System.Threading.Timeout.Infinite);
         return 0;
     }
@@ -144,9 +128,9 @@ internal static partial class Program
         Console.WriteLine("  退出 Ctrl+C ｜ 换端口 --port 8757 ｜ 换令牌 --new-token ｜ 换数据目录 --data 路径");
 #if !WINDOWS
         if (args.Contains("--headless"))
-            Console.WriteLine("  无窗口模式  只跑服务（--headless），用上面的网址在浏览器里打开");
+            Console.WriteLine("  只跑服务    内核版不开桌面窗口，用上面的网址在浏览器里打开");
         else
-            Console.WriteLine("  桌面窗口    已打开（关闭窗口即退出）；服务器 / SSH 请加 --headless");
+            Console.WriteLine("  桌面窗口    请用桌面版（Windows 的 deepsleep.exe / Linux · macOS 的 deepsleep）");
 #endif
         if (_cliMode)
         {
