@@ -33,8 +33,12 @@ public sealed class AppConfig
     public string CounterModel { get; set; } = "glm-4-flash-250414";
     public bool UseOllama { get; set; } = false;
     public string Theme { get; set; } = "light";
-    /// <summary>OTA 更新清单地址（返回 {"version":"1.0.1","url":"...","sha256":"...","notes":"..."}）。</summary>
-    public string UpdateUrl { get; set; } = "";
+    /// <summary>
+    /// OTA 更新源：owner/repo（GitHub / Gitee 同名仓库）或 update.json 直链。
+    /// 必须给默认值 —— Linux / macOS 的安装包里没有预置 config.json，首启 UpdateUrl 为空的话
+    /// AutoCheckUpdateAsync 第一行就 return，等于这台机器永远收不到更新（Linux 版没有 OTA 的根因）。
+    /// </summary>
+    public string UpdateUrl { get; set; } = "zhdezs/deepsleep";
     /// <summary>启动时自动检查更新。</summary>
     public bool AutoCheckUpdate { get; set; } = true;
     /// <summary>
@@ -92,7 +96,8 @@ public sealed class AppConfig
                 if ((root.TryGetProperty("apiThinking", out var at) || root.TryGetProperty("ApiThinking", out at)))
                     cfg.ApiThinking = at.ValueKind == JsonValueKind.True;
                 if ((v = GetStr(root, "reasoningEffort", "ReasoningEffort")) != null) cfg.ReasoningEffort = v;
-                if ((v = GetStr(root, "updateUrl", "UpdateUrl")) != null) cfg.UpdateUrl = v;
+                // 空值不覆盖默认更新源（老配置里可能是 "UpdateUrl": ""，会把默认值写没）
+                if ((v = GetStr(root, "updateUrl", "UpdateUrl")) != null && v.Trim().Length > 0) cfg.UpdateUrl = v;
                 if ((root.TryGetProperty("autoCheckUpdate", out var acu) || root.TryGetProperty("AutoCheckUpdate", out acu)))
                     cfg.AutoCheckUpdate = acu.ValueKind != JsonValueKind.False;
                 if ((v = GetStr(root, "ollamaModel", "OllamaModel")) != null) cfg.OllamaModel = v;

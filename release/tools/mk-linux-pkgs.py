@@ -14,7 +14,7 @@ r"""deepsleep Linux 安装包打包器：把发布目录打成 .deb（Debian / U
 写完会把自己产出的包**重新解析一遍**自检（verify_* 段），头里的文件表、cpio 顺序、摘要、大小全都对得上才算过。
 
 用法（一般由 publish.py 调）：
-  python mk-linux-pkgs.py --src <发布目录> --out <输出目录> --version 3.0.2 --arch x64 --icon <ico>
+  python mk-linux-pkgs.py --src <发布目录> --out <输出目录> --version 3.0.3 --arch x64 --icon <ico>
 """
 import argparse
 import gzip
@@ -157,6 +157,12 @@ LAUNCH_SH = """#!/usr/bin/env bash
 # deepsleep 桌面版（Linux）启动脚本；加 --headless 即内核模式（只跑服务，用浏览器连）
 # 双击或在终端执行：./deepsleep.sh           默认打开原生桌面窗口
 # 服务器 / SSH 用：./deepsleep.sh --headless  （只跑内核服务，浏览器打开 http://127.0.0.1:8756/web/core/）
+# 系统装在 /opt/deepsleep（root 所有）写不进去，OTA 的新版本落在用户目录，这里优先拉起它
+_USER_APP="${XDG_DATA_HOME:-$HOME/.local/share}/deepsleep/app"
+if [ -x "$_USER_APP/deepsleep" ]; then
+  cd "$_USER_APP" || exit 1
+  exec ./deepsleep "$@"
+fi
 cd "$(dirname "$0")" || exit 1
 chmod +x ./deepsleep 2>/dev/null
 exec ./deepsleep "$@"

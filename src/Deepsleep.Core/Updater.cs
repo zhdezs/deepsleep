@@ -550,24 +550,36 @@ public static string NormalizeVersion(string tag)
     return t.Length > 1 && (t[0] == 'v' || t[0] == 'V') ? t[1..] : t;
 }
 
-/// <summary>版本比较（支持 1.0.0 / 1.0.0.0 / v1.0.0 形式）。</summary>
+/// <summary>
+/// 版本比较（支持 1.0.0 / 1.0.0.0 / v1.0.0 / 3.0.3-alpha 形式）。
+/// 数字段逐段比（缺的当 0，所以 3.0.3.1 &gt; 3.0.3）；数字全相同时，正式版排在预发布版前面
+/// （3.0.3 &gt; 3.0.3-alpha）—— 不然按 .alpha 约定装的测试版永远收不到同名正式版的更新。
+/// </summary>
 public static bool IsNewer(string remote, string local)
 {
-    static int[] Parse(string s)
+    static (int[] Nums, string Pre) Parse(string s)
     {
         var nums = new List<int>();
-        foreach (string part in s.TrimStart('v', 'V').Split('.', '-', '+'))
+        string pre = "";
+        foreach (string part in (s ?? "").TrimStart('v', 'V').Split('.', '-', '+'))
         {
             string digits = new string(part.TakeWhile(char.IsDigit).ToArray());
+            if (digits.Length == 0 && part.Length > 0 && pre.Length == 0) pre = part;   // 3.0.3-alpha 里的 alpha
             nums.Add(int.TryParse(digits, out int n) ? n : 0);
         }
-        while (nums.Count < 3) nums.Add(0);
-        return nums.ToArray();
+        return (nums.ToArray(), pre);
     }
-    int[] r = Parse(remote), l = Parse(local);
-    for (int i = 0; i < 3; i++)
-        if (r[i] != l[i]) return r[i] > l[i];
-    return false;
+    var (rn, rp) = Parse(remote);
+    var (ln, lp) = Parse(local);
+    int len = Math.Max(rn.Length, ln.Length);
+    for (int i = 0; i < len; i++)
+    {
+        int r = i < rn.Length ? rn[i] : 0, l = i < ln.Length ? ln[i] : 0;
+        if (r != l) return r > l;
+    }
+    if (rp.Length == 0 && lp.Length > 0) return true;    // 正式版 > 预发布版
+    if (rp.Length > 0 && lp.Length == 0) return false;
+    return string.CompareOrdinal(rp, lp) > 0;
 }
 
 /// <summary>本机平台的更新包文件名（Windows 是 Setup.exe，Unix 是 core 的 tar.gz）。</summary>
@@ -1143,21 +1155,38 @@ public static void ApplyAndRestart(string installerPath, string installDir, stri
 /// </summary>
 private static void ApplyAndRestartUnix(string installerPath, string installDir, string exePath)
 {
+    // Linux：这次更新落在用户级目录（系统装在 /opt 写不进去）时，把用户级启动项也指过去，
+    // 否则菜单 / 终端里的 deepsleep 还是老的 /opt 版本，用户会以为"升级没生效"。
+    if (Platform.IsLinux && string.Equals(installDir, Platform.LinuxAppsDir, StringComparison.Ordinal))
+        WriteLinuxUserLaunchers(installDir);
+
     string script = Path.Combine(DownloadDir, "apply-update.sh");
-    string name = Path.GetFileName(exePath);
+    int pid = Environment.ProcessId;
+    string dataDir = Platform.DefaultDataDir();
+    string logPath = Path.Combine(dataDir, "update.log");
+    // 只等"我们自己"这个 PID 退出。旧代码用 pgrep -f deepsleep —— 脚本路径 /tmp/deepsleep-update/apply-update.sh
+    // 本身就含 "deepsleep"，pgrep 会匹配到自己，15 秒后 pkill -f deepsleep 把脚本自己（连进程）干掉，
+    // 解包和重启都执行不到 —— Linux OTA "什么都没发生" 的元凶之一。
     var sb = new StringBuilder();
     sb.AppendLine("#!/usr/bin/env bash");
     sb.AppendLine("sleep 2");
+    sb.AppendLine("_ds_pid=" + pid);
     sb.AppendLine("_ds_wait=0");
-    sb.AppendLine("while pgrep -f \"" + name + "\" >/dev/null 2>&1; do");
+    sb.AppendLine("while kill -0 \"$_ds_pid\" >/dev/null 2>&1; do");
     sb.AppendLine("  _ds_wait=$((_ds_wait+1))");
-    sb.AppendLine("  if [ $_ds_wait -ge 15 ]; then pkill -f \"" + name + "\" >/dev/null 2>&1; break; fi");
+    sb.AppendLine("  if [ $_ds_wait -ge 20 ]; then kill -9 \"$_ds_pid\" >/dev/null 2>&1; break; fi");
     sb.AppendLine("  sleep 1");
     sb.AppendLine("done");
-    sb.AppendLine("mkdir -p '" + installDir + "'");
-    sb.AppendLine("tar -xzf '" + installerPath + "' -C '" + installDir + "' >/dev/null 2>&1");
-    sb.AppendLine("chmod +x '" + exePath + "' >/dev/null 2>&1");
-    sb.AppendLine("nohup '" + exePath + "' >/dev/null 2>&1 &");
+    sb.AppendLine("mkdir -p '" + installDir + "' >/dev/null 2>&1");
+    sb.AppendLine("mkdir -p '" + dataDir + "' >/dev/null 2>&1");
+    sb.AppendLine("_ds_log='" + logPath + "'");
+    sb.AppendLine("echo \"[$(date)] OTA: 解包到 " + installDir + "\" >> \"$_ds_log\" 2>&1");
+    sb.AppendLine("tar -xzf '" + installerPath + "' -C '" + installDir + "' >> \"$_ds_log\" 2>&1");
+    sb.AppendLine("chmod +x '" + exePath + "' >> \"$_ds_log\" 2>&1");
+    sb.AppendLine("_ds_launch='" + exePath + "'");
+    sb.AppendLine("if [ ! -x \"$_ds_launch\" ]; then _ds_launch='" + installDir + "/deepsleep.sh'; fi");
+    sb.AppendLine("echo \"[$(date)] OTA: 启动 $_ds_launch\" >> \"$_ds_log\" 2>&1");
+    sb.AppendLine("if [ -x \"$_ds_launch\" ]; then nohup \"$_ds_launch\" >/dev/null 2>&1 & fi");
     sb.AppendLine("rm -f -- \"$0\"");
     File.WriteAllText(script, sb.ToString(), new UTF8Encoding(false));
     try
@@ -1173,6 +1202,53 @@ private static void ApplyAndRestartUnix(string installerPath, string installDir,
         UseShellExecute = false,
         CreateNoWindow = true,
     });
+}
+
+/// <summary>
+/// Linux：把用户级启动项（~/.local/share/applications/deepsleep.desktop、~/.local/bin/deepsleep）
+/// 指向用户级自更新目录。系统安装在 /opt（root 所有）时 OTA 只能写用户目录，不重指启动项的话
+/// 菜单里点开的仍是老版本。用户级 .desktop 在 XDG_DATA_DIRS 里排在 /usr/share 前面，
+/// 同名会覆盖系统那份，全程不需要 root。
+/// </summary>
+private static void WriteLinuxUserLaunchers(string appsDir)
+{
+    try
+    {
+        string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        string launch = Path.Combine(appsDir, "deepsleep.sh");
+
+        string apps = Path.Combine(home, ".local", "share", "applications");
+        Directory.CreateDirectory(apps);
+        var desktop = new StringBuilder();
+        desktop.AppendLine("[Desktop Entry]");
+        desktop.AppendLine("Type=Application");
+        desktop.AppendLine("Name=deepsleep");
+        desktop.AppendLine("Name[zh_CN]=deepsleep");
+        desktop.AppendLine("GenericName=AI assistant");
+        desktop.AppendLine("Comment=Cross-platform AI assistant that can edit files, run commands and search the web");
+        desktop.AppendLine("Comment[zh_CN]=能读写文件、跑命令、搜网络、做深度研究的跨平台 AI 助手");
+        desktop.AppendLine("Exec=" + launch + " %U");
+        desktop.AppendLine("Icon=deepsleep");
+        desktop.AppendLine("Terminal=false");
+        desktop.AppendLine("Categories=Utility;Development;");
+        desktop.AppendLine("Keywords=AI;assistant;agent;");
+        desktop.AppendLine("StartupWMClass=deepsleep");
+        File.WriteAllText(Path.Combine(apps, "deepsleep.desktop"), desktop.ToString(), new UTF8Encoding(false));
+
+        // ~/.local/bin/deepsleep：终端里敲 deepsleep 也走新版本（Debian 默认 PATH 含 ~/.local/bin）
+        string bin = Path.Combine(home, ".local", "bin");
+        Directory.CreateDirectory(bin);
+        string shim = "#!/bin/sh\n# deepsleep: 优先启动用户级自更新版本\nexec \"" + launch + "\" \"$@\"\n";
+        string shimPath = Path.Combine(bin, "deepsleep");
+        File.WriteAllText(shimPath, shim, new UTF8Encoding(false));
+        try
+        {
+            File.SetUnixFileMode(shimPath,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+        catch { }
+    }
+    catch { }
 }
 
 /// <summary>

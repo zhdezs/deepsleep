@@ -53,6 +53,39 @@ public static class Platform
     /// <summary>宿主可执行文件名（Windows 是 deepsleep.exe，Unix 是 deepsleep-core）。</summary>
     public static string HostExeName => IsWindows ? "deepsleep.exe" : "deepsleep-core";
 
+    /// <summary>
+    /// Linux 用户级自更新目录（不需要 root）：$XDG_DATA_HOME/deepsleep/app 或 ~/.local/share/deepsleep/app。
+    /// deb / rpm 把程序装到 /opt/deepsleep（root 所有），普通用户写不进去 —— OTA 只能落到这里，
+    /// 再由 deepsleep.sh / 用户级 .desktop 优先拉起这份新版本，全程静默、不用输密码。
+    /// </summary>
+    public static string LinuxAppsDir
+    {
+        get
+        {
+            string xdg = Environment.GetEnvironmentVariable("XDG_DATA_HOME") ?? "";
+            if (string.IsNullOrWhiteSpace(xdg))
+            {
+                string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                xdg = Path.Combine(home, ".local", "share");
+            }
+            return Path.Combine(xdg, "deepsleep", "app");
+        }
+    }
+
+    /// <summary>目录能不能写（不存在就试着建）。OTA 靠它决定是就地覆盖还是退到用户级目录。</summary>
+    public static bool CanWriteDir(string dir)
+    {
+        try
+        {
+            Directory.CreateDirectory(dir);
+            string probe = Path.Combine(dir, ".ds-write-probe-" + Guid.NewGuid().ToString("N"));
+            File.WriteAllText(probe, "");
+            File.Delete(probe);
+            return true;
+        }
+        catch { return false; }
+    }
+
     // ------------------------------------------------------------------
     // 命令执行
     // ------------------------------------------------------------------

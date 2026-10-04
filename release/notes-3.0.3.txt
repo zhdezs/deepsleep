@@ -1,0 +1,8 @@
+3.0.3：Linux 版 OTA 真正打通（之前完全没在工作）+ 版本比较修正。
+
+① Linux 版以前根本没有 OTA：安装包里没有预置 config.json（只有 Windows 安装程序带模板），首启更新源为空，自动检查更新的第一行就直接返回，等于永远不查更新。现在更新源有默认值，老配置里的空值也会被顶回默认。
+② 就算检查到新版本也装不上：deb / rpm 把程序装在 /opt/deepsleep（root 所有），普通用户就地覆盖必然 permission denied；而且升级脚本用 pgrep -f deepsleep 等旧进程退出时会匹配到脚本自己（脚本路径里就含 deepsleep），15 秒后把自己一起 kill 掉，解包和重启都执行不到。现在 Linux 自更新先探测安装目录能不能写：写不进去就静默落到用户目录 ~/.local/share/deepsleep/app（不需要 root、不用输密码），并写好用户级启动项（~/.local/share/applications/deepsleep.desktop + ~/.local/bin/deepsleep），菜单和终端里拉起的都是新版本；启动脚本也优先拉起用户目录的这份。整个过程写 data/update.log，失败有据可查。
+③ 版本比较修正：原来只比前 3 段数字，3.0.3-alpha 和 3.0.3 被判为同级 —— 按 .alpha 约定装的测试版永远收不到同名正式版更新。现在正式版排在预发布版前面（3.0.3 > 3.0.3-alpha）。
+④ Windows 的安装流程没改（就地覆盖、静默安装照旧），其余与 3.0.2 一致：超级连接（6 位配对码 · 点对点直连 · 内置远程桌面）、超远程提问（--tunnel + 手机配对链接 + 令牌防暴破）、CMD 模式、Agent 集群名片、长期记忆、技能、网络搜索 + 深度研究、AGENT.md 初始提示词、命令与文件合并成可展开卡片、思考折叠、截断自动续写、Gitee 线路加速、跨平台桌面版三件套（Linux deb/rpm、macOS dmg、免安装 tar.gz）。
+
+⚠️ 过渡说明：已经用 deb / rpm 装在 /opt 的 3.0.2 没法自己 OTA 到 3.0.3（3.0.2 里跑的是旧升级代码），需要手动装一次 3.0.3 的安装包；之后 Linux OTA 全程可用。

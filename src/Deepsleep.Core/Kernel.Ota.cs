@@ -118,8 +118,18 @@ public sealed partial class Kernel
             // 下载刚好结束时用户按了取消：别再往下装
             cts.Token.ThrowIfCancellationRequested();
             Emit(new { ev = "updateStatus", text = "下载完成，正在启动升级程序…", done = false });
-            string exePath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, Platform.HostExeName);
-            string installDir = Path.GetDirectoryName(exePath) ?? AppContext.BaseDirectory;
+            string curExe = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, Platform.HostExeName);
+            string curDir = Path.GetDirectoryName(curExe) ?? AppContext.BaseDirectory;
+            string installDir = curDir, exePath = curExe;
+            // Linux 的 deb / rpm 装在 /opt/deepsleep（root 所有），普通用户写不进去 —— 就地覆盖必然 permission denied。
+            // 这时把新版本解到用户级目录（~/.local/share/deepsleep/app），再由启动脚本 / 用户级桌面项优先拉起它。
+            if (Platform.IsLinux && !Platform.CanWriteDir(curDir))
+            {
+                installDir = Platform.LinuxAppsDir;
+                Directory.CreateDirectory(installDir);
+                exePath = Path.Combine(installDir, "deepsleep");
+                Emit(new { ev = "updateStatus", text = "正在更新到用户目录（无需管理员权限）…", done = false });
+            }
             Updater.ApplyAndRestart(installer, installDir, exePath);
             Emit(new { ev = "restarting" });
         }
