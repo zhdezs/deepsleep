@@ -36,10 +36,12 @@
   <span id="who"></span>
   <span class="grow"></span>
   <select id="quality">
-    <option value="1280">标准 1280</option>
+    <option value="960" selected>标准 960</option>
+    <option value="640">省流 640</option>
+    <option value="480">极省流 480</option>
+    <option value="1280">清晰 1280</option>
     <option value="1600">清晰 1600</option>
     <option value="1920">原画 1920</option>
-    <option value="960">省流 960</option>
   </select>
   <select id="fps">
     <option value="8">8 帧</option>
@@ -64,8 +66,14 @@
     var m = location.hash.match(/[#&?]t=([^&]+)/);
     if (m) token = decodeURIComponent(m[1]);
   }
+  // 兜底：隧道商的浏览器警告页 / 聊天软件转发可能会吃掉查询串，那就用上次这个域名下记住的令牌。
+  var LSKEY = 'ds.rd.token.' + location.host;
+  try {
+    if (token) localStorage.setItem(LSKEY, token);
+    else token = localStorage.getItem(LSKEY) || '';
+  } catch (e) { }
   var img = $('#screen'), stage = $('#stage'), stat = $('#stat');
-  var w = 1280, fps = 8, sent = 0, moved = 0;
+  var w = 960, fps = 8, sent = 0, moved = 0;
 
   if (!token) {
     document.body.innerHTML = '<div style="padding:40px;color:#f2f2f7;font-size:15px">' +

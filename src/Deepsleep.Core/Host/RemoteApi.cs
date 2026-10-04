@@ -53,13 +53,23 @@ public static partial class CoreServer
         await res.StartStreamAsync("multipart/x-mixed-replace; boundary=dsframe");
         try
         {
+            byte[] last = Array.Empty<byte>();
+            var lastSent = DateTime.UtcNow;
             while (true)
             {
                 byte[] png = RemoteDesktop.CapturePng(w, out _, out _);
                 if (png.Length == 0) break;
-                await res.ChunkAsync(Encoding.ASCII.GetBytes(
-                    "\r\n--dsframe\r\nContent-Type: image/png\r\nContent-Length: " + png.Length + "\r\n\r\n"));
-                await res.ChunkAsync(png);
+                // 画面没变就不重复发（隧道带宽很小，静止时省下来的全是响应速度）；
+                // 但最多 10 秒补发一次，免得长时间没数据被中间设备判成死连接。
+                bool changed = !png.AsSpan().SequenceEqual(last);
+                if (changed || (DateTime.UtcNow - lastSent).TotalSeconds >= 10)
+                {
+                    await res.ChunkAsync(Encoding.ASCII.GetBytes(
+                        "\r\n--dsframe\r\nContent-Type: image/png\r\nContent-Length: " + png.Length + "\r\n\r\n"));
+                    await res.ChunkAsync(png);
+                    last = png;
+                    lastSent = DateTime.UtcNow;
+                }
                 await Task.Delay(1000 / fps);
             }
         }

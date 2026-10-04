@@ -7,8 +7,8 @@ namespace TrollWrangler.CoreHost;
 /// 超级连接：一串 6 位配对码，把两台设备的 deepsleep 连起来，连上就能用远程桌面。
 ///
 /// 被控端（host）：生成配对码 + 一个一次性令牌 → 临时监听网卡并把地址发到信令通道
-///                → 对方先试局域网直连（真点对点）；同网不通才开一条临时隧道给它连
-///                → 直连成功立刻关掉隧道，保持点对点。
+///                → 对方先试局域网直连（真点对点）；同时手写一条内置隧道（系统自带 ssh，
+///                  零下载）热着备用 → 直连成功立刻关掉隧道，保持点对点。
 /// 控制端（client）：输入配对码 → 从信令通道拿到地址 → 直连优先，隧道兜底 → 连上后打开远程桌面。
 ///
 /// 信令只传几 KB 的握手消息（ntfy.sh），连上之后数据都在两台设备之间，不经过第三方。
@@ -63,6 +63,8 @@ public static class SuperLink
         CoreServer.Rebind(IPAddress.Any);        // 要能在局域网里被连到
         _cts = new CancellationTokenSource();    // 自己管生命周期，别让 5 分钟把已连上的会话掐了
         var ct = _cts.Token;
+        try { CoreServer.TunnelReady -= OnTunnelReady; } catch { }
+        CoreServer.TunnelReady += OnTunnelReady; // 配对期间一直盯着：隧道重建后把新地址再发一遍
         _ = Task.Run(() => HostLoop(ct), ct);
         _ = Task.Run(async () =>                  // 5 分钟内没人来就自动作废（配对码别一直有效）
         {
@@ -107,6 +109,7 @@ public static class SuperLink
                     Message = "对方（" + (PeerName.Length > 0 ? PeerName : "另一台设备") + "）正在连你…";
                     Raise();
                     _ = PublishOffer(State == "connected" ? TunnelUrl : "", ct);
+                    if (State != "connected") EnsureTunnel(ct);   // 先把内置隧道热起来
                     break;
                 case "no-lan":
                     EnsureTunnel(ct);
@@ -119,11 +122,11 @@ public static class SuperLink
                     {
                         CoreServer.StopTunnel();
                         _tunnelWanted = false;
-                        Message = "对方已直连（点对点），临时通道已关闭。";
+                        Message = "对方已直连（点对点），内置隧道已关闭。";
                     }
                     else
                     {
-                        Message = "对方已通过临时加密通道连上（外网时走这条）。";
+                        Message = "对方已通过内置隧道连上（外网时走这条）。";
                     }
                     Raise();
                     break;
@@ -140,7 +143,7 @@ public static class SuperLink
         if (_tunnelWanted) return;
         _tunnelWanted = true;
         State = "connecting";
-        Message = "同网没连上，正在开一条临时加密通道（第一次要下组件，慢一点）…";
+        Message = "同网没连上，正在开一条内置隧道（不用下载组件，约 10-40 秒）…";
         Raise();
         CoreServer.TunnelReady += OnTunnelReady;
         _ = Task.Run(() => { try { CoreServer.StartTunnel(true, null, null); } catch { } });
@@ -148,12 +151,15 @@ public static class SuperLink
 
     private static void OnTunnelReady()
     {
-        try { CoreServer.TunnelReady -= OnTunnelReady; } catch { }
         TunnelUrl = CoreServer.TunnelUrl;
+        if (TunnelUrl.Length == 0) return;
         var ct = _cts?.Token ?? CancellationToken.None;
-        _ = PublishOffer(TunnelUrl, ct);
-        State = "waiting";
-        Message = "临时通道已就绪，等对方连上来…";
+        _ = PublishOffer(TunnelUrl, ct);        // 新地址立刻发出去（隧道重建后对端也能拿到）
+        if (State is "connecting" or "waiting")
+        {
+            State = "waiting";
+            Message = "内置隧道已就绪，等对方连上来…";
+        }
         Raise();
     }
 
@@ -307,7 +313,7 @@ public static class SuperLink
 
         // 2) 同网不通 → 请对方开临时隧道
         State = "connecting";
-        Message = "同一网络里没找到，正在让对方开一条临时加密通道（第一次可能要等半分钟）…";
+        Message = "同一网络里没找到，正在让对方开一条内置隧道（不用下组件，约 10-40 秒）…";
         Raise();
         await Signal.PublishAsync(topic, JsonSerializer.Serialize(new
         {
@@ -318,7 +324,7 @@ public static class SuperLink
         {
             Offer? cand;
             lock (gate) cand = offers.LastOrDefault(o => o.Tunnel.Length > 0);
-            if (cand != null && await PingOk(cand.Tunnel, cand.Token))
+            if (cand != null && await PingOk(cand.Tunnel, cand.Token, 15000))
             {
                 PeerName = cand.Name;
                 RemoteToken = cand.Token;
@@ -326,7 +332,7 @@ public static class SuperLink
                 TunnelUrl = cand.Tunnel;
                 P2P = false;
                 State = "connected";
-                Message = "已通过临时加密通道连上（对方在别的网络）。";
+                Message = "已通过内置隧道连上（对方在别的网络）。";
                 Raise();
                 await Signal.PublishAsync(topic, JsonSerializer.Serialize(new
                 {
@@ -412,11 +418,11 @@ public static class SuperLink
 
     private static void Raise() { try { Changed?.Invoke(); } catch { } }
 
-    private static async Task<bool> PingOk(string baseUrl, string token)
+    private static async Task<bool> PingOk(string baseUrl, string token, int timeoutMs = 1500)
     {
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromMilliseconds(1500) };
+            using var http = new HttpClient { Timeout = TimeSpan.FromMilliseconds(timeoutMs) };
             string url = baseUrl.TrimEnd('/') + "/api/ping?t=" + Uri.EscapeDataString(token);
             string s = await http.GetStringAsync(url);
             return s.Contains("\"ok\":true", StringComparison.Ordinal);

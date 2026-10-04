@@ -41,13 +41,29 @@ def api(method, url, body=None):
     if TOKEN:
         headers["Authorization"] = "Bearer " + TOKEN
     data = json.dumps(body).encode("utf-8") if body is not None else None
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    try:
-        with urllib.request.urlopen(req, timeout=300) as r:
-            payload = r.read()
-            return r.status, (json.loads(payload) if payload else None)
-    except urllib.error.HTTPError as e:
-        return e.code, e.read().decode("utf-8", "replace")
+    # 跨境链路偶尔整段连不上（WinError 10060 / 连接被重置），重试几次再判失败。
+    last = (0, "未发起")
+    for attempt in range(4):
+        req = urllib.request.Request(url, data=data, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=300) as r:
+                payload = r.read()
+                return r.status, (json.loads(payload) if payload else None)
+        except urllib.error.HTTPError as e:
+            code, text = e.code, e.read().decode("utf-8", "replace")
+            if code >= 500 and attempt < 3:
+                last = (code, text)
+                print("  GitHub 接口 %s %s（HTTP %s），%d 秒后重试" % (method, url.split("?")[0], code, 4 * (attempt + 1)))
+                time.sleep(4 * (attempt + 1))
+                continue
+            return code, text
+        except Exception as e:
+            last = (0, "网络错误：" + repr(e))
+            if attempt < 3:
+                print("  GitHub 接口 %s %s 连不上（%s），%d 秒后重试" % (method, url.split("?")[0], e, 4 * (attempt + 1)))
+                time.sleep(4 * (attempt + 1))
+                continue
+    return last
 
 
 def sha256(path):
@@ -81,7 +97,7 @@ def source_files():
     return out
 
 
-# 跨平台内核包（Linux / macOS）：整包一起推，和 Windows 三个产物走同一套上传
+# 跨平台桌面版包（Linux / macOS，同一个包 --headless 即内核版）：整包一起推，和 Windows 三个产物走同一套上传
 UNIX_RIDS = ["linux-x64", "linux-arm64", "osx-arm64", "osx-x64"]
 
 
@@ -90,7 +106,7 @@ def assets_for(version):
              os.path.join(ROOT, "release", "deepsleep-%s-win-x64.zip" % version),
              os.path.join(ROOT, "release", "deepsleep-core-%s-win-x64.zip" % version)]
     for rid in UNIX_RIDS:
-        cands.append(os.path.join(ROOT, "release", "deepsleep-core-%s-%s.tar.gz" % (version, rid)))
+        cands.append(os.path.join(ROOT, "release", "deepsleep-%s-%s.tar.gz" % (version, rid)))
     return [p for p in cands if os.path.isfile(p)]
 
 
@@ -113,33 +129,52 @@ def upload_asset(rel, path):
                 api("DELETE", "%s/repos/%s/releases/assets/%d" % (API, REPO, a["id"]))
 
     url = "/repos/%s/releases/%d/assets?name=%s" % (REPO, rel["id"], urllib.parse.quote(name))
-    conn = http.client.HTTPSConnection("uploads.github.com", timeout=1800,
-                                       context=ssl.create_default_context())
-    conn.putrequest("POST", url)
-    conn.putheader("Authorization", "Bearer " + TOKEN)
-    conn.putheader("User-Agent", "deepsleep-publish")
-    conn.putheader("Accept", "application/vnd.github+json")
-    conn.putheader("Content-Type", "application/octet-stream")
-    conn.putheader("Content-Length", str(size))
-    conn.endheaders()
-    sent, started, last = 0, time.time(), 0.0
-    with open(path, "rb") as f:
-        while True:
-            chunk = f.read(1 << 20)
-            if not chunk:
-                break
-            conn.send(chunk)
-            sent += len(chunk)
-            now = time.time()
-            if now - last > 5:
-                last = now
-                print("    %s %.1f%%  (%.1f/%.1f MB)" % (name, sent * 100.0 / size,
-                                                         sent / 1048576.0, size / 1048576.0))
-    resp = conn.getresponse()
-    body = resp.read().decode("utf-8", "replace")
-    conn.close()
-    if resp.status not in (200, 201):
-        print("上传失败 %s：HTTP %s %s" % (name, resp.status, body[:400]))
+
+    def _send():
+        conn = http.client.HTTPSConnection("uploads.github.com", timeout=1800,
+                                           context=ssl.create_default_context())
+        conn.putrequest("POST", url)
+        conn.putheader("Authorization", "Bearer " + TOKEN)
+        conn.putheader("User-Agent", "deepsleep-publish")
+        conn.putheader("Accept", "application/vnd.github+json")
+        conn.putheader("Content-Type", "application/octet-stream")
+        conn.putheader("Content-Length", str(size))
+        conn.endheaders()
+        sent, started, last = 0, time.time(), 0.0
+        with open(path, "rb") as f:
+            while True:
+                chunk = f.read(1 << 20)
+                if not chunk:
+                    break
+                conn.send(chunk)
+                sent += len(chunk)
+                now = time.time()
+                if now - last > 5:
+                    last = now
+                    print("    %s %.1f%%  (%.1f/%.1f MB)" % (name, sent * 100.0 / size,
+                                                             sent / 1048576.0, size / 1048576.0))
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8", "replace")
+        conn.close()
+        return resp.status, body
+
+    status, body = 0, ""
+    for attempt in range(3):
+        try:
+            status, body = _send()
+            if status not in (200, 201) and status >= 500 and attempt < 2:
+                print("  上传 %s 返回 HTTP %s，%d 秒后重试" % (name, status, 6 * (attempt + 1)))
+                time.sleep(6 * (attempt + 1))
+                continue
+            break
+        except Exception as e:
+            print("  上传 %s 第 %d 次中断：%s" % (name, attempt + 1, e))
+            if attempt == 2:
+                print("上传失败 %s：网络一直不通" % name)
+                return False
+            time.sleep(6 * (attempt + 1))
+    if status not in (200, 201):
+        print("上传失败 %s：HTTP %s %s" % (name, status, body[:400]))
         return False
     res = json.loads(body)
     local = sha256(path)

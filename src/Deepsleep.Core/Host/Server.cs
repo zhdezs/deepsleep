@@ -27,6 +27,13 @@ public static partial class CoreServer
         if (path.Length == 0) path = "/";
 
         if (path == "/api/ping") { await res.SendJsonAsync(PingJson(TokenOk(req))); return; }
+        // 隧道测速用（超级连接 / --tunnel 自动挑最快的那条隧道）：固定大小的字节流，方便算 KB/s
+        if (path == "/api/speedtest")
+        {
+            int n = QInt(req, "n", 262144, 4096, 1048576);
+            await res.SendAsync(new byte[n], "application/octet-stream");
+            return;
+        }
         if (path == "/favicon.ico") { await res.SendEmptyAsync(204); return; }
 
         bool needToken = path.StartsWith("/api/") || path.StartsWith("/data/");

@@ -40,7 +40,7 @@ public static partial class CoreServer
   <div class="row"><b>数据目录</b><code>%DATA%</code></div>
 
   <div class="btns">
-    <a class="btn" href="/web/core/?p=%PORT%&t=%TOKEN%">本机 · 内核版网页（操控这台电脑）</a>
+    <a class="btn" href="/web/core/#p=%PORT%&t=%TOKEN%">本机 · 内核版网页（操控这台电脑）</a>
     <a class="btn ghost" href="/web/app/?p=%PORT%&t=%TOKEN%">本机 · 极简网页版</a>
     <button class="btn ghost" id="cp">复制令牌</button>
   </div>

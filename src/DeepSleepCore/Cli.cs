@@ -217,7 +217,7 @@ internal static partial class Program
             case "/rd":
                 CliSlPrint(true);
                 if (SuperLink.State == "connected" && SuperLink.BaseUrl.Length > 0 && SuperLink.RemoteToken.Length > 0)
-                    Console.WriteLine("  远程桌面：" + SuperLink.BaseUrl + "/web/core/rd.html?t=" + SuperLink.RemoteToken);
+                    Console.WriteLine("  远程桌面：" + SuperLink.BaseUrl + "/web/core/rd.html#t=" + SuperLink.RemoteToken);
                 else if (SuperLink.State == "waiting" || SuperLink.State == "connected")
                     Console.WriteLine("  本机被控中：把配对码给对方，对方连上后会自动弹出远程桌面地址。");
                 return true;
@@ -276,7 +276,7 @@ internal static partial class Program
                             if (SuperLink.Role == "host")
                                 Console.WriteLine("  （对方已连上，它那边可以打开远程桌面控制这台电脑）");
                             else if (SuperLink.BaseUrl.Length > 0)
-                                Console.WriteLine("  远程桌面：" + SuperLink.BaseUrl + "/web/core/rd.html?t=" +
+                                Console.WriteLine("  远程桌面：" + SuperLink.BaseUrl + "/web/core/rd.html#t=" +
                                                   SuperLink.RemoteToken);
                         }
                     }
@@ -296,7 +296,7 @@ internal static partial class Program
         if (SuperLink.PeerName.Length > 0) Console.WriteLine("  对方：" + SuperLink.PeerName);
         if (SuperLink.BaseUrl.Length > 0) Console.WriteLine("  对方地址：" + SuperLink.BaseUrl);
         if (SuperLink.State == "connected")
-            Console.WriteLine("  连接方式：" + (SuperLink.P2P ? "点对点直连" : "临时加密通道"));
+            Console.WriteLine("  连接方式：" + (SuperLink.P2P ? "点对点直连" : "内置隧道"));
     }
 
     private static void CliHelp()

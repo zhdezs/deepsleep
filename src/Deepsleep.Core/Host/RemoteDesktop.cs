@@ -173,19 +173,37 @@ public static class RemoteDesktop
                         dh = Math.Max(1, (int)Math.Round(sh * (double)maxWidth / sw));
                     }
                     byte[] rgb = new byte[dw * dh * 3];
-                    for (int y = 0; y < dh; y++)
+                    if (dw == sw)
                     {
-                        int sy = dw == sw ? y : (int)((long)y * sh / dh);
-                        int srow = sy * sw * 4;
-                        int drow = y * dw * 3;
-                        for (int x = 0; x < dw; x++)
+                        for (int y = 0; y < dh; y++)
                         {
-                            int sx = dw == sw ? x : (int)((long)x * sw / dw);
-                            int s = srow + (sx << 2);
-                            int d = drow + x * 3;
-                            rgb[d] = buf[s + 2];
-                            rgb[d + 1] = buf[s + 1];
-                            rgb[d + 2] = buf[s];
+                            int srow = y * sw * 4, drow = y * dw * 3;
+                            for (int x = 0; x < dw; x++)
+                            {
+                                int s = srow + (x << 2), d = drow + x * 3;
+                                rgb[d] = buf[s + 2];
+                                rgb[d + 1] = buf[s + 1];
+                                rgb[d + 2] = buf[s];
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // 抽点采样 + 5 位色量化：色数越少，PNG(deflate) 压得越狠 —— 隧道带宽小，这一步省的是几倍
+                        for (int y = 0; y < dh; y++)
+                        {
+                            int sy = (int)((long)y * sh / dh);
+                            int srow = sy * sw * 4;
+                            int drow = y * dw * 3;
+                            for (int x = 0; x < dw; x++)
+                            {
+                                int sx = (int)((long)x * sw / dw);
+                                int sp = srow + (sx << 2);
+                                int d = drow + x * 3;
+                                rgb[d] = (byte)(buf[sp + 2] & 0xF8);
+                                rgb[d + 1] = (byte)(buf[sp + 1] & 0xF8);
+                                rgb[d + 2] = (byte)(buf[sp] & 0xF8);
+                            }
                         }
                     }
                     outW = dw;

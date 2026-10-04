@@ -76,15 +76,28 @@ def api(method, path, body=None, query=None, raw_body=None, content_type=None):
         headers["Content-Type"] = content_type
     elif data is not None:
         headers["Content-Type"] = "application/json"
-    req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    try:
-        with urllib.request.urlopen(req, timeout=300) as r:
-            payload = r.read()
-            return r.status, (json.loads(payload) if payload.strip() else None)
-    except urllib.error.HTTPError as e:
-        return e.code, e.read().decode("utf-8", "replace")
-    except Exception as e:
-        return "ERR", str(e)
+    last = (0, "未发起")
+    for attempt in range(4):
+        req = urllib.request.Request(url, data=data, headers=headers, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=300) as r:
+                payload = r.read()
+                return r.status, (json.loads(payload) if payload.strip() else None)
+        except urllib.error.HTTPError as e:
+            code, text = e.code, e.read().decode("utf-8", "replace")
+            if code >= 500 and attempt < 3:
+                last = (code, text)
+                print("  Gitee 接口 %s %s（HTTP %s），%d 秒后重试" % (method, path, code, 4 * (attempt + 1)))
+                time.sleep(4 * (attempt + 1))
+                continue
+            return code, text
+        except Exception as e:
+            last = ("ERR", str(e))
+            if attempt < 3:
+                print("  Gitee 接口 %s %s 连不上（%s），%d 秒后重试" % (method, path, e, 4 * (attempt + 1)))
+                time.sleep(4 * (attempt + 1))
+                continue
+    return last
 
 
 def sha256(path):
@@ -164,7 +177,7 @@ def planned_assets(version):
              os.path.join(ROOT, "release", "deepsleep-%s-win-x64.zip" % version),
              os.path.join(ROOT, "release", "deepsleep-core-%s-win-x64.zip" % version)]
     for rid in UNIX_RIDS:
-        cands.append(os.path.join(ROOT, "release", "deepsleep-core-%s-%s.tar.gz" % (version, rid)))
+        cands.append(os.path.join(ROOT, "release", "deepsleep-%s-%s.tar.gz" % (version, rid)))
     plan = []
     for p in cands:
         if os.path.isfile(p):
@@ -268,33 +281,51 @@ def upload_asset(release_id, path, name):
     size = os.path.getsize(path)
     url = "/api/v5/repos/%s/releases/%s/attach_files?%s" % (
         REPO, release_id, urllib.parse.urlencode({"access_token": TOKEN}))
-    conn = http.client.HTTPSConnection(HOST, timeout=1800, context=ssl.create_default_context())
-    conn.putrequest("POST", url)
-    conn.putheader("User-Agent", "deepsleep-publish")
-    conn.putheader("Content-Type", "multipart/form-data; boundary=%s" % boundary)
-    conn.putheader("Content-Length", str(len(head) + size + len(tail)))
-    conn.endheaders()
-    conn.send(head)
-    sent, started, last = 0, time.time(), 0.0
-    with open(path, "rb") as f:
-        while True:
-            chunk = f.read(1 << 20)
-            if not chunk:
-                break
-            conn.send(chunk)
-            sent += len(chunk)
-            now = time.time()
-            if now - last > 5:
-                last = now
-                print("    %s %.1f%%  (%.1f/%.1f MB, %.1f MB/s)"
-                      % (name, sent * 100.0 / size, sent / 1048576.0, size / 1048576.0,
-                         sent / 1048576.0 / max(0.001, now - started)))
-    conn.send(tail)
-    resp = conn.getresponse()
-    body = resp.read().decode("utf-8", "replace")
-    conn.close()
-    if resp.status not in (200, 201):
-        print("上传失败 %s：HTTP %s %s" % (name, resp.status, body[:300]))
+    def _send():
+        conn = http.client.HTTPSConnection(HOST, timeout=1800, context=ssl.create_default_context())
+        conn.putrequest("POST", url)
+        conn.putheader("User-Agent", "deepsleep-publish")
+        conn.putheader("Content-Type", "multipart/form-data; boundary=%s" % boundary)
+        conn.putheader("Content-Length", str(len(head) + size + len(tail)))
+        conn.endheaders()
+        conn.send(head)
+        sent, started, last = 0, time.time(), 0.0
+        with open(path, "rb") as f:
+            while True:
+                chunk = f.read(1 << 20)
+                if not chunk:
+                    break
+                conn.send(chunk)
+                sent += len(chunk)
+                now = time.time()
+                if now - last > 5:
+                    last = now
+                    print("    %s %.1f%%  (%.1f/%.1f MB, %.1f MB/s)"
+                          % (name, sent * 100.0 / size, sent / 1048576.0, size / 1048576.0,
+                             sent / 1048576.0 / max(0.001, now - started)))
+        conn.send(tail)
+        resp = conn.getresponse()
+        body = resp.read().decode("utf-8", "replace")
+        conn.close()
+        return resp.status, body
+
+    status, body = 0, ""
+    for attempt in range(3):
+        try:
+            status, body = _send()
+            if status not in (200, 201) and status >= 500 and attempt < 2:
+                print("  上传 %s 返回 HTTP %s，%d 秒后重试" % (name, status, 6 * (attempt + 1)))
+                time.sleep(6 * (attempt + 1))
+                continue
+            break
+        except Exception as e:
+            print("  上传 %s 第 %d 次中断：%s" % (name, attempt + 1, e))
+            if attempt == 2:
+                print("上传失败 %s：网络一直不通" % name)
+                return False
+            time.sleep(6 * (attempt + 1))
+    if status not in (200, 201):
+        print("上传失败 %s：HTTP %s %s" % (name, status, body[:300]))
         return False
     try:
         res = json.loads(body)

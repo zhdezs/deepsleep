@@ -13,11 +13,11 @@ public sealed class CoreServerOptions
     public string RootDir = "";
     public string DataDir = "";
     public IPAddress Bind = IPAddress.Loopback;
-    /// <summary>内置 cloudflared 快速隧道（--tunnel）。</summary>
+    /// <summary>内置隧道（--tunnel）：手写，驱动系统自带 ssh，零下载。</summary>
     public bool Tunnel;
     /// <summary>自备穿透命令（--tunnel-cmd "frpc ..."）。</summary>
     public string? TunnelCmd;
-    /// <summary>指定已有的 cloudflared（--tunnel-cf 路径）。</summary>
+    /// <summary>可选：指定已有的 cloudflared（--tunnel-cf 路径 / DS_TUNNEL_CF）。</summary>
     public string? TunnelCfPath;
     public Action<string>? Log;
 }

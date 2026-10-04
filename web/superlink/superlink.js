@@ -55,12 +55,14 @@
   }
 
   function showDone(base, token, p2p, peer) {
-    var rd = base.replace(/\/+$/, '') + '/web/core/rd.html?t=' + encodeURIComponent(token);
-    var full = base.replace(/\/+$/, '') + '/web/core/?u=' + encodeURIComponent(base) + '&t=' + encodeURIComponent(token);
+    // 令牌放 # 片段：隧道商（serveo 免费版）会给浏览器导航插一个警告页，
+    // 它的「Continue」是按 action="" 做 GET 提交 —— 会整条顶掉 ?查询串，令牌就丢了。
+    var rd = base.replace(/\/+$/, '') + '/web/core/rd.html#t=' + encodeURIComponent(token);
+    var full = base.replace(/\/+$/, '') + '/web/core/#u=' + encodeURIComponent(base) + '&t=' + encodeURIComponent(token);
     $('#peerName').textContent = peer ? '（' + peer + '）' : '';
     $('#modeHint').textContent = p2p
       ? '点对点直连，延迟最低。'
-      : '通过对方的临时加密通道连接（对方在别的网络时会走这条）。';
+      : '通过对方的内置隧道连接（对方在别的网络时会走这条）。';
     $('#linkRd').href = rd;
     $('#linkFull').href = full;
     $('#pairBox').classList.add('hidden');
@@ -88,7 +90,7 @@
     publish(tp, { t: 'hello', from: SELF, name: '网页端', ts: now() });
     setStatus('正在找这台设备…', true);
 
-    for (var i = 0; i < 40 && !best && !stopped; i++) {
+    for (var i = 0; i < 80 && !best && !stopped; i++) {   // 80 × 1.5s = 2 分钟，等对方把隧道建起来
       // 1) 局域网直连（https 页面会被浏览器拦，所以只在 http 页面里试）
       if (!httpsPage) {
         for (var a = 0; a < offers.length && !best; a++) {
@@ -99,7 +101,7 @@
           }
         }
       }
-      // 2) 临时加密通道（https，浏览器可用）
+      // 2) 内置隧道（https，浏览器可用）
       if (!best) {
         for (var c = 0; c < offers.length; c++) {
           if (!offers[c].tunnel) continue;
@@ -111,7 +113,7 @@
       if (!best && !asked && i >= 2 && !offers.some(function (o) { return o.tunnel; })) {
         asked = true;
         publish(tp, { t: 'no-lan', from: SELF, ts: now() });
-        setStatus('同一网络里没找到，正在让对方开一条临时加密通道（第一次可能要等半分钟）…', true);
+        setStatus('同一网络里没找到，正在让对方开一条内置隧道（不用下组件，约 10-40 秒）…', true);
       }
       if (!best) await sleep(1500);
     }

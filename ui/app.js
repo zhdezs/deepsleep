@@ -890,8 +890,10 @@ function updateSl(st) {
     acts.style.display = 'flex';
     const base = String(st.baseUrl).replace(/\/+$/, '');
     const tk = encodeURIComponent(st.remoteToken || '');
-    $('#slRd').onclick = () => call('openUrl', { url: base + '/web/core/rd.html?t=' + tk });
-    $('#slFull').onclick = () => call('openUrl', { url: base + '/web/core/?u=' + encodeURIComponent(base) + '&t=' + tk });
+    // 令牌放 # 片段：片段不发给服务器，也不会被隧道商（serveo 免费版）的浏览器警告页
+    // 「Continue」表单提交（action="" 的 GET）把查询串顶掉 —— 之前 rd.html 报「缺少配对令牌」就是这个原因。
+    $('#slRd').onclick = () => call('openUrl', { url: base + '/web/core/rd.html#t=' + tk });
+    $('#slFull').onclick = () => call('openUrl', { url: base + '/web/core/#u=' + encodeURIComponent(base) + '&t=' + tk });
   } else {
     acts.style.display = 'none';
   }
@@ -1049,7 +1051,7 @@ function openSettings(fresh) {
     bTun.textContent = h.tunnelUrl ? '🌐 关闭公网隧道' : '🌐 开启公网隧道（免注册，外网可用）';
     bTun.onclick = () => {
       bTun.disabled = true;
-      bTun.textContent = h.tunnelUrl ? '正在关闭…' : '正在建隧道…第一次要下 cloudflared，可能有点慢';
+      bTun.textContent = h.tunnelUrl ? '正在关闭…' : '正在建内置隧道…不用下组件，约 10-40 秒';
       call('coreTunnel', { on: !h.tunnelUrl });
     };
     row.appendChild(bTun);
