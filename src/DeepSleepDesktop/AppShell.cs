@@ -51,17 +51,45 @@ internal sealed class AppShell : IDisposable
         // 内核模式：不建窗口，只把服务跑起来（浏览器 / 网页版连上来用）
         if (args.Contains("--headless")) return RunHeadless(args);
 
-        var win = new PhotinoWindow()
-            .SetTitle("deepsleep · AI 助手")
-            .SetUseOsDefaultSize(false)
-            .SetSize(1500, 960)
-            .SetMinSize(860, 560)
-            .Center()
-            .SetResizable(true)
-            .SetContextMenuEnabled(true)
-            .SetJavascriptClipboardAccessEnabled(true)
-            .SetWebSecurityEnabled(false)
-            .SetLogVerbosity(0);
+        // 建窗口逐项兜底：Photino 各平台支持的设置项并不完全一致，macOS 上某个 setter
+        // 不被支持就会抛异常。以前这整条链一个 try 都没有，一抛就直接结束进程 ——
+        // 而从访达 / 启动台点开是没有终端的，用户看到的就是"双击没反应"，
+        // 什么信息都提供不出来。现在哪一项失败就记一笔、跳过去继续。
+        PhotinoWindow win;
+        try
+        {
+            var w = new PhotinoWindow();
+            void Set(string what, Action act)
+            {
+                try { act(); }
+                catch (Exception ex) { Log("窗口设置「" + what + "」没生效，已跳过：" + ex.Message); }
+            }
+            Set("标题", () => w.SetTitle("deepsleep · AI 助手"));
+            Set("尺寸模式", () => w.SetUseOsDefaultSize(false));
+            Set("尺寸", () => w.SetSize(1500, 960));
+            Set("最小尺寸", () => w.SetMinSize(860, 560));
+            Set("居中", () => w.Center());
+            Set("可缩放", () => w.SetResizable(true));
+            Set("右键菜单", () => w.SetContextMenuEnabled(true));
+            Set("剪贴板权限", () => w.SetJavascriptClipboardAccessEnabled(true));
+            Set("关闭 Web 安全限制", () => w.SetWebSecurityEnabled(false));
+            Set("日志级别", () => w.SetLogVerbosity(0));
+            win = w;
+        }
+        catch (Exception ex)
+        {
+            // 连窗口对象都建不出来（缺桌面环境 / 缺系统 WebView 组件），
+            // 把原因写进日志再退出，别让它变成一次无声的崩溃。
+            Log("建窗口失败，界面起不来：" + ex);
+            try
+            {
+                Console.Error.WriteLine("deepsleep：建窗口失败 —— " + ex.Message);
+                Console.Error.WriteLine("  详情已写入：" + Path.Combine(_dataDir, "shell.log"));
+            }
+            catch { }
+            Shutdown();
+            return 3;
+        }
         _win = win;
         try { win.SetIconFile(Path.Combine(_rootDir, "pet.png")); } catch { }
         try { win.RegisterWebMessageReceivedHandler((_, message) => OnMessage(message)); }

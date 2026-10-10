@@ -287,7 +287,13 @@ table.dl th{color:var(--muted);font-weight:600;font-size:12.5px}</style>
   </div>
   <p class="hint">第一次运行 Windows 可能提示「未知发布者」，点「更多信息 → 仍要运行」即可。安装包 SHA256 写在 Release 说明里。<br>
       Linux 上桌面包依赖系统自带的 WebView：Debian / Ubuntu 装 <code>libwebkit2gtk-4.1-0</code> 与 <code>libgtk-3-0</code>，Fedora / RHEL 装 <code>webkit2gtk4.1</code>（<code>.deb</code> / <code>.rpm</code> 会自动带上 Debian 侧的依赖）。<br>
-      macOS 的 <code>.dmg</code> 是临时签名（没有 Apple 开发者证书），第一次打开要右键 →「打开」，或到「系统设置 → 隐私与安全性」点「仍要打开」。<br>
+      macOS 需要 <strong>14 或更高版本</strong>（该下限来自窗口库二进制本身，不是随手写的）。.dmg 是临时签名（没有 Apple 开发者证书），第一次打开会被 Gatekeeper 拦一次，两种提示要分开看：<br>
+      · 提示「<strong>无法验证开发者</strong>」→ 正常拦截：按住 Control 点（右键）deepsleep 图标 →「打开」→ 再点一次「打开」；或双击一次被拦后去「系统设置 → 隐私与安全性」点「仍要打开」。<br>
+      · 提示「<strong>已损坏，无法打开</strong>」→ 不是包坏了，是签名无效（右键绕过无效）。终端执行这四行即可：<br>
+      <code>APP=/Applications/deepsleep.app</code><br>
+      <code>sudo xattr -cr "$APP" &amp;&amp; sudo codesign --force --sign - "$APP/Contents/MacOS/Photino.Native.dylib" &amp;&amp; sudo codesign --force --sign - "$APP"</code><br>
+      <code>open "$APP"</code><br>
+      （.dmg 里也带了一份 <code>使用说明.txt</code> 写着这几步。）<br>
       <code>.tar.gz</code> 是免安装版，里面已带执行位，解压后直接 <code>./deepsleep.sh</code> 就会打开桌面窗口；没有桌面环境就加 <code>--headless</code> 只跑内核服务（浏览器打开 <code>http://127.0.0.1:8756/web/core/</code>）。</p>
 </div></section>
 

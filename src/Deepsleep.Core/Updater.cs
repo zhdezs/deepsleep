@@ -29,6 +29,10 @@ public long Size { get; set; }
 public string Notes { get; set; } = "";
 /// <summary>这个更新信息是从哪个源读到的：github / gitee / manifest。</summary>
 public string Source { get; set; } = "";
+/// <summary>更新源只填了 Gitee、没有 GitHub 可回退（显式填 Gitee 仓库时）。</summary>
+public bool GiteeOnly { get; set; }
+/// <summary>从 Gitee 整包地址回退 GitHub 时用的直链候选（已含加速镜像）。</summary>
+public List<string> FallbackUrls { get; set; } = new();
 }
 
 /// <summary>
@@ -249,6 +253,7 @@ public static async Task<UpdateInfo?> CheckAsync(string manifestUrl, bool giteeF
     if (TryParseGitee(manifestUrl, out string gOwner, out string gRepo))
     {
         var only = await CheckGiteeAsync(gOwner, gRepo, ct).ConfigureAwait(false);
+        if (only != null) only.GiteeOnly = true;   // 更新源就是 Gitee：没有 GitHub 可回退
         return (only != null && IsNewer(only.Version, CurrentVersion)) ? only : null;
     }
 
@@ -264,7 +269,12 @@ public static async Task<UpdateInfo?> CheckAsync(string manifestUrl, bool giteeF
         {
             gt = await CheckGiteeAsync(owner, repo, ct).ConfigureAwait(false);
             if (gt != null && IsNewer(gt.Version, CurrentVersion) && !string.IsNullOrWhiteSpace(gt.Sha256))
-                return gt;   // 快路径：整条链不依赖 GitHub API
+            {
+                // 快路径：整条链不依赖 GitHub API。但手上只有 Gitee 地址，
+                // 顺手拼一份 GitHub 直链（含镜像）当退路，Gitee 下不动时不至于"无源可试"。
+                gt.FallbackUrls = GitHubDirectCandidates(owner, repo, gt);
+                return gt;
+            }
         }
         var gh = await ghTask.ConfigureAwait(false);
 
@@ -438,18 +448,33 @@ private static async Task<UpdateInfo?> CheckGiteeAsync(string owner, string repo
 
         if (string.IsNullOrWhiteSpace(url)) return null;
 
-        // Gitee 那边没有 size/digest 字段，所以发布脚本会把安装包的 SHA256 写进 Release 说明里
-        // （形如 "SHA256: 3d20…"）。有它就自己校验，这样走 Gitee 线路时整条链不依赖 GitHub API。
-        string sha = "";
-        var shaMatch = System.Text.RegularExpressions.Regex.Match(
+        // Gitee 那边没有 size/digest 字段，所以发布脚本会把**每个资产**的 SHA256 写进 Release 说明，
+        // 形如 "SHA-256 (deepsleep-3.0.4-linux-x64.tar.gz): 3d20…"。
+        // 以前只写一个安装包的摘要，Linux 客户端选中的却是 linux-x64.tar.gz，拿 exe 的摘要去校验必然失败。
+        // 老的 "SHA256: …" 单行格式仍然兼容（那种只对应安装包本身）。
+        var shaMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
+                     notes ?? "", @"(?im)^\s*SHA-?256\s*\(\s*([^)]+?)\s*\)\s*[:：]\s*([0-9a-f]{64})\s*$"))
+            shaMap[m.Groups[1].Value.Trim()] = m.Groups[2].Value.ToLowerInvariant();
+        string legacySha = "";
+        var legacyMatch = System.Text.RegularExpressions.Regex.Match(
             notes ?? "", @"(?i)sha256\s*[:：]\s*([0-9a-f]{64})");
-        if (shaMatch.Success)
+        if (legacyMatch.Success) legacySha = legacyMatch.Groups[1].Value.ToLowerInvariant();
+
+        // 按选中的那个资产名取摘要；分片（deepsleep-Setup.exe.part1）对应整包名
+        string sha = "";
+        string chosenName = AssetNameFromUrl(url);
+        if (chosenName.Length > 0 && shaMap.TryGetValue(chosenName, out string? direct)) sha = direct;
+        if (sha.Length == 0 && partUrls.Count > 0 && chosenName.Length > 0)
         {
-            sha = shaMatch.Groups[1].Value.ToLowerInvariant();
-            // 校验行不往界面上显示，更新说明只留人话
-            notes = System.Text.RegularExpressions.Regex
-                .Replace(notes ?? "", @"(?im)^\s*sha256\s*[:：].*$", "").Trim();
+            string baseName = System.Text.RegularExpressions.Regex.Replace(
+                chosenName, @"\.part\d+$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (baseName.Length > 0 && shaMap.TryGetValue(baseName, out string? parted)) sha = parted;
         }
+        if (sha.Length == 0) sha = legacySha;
+        // 校验行不往界面上显示，更新说明只留人话
+        notes = System.Text.RegularExpressions.Regex
+            .Replace(notes ?? "", @"(?im)^\s*SHA-?256\s*(\([^)]*\))?\s*[:：].*$", "").Trim();
 
         return new UpdateInfo
         {
@@ -659,8 +684,9 @@ public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double
     //    —— 回退后照样按官方 SHA256 校验，镜像搬不了假货。
     string? giteeUrl = info.PartUrls.Count > 0
         ? info.PartUrls[0]
-        : (IsGiteeUrl(info.MirrorUrl) ? info.MirrorUrl : null);
-    bool giteeOnly = giteeUrl != null && info.Url.Equals(giteeUrl, StringComparison.OrdinalIgnoreCase);
+        : (IsGiteeUrl(info.MirrorUrl) ? info.MirrorUrl
+           : (IsGiteeUrl(info.Url) ? info.Url : null));   // Linux 上 Gitee 选中的是 tar.gz，整包地址就是 info.Url
+    bool giteeOnly = info.GiteeOnly;
     Exception? giteeError = null;
     if (giteeUrl != null)
     {
@@ -677,7 +703,9 @@ public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double
                 return await DownloadPartsAsync(info, dest, progress, ct, onStatus, minKbps).ConfigureAwait(false);
             }
             onStatus?.Invoke("正在从 Gitee 下载整包…");
-            return await DownloadOnceAsync(info, info.MirrorUrl, dest, progress, ct, true,
+            // 用 giteeUrl 而不是 info.MirrorUrl：Linux/macOS 走"显式 Gitee 更新源"时选中的是
+            // tar.gz，地址就在 info.Url 上，MirrorUrl 是空的 —— 传空地址会让下载直接抛异常。
+            return await DownloadOnceAsync(info, giteeUrl, dest, progress, ct, true,
                                            GiteeStallSeconds, minKbps, null, onStatus, "Gitee")
                 .ConfigureAwait(false);
         }
@@ -835,12 +863,51 @@ private static List<string> BuildCandidates(UpdateInfo info)
     bool isReleaseDownload =
         url.Contains("github.com/", StringComparison.OrdinalIgnoreCase) &&
         url.Contains("/releases/download/", StringComparison.OrdinalIgnoreCase);
-    if (!isReleaseDownload) return list;   // api.github.com 资产地址 / 自建地址不支持镜像前缀
+    if (!isReleaseDownload)
+    {
+        // 整包地址本身就是 Gitee（Gitee 优先线路）：Gitee 下不成时，用发布时按 tag 拼好的
+        // GitHub 直链 + 加速镜像接着试。以前这里直接 return，Gitee 一挂就"共试了 0 次"。
+        foreach (string f in info.FallbackUrls)
+            if (f.Length > 0 && !list.Contains(f)) list.Add(f);
+        return list;
+    }
     foreach (string m in Mirrors)
     {
         if (url.StartsWith(m, StringComparison.OrdinalIgnoreCase)) continue;
         list.Add(m + url);
     }
+    return list;
+}
+
+/// <summary>从下载地址里取资产文件名（Gitee / GitHub 格式一样，取路径最后一段）。</summary>
+private static string AssetNameFromUrl(string url)
+{
+    try
+    {
+        string path = new Uri(url).AbsolutePath;
+        int slash = path.LastIndexOf('/');
+        string name = slash >= 0 ? path[(slash + 1)..] : path;
+        return Uri.UnescapeDataString(name);
+    }
+    catch { return ""; }
+}
+
+/// <summary>
+/// 按 tag + 资产名拼出 GitHub 直链候选（含加速镜像）：Gitee 快路径没经过 GitHub API，
+/// 手里只有 Gitee 地址，回退时得靠这个拼出 GitHub 那边的同一份资产。
+/// 分片名（deepsleep-Setup.exe.part1）要先还原成整包名，GitHub 上放的是完整 exe。
+/// </summary>
+private static List<string> GitHubDirectCandidates(string owner, string repo, UpdateInfo info)
+{
+    var list = new List<string>();
+    string name = System.Text.RegularExpressions.Regex.Replace(
+        AssetNameFromUrl(info.Url), @"\.part\d+$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    if (name.Length == 0) return list;
+    string ver = NormalizeVersion(info.Version);
+    if (ver.Length == 0) return list;
+    string url = $"https://github.com/{owner}/{repo}/releases/download/v{ver}/{name}";
+    list.Add(url);
+    foreach (string m in Mirrors) list.Add(m + url);
     return list;
 }
 

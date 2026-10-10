@@ -45,13 +45,21 @@
   }
 
   async function ping(base, token) {
+    // 跨网时 offers 里的地址大多路由不到。fetch 默认没有超时，被防火墙丢包那种
+    // 会一直挂着，把整个轮次拖死。自己掐 3 秒，比浏览器默认行为可控得多。
+    var ac = new AbortController();
+    var timer = setTimeout(function () { ac.abort(); }, 3000);
     try {
       var r = await fetch(base.replace(/\/+$/, '') + '/api/ping?t=' + encodeURIComponent(token),
-        { cache: 'no-store' });
+        { cache: 'no-store', signal: ac.signal });
       if (!r.ok) return false;
       var j = await r.json();
-      return j && j.ok === true;
+      // 只看 j.ok 不够：令牌错的时候 /api/ping 也回 ok:true（只是字段少），
+      // 于是任何一台跑着 deepsleep 的机器都会被当成「找到对方了」。
+      // 认完整版字段（对令牌才有 dataDir），才是真的握上手。
+      return !!(j && j.ok === true && j.dataDir);
     } catch (e) { return false; }
+    finally { clearTimeout(timer); }
   }
 
   function showDone(base, token, p2p, peer) {
@@ -62,9 +70,11 @@
     var rd = rdBase + '/web/core/rd.html#u=' + encodeURIComponent(rdBase) + '&t=' + encodeURIComponent(token);
     var full = base.replace(/\/+$/, '') + '/web/core/#u=' + encodeURIComponent(base) + '&t=' + encodeURIComponent(token);
     $('#peerName').textContent = peer ? '（' + peer + '）' : '';
-    $('#modeHint').textContent = p2p
+    var serveo = /serveousercontent\.com/i.test(base);
+    $('#modeHint').textContent = (p2p
       ? '点对点直连，延迟最低。'
-      : '通过对方的内置隧道连接（对方在别的网络时会走这条）。';
+      : '通过对方的内置隧道连接（对方在别的网络时会走这条）。') +
+      (serveo ? ' ⚠ Serveo 免费隧道第一次打开会先显示一个英文的「Serveo Browser Warning」页，点 Continue to Site 就能进来。' : '');
     $('#linkRd').href = rd;
     $('#linkFull').href = full;
     $('#pairBox').classList.add('hidden');

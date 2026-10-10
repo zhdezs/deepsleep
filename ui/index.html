@@ -74,6 +74,21 @@
 
 <div id="toasts"></div>
 <div id="modalRoot"></div>
+
+<!-- 应用内远程桌面 / 完整控制台：桌面端本身是 WebView，再拉系统浏览器等于另开一个壳，
+     会话、深色模式、快捷键全都对不上。这里直接在本页面里用 iframe 承载对端页面。 -->
+<div id="rdRoot" class="hidden">
+  <div id="rdBar">
+    <button id="rdBack" class="rd-btn" title="返回（Esc）">← 返回</button>
+    <b id="rdTitle">远程桌面</b>
+    <span id="rdInfo"></span>
+    <span class="grow"></span>
+    <button id="rdOpen" class="rd-btn" title="在系统浏览器里打开">在新窗口打开</button>
+    <button id="rdReload" class="rd-btn" title="重新加载">↻</button>
+  </div>
+  <iframe id="rdFrame" allow="clipboard-read; clipboard-write" referrerpolicy="no-referrer"></iframe>
+</div>
+
 <script src="app.js"></script>
 </body>
 </html>

@@ -7,7 +7,7 @@
 | | |
 | --- | --- |
 | 当前版本 | **3.0.3**（本次修复：**Linux 版之前完全没有 OTA** —— 安装包没带配置、更新源为空，自动检查更新的第一行就返回，等于从来不查；就算查到也装不上：程序装在 root 所有的 `/opt/deepsleep`，就地覆盖必然失败，升级脚本还会 `pgrep` 到自己把自己 kill 掉。现在更新源有默认值、Linux 自更新静默落到用户目录（`~/.local/share/deepsleep/app`，免 root、不用输密码）并写好用户级启动项，全程记 `update.log`；顺带修正版本比较，`.alpha` 测试版以后能被同名正式版覆盖。① **超级连接（6 位配对码 · 点对点直连 · 内置远程桌面）** —— 桌面版工具栏点 🔗「超级连接」，内核版在 CMD 里输入「打开超级连接」（或 `/superlink`），生成一串 6 位配对码；另一台设备打开 `https://zhdezs.github.io/deepsleep/superlink/?type=配对码`（或在它自己的「超级连接」里输入这 6 位数字）就连上：同一网络走**点对点局域网直连**（延迟最低），不同网络自动开一条**内置隧道**（手写：直接驱动系统自带的 ssh 建反向隧道，**零下载**；多个免费入口自动择优、连上先自检、断了自动重建）、连上后立刻关掉保持 P2P；连上即可在浏览器里用**内置远程桌面**看画面并用鼠标 / 键盘 / 手机触屏操控。配对码 5 分钟有效、用完即撤，信令只传几 KB 握手消息（默认 ntfy.sh，可用 `DEEPSLEEP_SIGNAL_BASE` 换自建）。② **超远程提问（内网穿透）** —— 内核加 `--tunnel` 就自动建一条免注册的公网隧道（**手写隧道**：用系统自带的 ssh 反向隧道，serveo.net / localhost.run 自动择优，不用下任何组件），启动后直接打印一条带令牌的**配对链接**，手机存成书签，人在外面也能指挥这台电脑；想用自己的穿透工具就 `--public --tunnel-cmd "frpc …"`（或者 `--tunnel-cf 路径` 用已有的 cloudflared），frp / cpolar / ngrok / ssh -R 都行，内核会从命令输出里自己抓公网地址。② **只有你主动要求才对外** —— 默认依然只听 `127.0.0.1`，加 `--public` / `--host` 才监听网卡，加 `--tunnel` 才挂公网；隧道域名同源放行（网页端能正常调 API），别家网站照样 403。③ **令牌防暴破** —— 令牌输错会递增延迟（400ms×次数，封顶 5 秒）再返回 401；不封 IP，因为隧道下来的来源都是 127.0.0.1，封了会误伤。④ **桌面客户端也能被远程连** —— 桌面版内置的内核服务和内核版是**同一份实现**（`CoreServer` 抽到了共用的 `Deepsleep.Core`），装上就默认监听本机，设置里「超远程提问」点一下就能开 / 关公网隧道，手机在外网一样能连；窗口类命令（showWindow / hideWindow / quitApp）走外壳接管，所以桌面版不会有「Core 有而我没有」的功能。⑤ **不带令牌的 `/api/ping` 只说名字和版本**，端口 / 运行时长 / 数据目录都要带令牌才给。其余与 2.3.2 一致：命令输出中文不乱码、运行的命令点开看完整输出、桌宠资源回收、兜底面板不再误报、chat 模式不落盘、代码块兜底不吞正文、DSML 工具标记直接执行、截断自动续写、Agent 名片 + 按需派工、集群名册只增不减、内核跨平台（Windows / Linux / macOS）；⑥ **跨平台桌面版** —— Linux（x64 / ARM64）与 macOS（Apple 芯片 / Intel）解压即用，`./deepsleep.sh` 直接开原生桌面窗口（Linux 直接发 `.deb` / `.rpm`，macOS 发 `.dmg`，也都有免安装的 `.tar.gz`；同一个包加 `--headless` 就是内核版；macOS 只发行桌面版） |
-| 系统要求 | 桌面客户端：Windows 10 1809+ / x64（推荐 Windows 11，可享亚克力毛玻璃界面）；Linux（x64 / ARM64，需要系统自带 WebKitGTK + GTK3）与 macOS 11+（Apple 芯片 / Intel）都有原生桌面版 |
+| 系统要求 | 桌面客户端：Windows 10 1809+ / x64（推荐 Windows 11，可享亚克力毛玻璃界面）；Linux（x64 / ARM64，需要系统自带 WebKitGTK + GTK3）与 **macOS 14+**（Apple 芯片 / Intel）都有原生桌面版 |
 | 下载 | [Releases](https://github.com/zhdezs/deepsleep/releases/latest) → Windows `deepsleep-Setup.exe`；Linux `deepsleep_<版本>_amd64.deb` / `deepsleep-<版本>-1.x86_64.rpm`（另有 arm64 / aarch64）；macOS `deepsleep-<版本>-osx-arm64.dmg` / `deepsleep-<版本>-osx-x64.dmg` |
 | OTA 更新源 | `zhdezs/deepsleep`（GitHub + Gitee 双源，⚙ 设置里可切换线路，默认 Gitee） |
 | 官网 / 网页版 | <https://zhdezs.github.io/deepsleep/>（网页版免安装，内置免费模型矩阵：GLM-4.7-Flash 聊天 / GLM-4.6V-Flash 看图 / CogView-3-Flash 画图） |
@@ -234,7 +234,25 @@ dotnet publish src/DeepSleepDesktop/DeepSleepDesktop.csproj -c Release -r linux-
   `发布.cmd` 发完版会自动触发它，也可以在 Actions 页面手动 Run。
 - Linux 桌面需要系统自带 WebKitGTK：Debian / Ubuntu `sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0`，
   Fedora / RHEL `sudo dnf install webkit2gtk4.1`（`.deb` 已把 Debian 侧的依赖写进 Depends）。
-- macOS 的 `.dmg` 是临时签名（没有 Apple 开发者证书），第一次打开要右键 →「打开」。
+- macOS 的 `.dmg` 是临时签名（ad-hoc，没有 Apple 开发者证书），**需要 macOS 14 或更高**
+  （14.0 是窗口库 `Photino.Native.dylib` 二进制里写死的下限，实测不是猜的；低版本系统加载不了它）。
+  从网上下来的 App 会被 Gatekeeper 拦一次，**两种提示要分开对待**：
+  - 提示「**无法验证开发者**」→ 正常拦截，右键 →「打开」即可（或到「系统设置 → 隐私与安全性」
+    点「仍要打开」）。
+  - 提示「**已损坏，无法打开**」→ 这不是包坏了，是签名无效（多半是嵌套的 `Photino.Native.dylib`
+    有分片没签上名）。**右键绕过无效**，最省事的解法是终端执行一次：
+
+    ```bash
+    APP=/Applications/deepsleep.app
+    sudo xattr -cr "$APP"
+    sudo codesign --force --sign - "$APP/Contents/MacOS/Photino.Native.dylib"
+    sudo codesign --force --sign - "$APP"
+    open "$APP"
+    ```
+
+    （`.dmg` 里也带了一份 `使用说明.txt` 写着这几步。）打包脚本与 CI 现在会在出包前
+    验签名、验架构、验 `LSMinimumSystemVersion`，任一项不过就把工作流标红，
+    不让这种包再进 Release。
 - 数据目录默认在 `$XDG_DATA_HOME/deepsleep`（macOS 是 `~/Library/Application Support/deepsleep`）。
 - Unix 上的 OTA 仍然挑本平台的 `.tar.gz`（`.deb` / `.rpm` / `.dmg` 只用于首次安装）。
 

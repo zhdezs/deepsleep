@@ -151,8 +151,24 @@ public static class SuperLink
 
     private static void OnTunnelReady()
     {
-        TunnelUrl = CoreServer.TunnelUrl;
-        if (TunnelUrl.Length == 0) return;
+        string now = CoreServer.TunnelUrl;
+        // 隧道断了 / 正在重建（地址被清空）：把自己的旧地址也作废，
+        // 并且不要把空地址当成 offer 发出去 —— 空的 offer 会让对方以为「对方还没建好」，
+        // 而继续持有旧地址又会让对方对着死域名白探。两种都不做，等新地址来了再说。
+        if (now.Length == 0)
+        {
+            if (TunnelUrl.Length > 0)
+            {
+                TunnelUrl = "";
+                if (State is "connecting" or "waiting")
+                {
+                    Message = "内置隧道断了，正在换一条重建（不用管，会自动恢复）…";
+                }
+                Raise();
+            }
+            return;
+        }
+        TunnelUrl = now;
         var ct = _cts?.Token ?? CancellationToken.None;
         _ = PublishOffer(TunnelUrl, ct);        // 新地址立刻发出去（隧道重建后对端也能拿到）
         if (State is "connecting" or "waiting")
@@ -271,8 +287,11 @@ public static class SuperLink
         }), ct);
 
         // 1) 局域网直连优先（真点对点）
+        //    窗口给足：跨机首次配对时对方要先听到 hello、再回 offer，信令有几秒延迟；
+        //    这里等不到 offer 就等于白跑一轮。8 轮 × 600ms 太紧（实测偶发 offer 到得晚），
+        //    放宽到 20 轮 × 600ms ≈ 12 秒，代价只是跨网时多等几秒才转隧道。
         Offer? best = null;
-        for (int i = 0; i < 8 && best == null && !ct.IsCancellationRequested; i++)
+        for (int i = 0; i < 20 && best == null && !ct.IsCancellationRequested; i++)
         {
             Offer? cand;
             lock (gate) cand = offers.FirstOrDefault(o => o.Lan.Count > 0);
@@ -282,7 +301,10 @@ public static class SuperLink
                 var probes = cand.Lan.Select(async ep =>
                 {
                     string burl = ep.StartsWith("http") ? ep : "http://" + ep;
-                    return await PingOk(burl, cand.Token) ? burl : null;
+                    // 跨机探测别用 1.5 秒那么久：不可达的地址多数是「连接被拒 / 立即无路由」，
+                    // 会秒回；真正慢的是被防火墙丢包的，那种等 1.5 秒也回不来。
+                    // 用 900ms 换更快的轮次，同一个地址下一轮还会再试。
+                    return await PingOk(burl, cand.Token, 900) ? burl : null;
                 }).ToArray();
                 string? hit = null;
                 try { hit = (await Task.WhenAll(probes)).FirstOrDefault(x => x != null); } catch { }
@@ -293,6 +315,20 @@ public static class SuperLink
                     P2P = true;
                     break;
                 }
+            }
+            // 前 2 轮还没见到 offer，顺手催一次 hello：信令偶发丢包时靠它自己恢复，
+            // 不然对方以为没人在连，隧道也不会提前热起来。
+            if (i == 2 && cand == null)
+            {
+                try
+                {
+                    await Signal.PublishAsync(topic, JsonSerializer.Serialize(new
+                    {
+                        t = "hello", from = SelfId, name = Environment.MachineName,
+                        ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    }), ct);
+                }
+                catch { }
             }
             if (best == null) await Task.Delay(600, ct);
         }
@@ -324,7 +360,22 @@ public static class SuperLink
         {
             Offer? cand;
             lock (gate) cand = offers.LastOrDefault(o => o.Tunnel.Length > 0);
-            if (cand != null && await PingOk(cand.Tunnel, cand.Token, 15000))
+
+            // 对方一直没给隧道地址（hello 可能丢了、或它那边 ssh 还没连上）：
+            // 每 10 轮重发一次 no-lan 催它，不然就是干等 2 分半。
+            if (cand == null && i > 0 && i % 10 == 0)
+            {
+                try
+                {
+                    await Signal.PublishAsync(topic, JsonSerializer.Serialize(new
+                    {
+                        t = "no-lan", from = SelfId, ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    }), ct);
+                }
+                catch { }
+            }
+
+            if (cand != null && await PingOk(cand.Tunnel, cand.Token, 8000))
             {
                 PeerName = cand.Name;
                 RemoteToken = cand.Token;
@@ -418,6 +469,7 @@ public static class SuperLink
 
     private static void Raise() { try { Changed?.Invoke(); } catch { } }
 
+    /// <summary>探一下这个地址是不是「我们要找的那台 deepsleep」，且拿的令牌是对的。</summary>
     private static async Task<bool> PingOk(string baseUrl, string token, int timeoutMs = 1500)
     {
         try
@@ -425,7 +477,11 @@ public static class SuperLink
             using var http = new HttpClient { Timeout = TimeSpan.FromMilliseconds(timeoutMs) };
             string url = baseUrl.TrimEnd('/') + "/api/ping?t=" + Uri.EscapeDataString(token);
             string s = await http.GetStringAsync(url);
-            return s.Contains("\"ok\":true", StringComparison.Ordinal);
+            // ⚠ 不能只看 "ok":true —— 令牌**错**的时候 /api/ping 也回 ok:true（只是字段少），
+            //   于是任何一台跑着 deepsleep 的机器都会被判成「找到了」。
+            //   「对令牌」的响应才带 dataDir 这组完整字段，用它当判据才是真的握上手了。
+            return s.Contains("\"ok\":true", StringComparison.Ordinal)
+                && s.Contains("\"dataDir\":", StringComparison.Ordinal);
         }
         catch { return false; }
     }
@@ -433,24 +489,62 @@ public static class SuperLink
     /// <summary>本机所有可用的局域网地址（ip:port），对方优先试这些。</summary>
     public static List<string> LocalEndpoints()
     {
-        // 同一台机器上开两个 deepsleep 自测时，局域网地址互相连不上，回环能连——放最前面基本 0 延迟。
-        var list = new List<string> { "127.0.0.1:" + CoreServer.Port };
+        // ⚠ 这里**不能**放 127.0.0.1。同一台机器上开两个 deepsleep 自测确实靠它才连得上，
+        //   但跨机时它会被对方当成「对端的地址」去 ping —— ping 到的是**它自己**的本机端口。
+        //   如果它自己正好也开着 deepsleep（或别的服务占了同端口），就会误判「直连成功」，
+        //   于是出现「连上了但打开的是自己 / 画面不对」这种极隐蔽的错。同机自测改由下面的
+        //   局域网地址覆盖（同机时 192.168.x.x 也是通的），代价是几百毫秒，换来跨机不出错。
+        var list = new List<string>();
         try
         {
             foreach (var ni in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
             {
                 if (ni.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
                 if (ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback) continue;
+
+                // 虚拟网卡（VMware VMnetX / Hyper-V vEthernet / VirtualBox / 蓝牙 / WSL）上的地址
+                // 只有本机内部有意义：对方在别的机器上根本路由不到，白等 1.5 秒 / 个。
+                // 而且本机装了 VMware 时，这些地址往往排在真实网卡前面，会把探测窗口整个吃掉。
+                if (IsVirtualInterface(ni)) continue;
+
                 foreach (var ua in ni.GetIPProperties().UnicastAddresses)
                 {
                     if (ua.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork) continue;
                     string ip = ua.Address.ToString();
-                    if (ip.StartsWith("169.254.")) continue;
+                    if (ip.StartsWith("169.254.")) continue;          // APIPA 自配地址
+                    if (ip.StartsWith("127.")) continue;              // 回环（见上）
                     list.Add(ip + ":" + CoreServer.Port);
                 }
             }
         }
         catch { }
+
+        // 真网卡一个都没有（网线没插 / 只有虚拟网卡）时，退回回环，至少保证同机自测能用。
+        if (list.Count == 0) list.Add("127.0.0.1:" + CoreServer.Port);
         return list;
+    }
+
+    /// <summary>是不是只会存在于本机内部的虚拟网卡（对方跨机路由不到的那些）。</summary>
+    private static bool IsVirtualInterface(System.Net.NetworkInformation.NetworkInterface ni)
+    {
+        try
+        {
+            if (ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Tunnel) return true;
+
+            string d = (ni.Description ?? "") + " " + (ni.Name ?? "");
+            string[] marks =
+            {
+                "VMware", "VirtualBox", "Hyper-V", "vEthernet", "Loopback", "Bluetooth",
+                "WSL", "Docker", "TAP-", "Npcap", "ZeroTier", "Tailscale", "Hamachi",
+                "Realtek 8812AU",   // 虚拟热点
+                "Microsoft Wi-Fi Direct", "虚拟", "蓝牙",
+            };
+            foreach (string m in marks)
+                if (d.Contains(m, StringComparison.OrdinalIgnoreCase)) return true;
+
+            // VMnetX / vEthernet 这类名字本身看不出来，但 VMware 系网关地址有固定形态（x.x.x.1 且本机是网关）
+            return false;
+        }
+        catch { return false; }
     }
 }

@@ -4,7 +4,8 @@ namespace TrollWrangler.CoreHost;
 
 /// <summary>
 /// 内置远程桌面（被控端）：截屏（GDI）→ PNG，鼠标键盘注入（SendInput）。
-/// 不引第三方库、不拍屏服务；Windows 全平台可用，其它系统暂时返回不可用（不影响别的功能）。
+/// Windows 走 GDI/SendInput（不引第三方库）；Linux 由 RemoteDesktopLinux 接手
+/// （外部工具截图 + X11 XTest 注入），macOS 暂时返回不可用（不影响别的功能）。
 /// 坐标一律用「归一化 0~1」在网上传，服务端换算成屏幕像素，避免缩放/DPI 两边对不齐。
 /// </summary>
 public static class RemoteDesktop
@@ -115,6 +116,9 @@ public static class RemoteDesktop
     }
 
     public static bool Available { get { EnsureDpi(); return true; } }
+
+    /// <summary>Windows 直接用 GDI 截屏，没有"要探测的工具链"；留个空实现跟 Linux 对齐。</summary>
+    public static void Reprope() { }
 
     public static int ScreenWidth { get { EnsureDpi(); return GetSystemMetrics(SM_CXSCREEN); } }
     public static int ScreenHeight { get { EnsureDpi(); return GetSystemMetrics(SM_CYSCREEN); } }
@@ -269,14 +273,21 @@ public static class RemoteDesktop
         });
     }
 #else
-    public static int LastError => 0;
-    public static bool Available => false;
-    public static int ScreenWidth => 0;
-    public static int ScreenHeight => 0;
-    public static byte[] CapturePng(int maxWidth, out int outW, out int outH) { outW = outH = 0; return Array.Empty<byte>(); }
-    public static void MouseMoveNorm(double nx, double ny) { }
-    public static void MouseButton(string button, bool down) { }
-    public static void Wheel(int delta) { }
-    public static void Key(int vk, bool down) { }
+    // Linux：截图 / 注入都在 RemoteDesktopLinux 里（macOS 那边会自己报不可用）
+    /// <summary>重新探测截屏方式（装好工具后刷新远控页就生效）。</summary>
+    public static void Reprope() => RemoteDesktopLinux.Reprope();
+    public static int LastError => RemoteDesktopLinux.LastError;
+    public static bool Available => RemoteDesktopLinux.Available;
+    public static int ScreenWidth => RemoteDesktopLinux.ScreenWidth;
+    public static int ScreenHeight => RemoteDesktopLinux.ScreenHeight;
+    public static byte[] CapturePng(int maxWidth, out int outW, out int outH)
+        => RemoteDesktopLinux.CapturePng(maxWidth, out outW, out outH);
+    public static void MouseMoveNorm(double nx, double ny) => RemoteDesktopLinux.MouseMoveNorm(nx, ny);
+    public static void MouseButton(string button, bool down) => RemoteDesktopLinux.MouseButton(button, down);
+    public static void Wheel(int delta) => RemoteDesktopLinux.Wheel(delta);
+    public static void Key(int vk, bool down) => RemoteDesktopLinux.Key(vk, down);
+
+    /// <summary>被控端对键鼠的限制说明（Wayland 之类），界面拿来提示用户。</summary>
+    public static string Note => RemoteDesktopLinux.Note;
 #endif
 }

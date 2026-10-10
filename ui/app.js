@@ -846,6 +846,49 @@ function openSkills(m) {
 let slTimer = null;
 function stopSlPoll() { if (slTimer) { clearInterval(slTimer); slTimer = null; } }
 
+/* ---------------- 应用内远程桌面 / 完整控制台 ----------------
+   桌面端界面本身就是 WebView2 / Photino 网页，再走 openUrl 会拉起系统浏览器 ——
+   等于又开一个外壳：会话不共享、深色模式对不上、切回来还得 Alt+Tab，手机上更是直接
+   跳出去回不来。这里在同一个窗口里用 iframe 承载对端页面。
+   只有「在新窗口打开」才真的交给系统浏览器（用户主动要的时候）。 */
+const RD_URL = { url: '', title: '' };
+
+function openInApp(url, title, info) {
+  const root = $('#rdRoot'), frame = $('#rdFrame');
+  if (!root || !frame) { call('openUrl', { url }); return; }   // 老界面兜底：还是开外部浏览器
+  RD_URL.url = url;
+  RD_URL.title = title || '远程桌面';
+  $('#rdTitle').textContent = RD_URL.title;
+  $('#rdInfo').textContent = info || '';
+  frame.src = url;
+  root.classList.remove('hidden');
+}
+
+function closeInApp() {
+  const root = $('#rdRoot'), frame = $('#rdFrame');
+  if (!root || !frame) return;
+  root.classList.add('hidden');
+  frame.src = 'about:blank';   // 断掉里面的 SSE 推流，别让它在后台继续拉画面
+  RD_URL.url = '';
+}
+
+function wireRd() {
+  const root = $('#rdRoot');
+  if (!root) return;
+  $('#rdBack').onclick = () => closeInApp();
+  $('#rdReload').onclick = () => { const f = $('#rdFrame'); if (f) f.src = f.src; };
+  $('#rdOpen').onclick = () => { if (RD_URL.url) call('openUrl', { url: RD_URL.url }); };
+  // 内嵌期间 Esc 当「返回」，但别抢输入框和 iframe 里的 Esc（iframe 内的按键不会冒泡到本页，
+  // 所以这里只在焦点还留在外层时才生效，安全）。
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !$('#rdRoot').classList.contains('hidden')) {
+      const t = e.target;
+      if (t && t.tagName === 'IFRAME') return;
+      closeInApp();
+    }
+  });
+}
+
 function openSuperLink() {
   const body = openModal('superlink', '🔗 超级连接', [{ t: '关闭', fn: stopSlPoll }]);
   const box = document.createElement('div');
@@ -918,8 +961,20 @@ function updateSl(st) {
     const tk = encodeURIComponent(st.remoteToken || '');
     // 令牌放 # 片段：片段不发给服务器，也不会被隧道商（serveo 免费版）的浏览器警告页
     // 「Continue」表单提交（action="" 的 GET）把查询串顶掉 —— 之前 rd.html 报「缺少配对令牌」就是这个原因。
-    $('#slRd').onclick = () => call('openUrl', { url: base + '/web/core/rd.html#t=' + tk });
-    $('#slFull').onclick = () => call('openUrl', { url: base + '/web/core/#u=' + encodeURIComponent(base) + '&t=' + tk });
+    //
+    // ⚠ 这里用应用内覆盖层承载，不再 openUrl 拉系统浏览器（桌面端本身就是 WebView）。
+    const peer = st.peer ? '对端：' + st.peer : '';
+    const via = st.p2p ? '点对点直连' : '内置隧道';
+    // u 和 t 都放 # 片段：query 会被 serveo 免费隧道那个英文警告页的
+    // 「Continue」表单（action="" 的 GET 提交）整条顶掉，放片段才不会被带走。
+    $('#slRd').onclick = () => openInApp(
+      base + '/web/core/rd.html#u=' + encodeURIComponent(base) + '&t=' + tk,
+      '🖥 远程桌面', via + (peer ? ' · ' + peer : ''));
+
+    // 「完整控制台」是对端内核的整站页面。它需要带 u=（对端地址）才能知道自己该连谁，
+    // 且它自己是完整 HTML 页面，塞进 iframe 完全没问题。
+    const fullUrl = base + '/web/core/#u=' + encodeURIComponent(base) + '&t=' + tk;
+    $('#slFull').onclick = () => openInApp(fullUrl, '💬 完整控制台', via + (peer ? ' · ' + peer : ''));
   } else {
     acts.style.display = 'none';
   }
@@ -1241,6 +1296,7 @@ function wire() {
   $('#btnTheme').onclick = () => call('setTheme', { theme: document.body.classList.contains('dark') ? 'light' : 'dark' });
   $('#btnSettings').onclick = () => openSettings();
   $('#btnLink').onclick = () => openSuperLink();
+  wireRd();
   $('#btnNew').onclick = () => call('newConv', { kind: kind() });
   $('#btnMemory').onclick = () => openMemory();
   $('#btnSkills').onclick = () => openSkills();

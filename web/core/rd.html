@@ -150,20 +150,39 @@
   }
 
   /* ---------- 画面：SSE 推 base64 帧 ---------- */
+  var rdNote = '', streamDead = false, retries = 0;
+  function rdFail(why) {
+    streamDead = true;
+    try { if (es) es.close(); } catch (e) { }
+    stat.textContent = why;
+  }
+  /* EventSource 的 onerror 拿不到响应正文（被控端返回 501/500 时只会告诉浏览器"连接出错"），
+     所以单独问一次 /api/rd/frame 才能拿到真实原因，别再让人对着"正在重连"干等。 */
+  function whyNoPicture() {
+    fetch(api('/api/rd/frame?w=320')).then(function (r) { return r.json(); }).then(function (j) {
+      rdFail('远程画面不可用：' + ((j && j.err) || '对端没有回画面'));
+    }).catch(function () {
+      rdFail('连不上对端（网络 / 隧道断了）' + (rdNote ? ' · ' + rdNote : ''));
+    });
+  }
   function connectStream() {
+    if (streamDead) return;
     if (es) { try { es.close(); } catch (e) { } }
     es = new EventSource(api('/api/rd/stream?w=' + w + '&fps=' + fps));
     es.onmessage = function (ev) {
       var j = null;
       try { j = JSON.parse(ev.data); } catch (e) { return; }
       if (!j || !j.img) return;
+      retries = 0;
       imgW = j.w || imgW; imgH = j.h || imgH; frames++;
       img.src = 'data:image/png;base64,' + j.img;
     };
     es.onerror = function () {
-      stat.textContent = '画面断了，正在重连…';
       try { es.close(); } catch (e) { }
-      setTimeout(connectStream, 2500);
+      retries++;
+      if (retries > 5) { whyNoPicture(); return; }   // 反复连不上就别再转圈，把真实原因问出来
+      stat.textContent = '画面断了，正在重连…（第 ' + retries + ' 次）';
+      setTimeout(connectStream, Math.min(1200 * retries, 6000));
     };
   }
 
@@ -336,25 +355,37 @@
   });
 
   setInterval(function () {
-    if (imgW > 0) stat.textContent = imgW + '×' + imgH + ' · ' + w + 'px/' + fps + 'fps';
+    if (imgW > 0 && !streamDead) stat.textContent = imgW + '×' + imgH + ' · ' + w + 'px/' + fps + 'fps' + (rdNote ? ' · ' + rdNote : '');
   }, 1500);
 
   /* ---------- 启动 ---------- */
   function start() {
     if (!base || !token) { openPair(); return; }
     saveCfg();
+    /* Serveo 的免费隧道对"浏览器导航"会插一个英文警告页（fetch 不受影响）：
+       点它的 Continue to Site 之后本页才会真正加载 —— 不提示的话很容易被当成"远控坏了"。 */
+    if (/serveousercontent\.com/i.test(base) && $('#tip')) {
+      $('#tip').textContent = '提示：Serveo 免费隧道第一次打开会先显示一个英文「Serveo Browser Warning」页，' +
+        '点 Continue to Site 就能进来。 · ' + $('#tip').textContent;
+    }
     stage.classList.add('fit');
     $('#btnFit').classList.add('on');
     $('#who').textContent = base.replace(/^https?:\/\//, '').slice(0, 40);
     fetch(api('/api/rd/info')).then(function (r) { return r.json(); }).then(function (j) {
       if (j && j.name) $('#who').textContent = '（' + j.name + '）';
-      if (j && j.available === false) { stat.textContent = '这台机器不支持远程桌面'; img.alt = '不支持'; }
-      else { $('#who').textContent = (j && j.name ? '（' + j.name + '）' : '') + ' ' + base.replace(/^https?:\/\//, ''); }
+      if (j && j.note) rdNote = j.note;                 // 被控端键鼠/截屏的限制说明
+      if (j && j.available === false) {
+        rdFail(j.note || '这台机器不支持远程桌面');
+        img.alt = '不支持';
+      } else {
+        $('#who').textContent = (j && j.name ? '（' + j.name + '）' : '') + ' ' + base.replace(/^https?:\/\//, '');
+        connectStream();
+      }
     }).catch(function () {
       stat.textContent = '连不上对端内核';
       $('#who').textContent = base.replace(/^https?:\/\//, '');
+      connectStream();
     });
-    connectStream();
     connectChat();
   }
   start();

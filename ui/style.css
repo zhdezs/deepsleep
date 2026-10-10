@@ -467,3 +467,28 @@ body.pet .compose-row select { flex: 1; }
 .ac-sec .ac-b.log { font-size: 11.5px; color: var(--muted); max-height: 190px; }
 
 body.pet #agents { display: none; }
+
+/* ---------------- 应用内远程桌面 / 完整控制台 ----------------
+   桌面端界面本身就是 WebView2/Photino 网页，远程桌面页也在对端内核上提供 HTTP。
+   之前点「打开远程桌面」走 openUrl → 弹系统浏览器，等于又开一个外壳：会话不共享、
+   深色模式对不上、切回来还得 Alt+Tab。这里在本页面内用 iframe 承载，保持一个窗口。 */
+#rdRoot {
+  position: fixed; inset: 0; z-index: 200; display: flex; flex-direction: column;
+  background: var(--bg); 
+}
+#rdRoot.hidden { display: none; }
+#rdBar {
+  height: 42px; flex: 0 0 42px; display: flex; align-items: center; gap: 9px; padding: 0 11px;
+  background: var(--bar, var(--bg)); border-bottom: 1px solid var(--line);
+  -webkit-app-region: drag;                /* 让这一段能拖窗口（桌面端自绘标题栏） */
+}
+#rdBar .grow { flex: 1; }
+#rdBar b { font-size: 13.5px; font-weight: 600; white-space: nowrap; }
+#rdInfo { font-size: 11.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 46vw; }
+#rdBar .rd-btn {
+  -webkit-app-region: no-drag;
+  background: var(--chipbg); color: var(--fg); border: 0; border-radius: 9px;
+  padding: 6px 11px; font-size: 12.5px; cursor: pointer; font-family: inherit; white-space: nowrap;
+}
+#rdBar .rd-btn:hover { filter: brightness(.94); }
+#rdFrame { flex: 1; width: 100%; border: 0; background: #111; }

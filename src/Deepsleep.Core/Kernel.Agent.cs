@@ -315,7 +315,7 @@ public sealed partial class Kernel
     /// 展开后的明细就是工具原始返回，所以折叠态必须短、能一眼看出干了什么。
     /// </summary>
     /// <summary>工具大类：界面把同一轮里连续的 cmd / file 合并成一张卡片。</summary>
-    private static string ToolKindOf(string tool) => tool switch
+    internal static string ToolKindOf(string tool) => tool switch
     {
         Agent.ToolRunCommand or Agent.ToolPython => "cmd",
         Agent.ToolWriteFile => "file",
@@ -326,7 +326,7 @@ public sealed partial class Kernel
         _ => "other",
     };
 
-    private static string ToolCardSummary(string tool, string result)
+    internal static string ToolCardSummary(string tool, string result)
     {
         if (tool == Agent.ToolSearch)
         {

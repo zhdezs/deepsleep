@@ -34,11 +34,30 @@ public static partial class CoreServer
     public static string TunnelUrl => _tunnelUrl;
     private static readonly object TunnelGate = new();
 
+    /// <summary>隧道当前想要的形态（用来判断「已经在跑的是不是就是我要的」，避免重复重建）。</summary>
+    private static string _tunnelKind = "";
+
     /// <summary>起隧道。wanted = --tunnel，custom = --tunnel-cmd，cfPath = --tunnel-cf。</summary>
     public static void StartTunnel(bool wanted, string? custom, string? cfPath)
     {
         if (!wanted && string.IsNullOrWhiteSpace(custom) && string.IsNullOrWhiteSpace(cfPath)) return;
+
+        // ⚠ 幂等：**已经在跑同一种隧道就别再起一条**。
+        //   踩过的坑：内核启动时 --tunnel 起了一条并公布了地址，随后超级连接配对时
+        //   EnsureTunnel 又调一次 StartTunnel → 下面的 StopTunnel() 把刚建好的那条 ssh
+        //   杀了 → 新起的隧道是**另一个域名**。结果对外公布的还是旧地址，对方拿它死磕，
+        //   现象就是「跨机永远连不上，同机却没事」（同机走局域网直连，根本不碰隧道）。
+        string wantKind = !string.IsNullOrWhiteSpace(custom) ? "custom"
+                        : !string.IsNullOrWhiteSpace(cfPath) ? "cf"
+                        : "builtin";
+        if (!_tunnelStop && _tunnelKind == wantKind)
+        {
+            Say("  隧道        已经在跑了（" + wantKind + "），不用重复建");
+            return;
+        }
+
         StopTunnel();
+        _tunnelKind = wantKind;
         _tunnelStop = false;
         if (!string.IsNullOrWhiteSpace(custom)) { StartCustomTunnel(custom!); return; }
         if (!string.IsNullOrWhiteSpace(cfPath)) { StartCloudflared(cfPath!); return; }
@@ -49,6 +68,7 @@ public static partial class CoreServer
     public static void StopTunnel()
     {
         _tunnelStop = true;
+        _tunnelKind = "";                      // 清掉形态标记，下次 StartTunnel 会真的重建
         _tunnelGen++;
         var p = _tunnel;
         _tunnel = null;
@@ -65,7 +85,11 @@ public static partial class CoreServer
         public int Port = 22;
     }
 
-    /// <summary>可用的隧道入口：默认两个免费的公共入口，可用 DEEPSLEEP_TUNNEL_SSH 换（user@host[:端口]，逗号分隔）。</summary>
+    /// <summary>
+    /// 可用的隧道入口（按顺序试）：免费公共入口，可用 DEEPSLEEP_TUNNEL_SSH 换（user@host[:端口]，逗号分隔）。
+    /// 443 放在 22 前面 —— 不少网络（公司网 / 校园网 / 部分家宽）只放行 443，22 出不去，
+    /// 以前只试 22 就是"配对永远连不上"的直接原因；两个端口都试，谁能用用谁。
+    /// </summary>
     private static List<SshEntry> SshEntries()
     {
         var list = new List<SshEntry>();
@@ -83,8 +107,9 @@ public static partial class CoreServer
             }
             return list;
         }
-        list.Add(new SshEntry { Name = "serveo.net", Target = "serveo.net", Port = 22 });
-        list.Add(new SshEntry { Name = "localhost.run", Target = "nokey@localhost.run", Port = 22 });
+        list.Add(new SshEntry { Name = "serveo.net:443", Target = "serveo.net", Port = 443 });
+        list.Add(new SshEntry { Name = "localhost.run:22", Target = "nokey@localhost.run", Port = 22 });
+        list.Add(new SshEntry { Name = "serveo.net:22", Target = "serveo.net", Port = 22 });
         return list;
     }
 
@@ -147,16 +172,21 @@ public static partial class CoreServer
                 foreach (var entry in SshEntries())
                 {
                     if (_tunnelStop || gen != _tunnelGen) { KillAll(found); return; }
-                    if (found.Count >= 2) break;
+                    if (found.Count >= 1) break;    // 有一条能用就够了：先公布出去，别为了"比出最快的那条"再等 40 秒
                     var job = new TunnelJob(entry.Name, false);
                     Say("  隧道        正在用手写隧道连 " + entry.Name + " …");
                     try { job.StartSsh(ssh, entry.Target, entry.Port, _port, _dataDir); }
                     catch (Exception ex) { Say("  隧道        ssh 起不来：" + ex.Message); continue; }
-                    if (job.TryReady(gen, out string u, out double kbps)) found.Add(new Candidate(job, u, kbps));
+                    if (job.TryReady(gen, out string u, out double kbps))
+                    {
+                        var cand = new Candidate(job, u, kbps);
+                        found.Add(cand);
+                        cand.Publish();                       // 第一条可用的立刻公布（见 Candidate.Publish）
+                    }
                     else job.Kill();
                 }
             }
-            if (cf != null && found.Count < 2 && !_tunnelStop && gen == _tunnelGen)
+            if (cf != null && found.Count < 1 && !_tunnelStop && gen == _tunnelGen)
             {
                 var job = new TunnelJob("cloudflared", true);
                 Say("  隧道        正在用手头已有的 cloudflared 建隧道…");
@@ -184,8 +214,24 @@ public static partial class CoreServer
             }
             if (found.Count > 1) Say("  隧道        两条都能用，留快的这条");
             var best = found[0];
-            best.Job.Publish(best.Url);
+            if (!best.Published) best.Job.Publish(best.Url);
             if (best.Job.Monitor(gen)) return;
+
+            // ⚠ 通道断了：**必须立刻把公网地址清掉**，不然它会被当成「还在用」继续发给对方。
+            //   隧道重建要十几到几十秒，这期间 SuperLink 如果拿这条死地址去 PublishOffer，
+            //   对方就会对着一个已经废掉的域名反复探测（每轮 15 秒），表现就是「一直连不上」。
+            //   清空 + 通知上层，让上层知道该等新地址。
+            lock (TunnelGate)
+            {
+                if (_tunnelUrl == best.Url)
+                {
+                    _tunnelUrl = "";
+                    _tunnel = null;
+                    Say("  隧道        " + best.Job.Name + " 断了，地址已作废，正在换一条重建…");
+                    RaiseTunnelReady();      // 上层收到后发现 TunnelUrl 为空 → 不会把死地址发出去
+                }
+            }
+            best.Job.Kill();
             // 通道断了 → 回到 while 重来一轮（重新建 + 重新比）
         }
     }
@@ -195,7 +241,10 @@ public static partial class CoreServer
         public readonly TunnelJob Job;
         public readonly string Url;
         public readonly double Kbps;
+        /// <summary>已经公布过地址了（第一批成功的会先公布，免得后面对手的探测又把配对拖几十秒）。</summary>
+        public bool Published;
         public Candidate(TunnelJob job, string url, double kbps) { Job = job; Url = url; Kbps = kbps; }
+        public void Publish() { if (!Published) { Published = true; Job.Publish(Url); } }
     }
 
     private static void KillAll(List<Candidate> list)
@@ -279,6 +328,12 @@ public static partial class CoreServer
             _proc.BeginErrorReadLine();
         }
 
+        /// <summary>ssh 退出的返回码（-1 = 没退出 / 拿不到），用来判断"端口被挡"这类快速失败。</summary>
+        public int ExitCode
+        {
+            get { try { return _proc is { HasExited: true } ? _proc.ExitCode : -1; } catch { return -1; } }
+        }
+
         public void Kill()
         {
             try { if (_proc is { HasExited: false }) _proc.Kill(true); } catch { }
@@ -318,7 +373,9 @@ public static partial class CoreServer
             {
                 if (HasExited)
                 {
-                    Say("  隧道        " + _name + " 退出了：" + Tail());
+                    string why = Tail();
+                    Say("  隧道        " + _name + " 退出了（退出码 " + ExitCode + "）" +
+                        (why.Length > 0 ? "：" + why : "：没有任何输出 —— 多半是这台机器的网络把 SSH 挡住了"));
                     return false;
                 }
                 string u = _url;
@@ -444,7 +501,10 @@ public static partial class CoreServer
             http.DefaultRequestHeaders.UserAgent.ParseAdd("deepsleep/" + VersionString() + " (tunnel-selfcheck)");
             string s = http.GetStringAsync(url.TrimEnd('/') + "/api/ping?t=" + Uri.EscapeDataString(_token))
                            .GetAwaiter().GetResult();
-            return s.Contains("\"ok\":true", StringComparison.Ordinal);
+            // 用「完整版」判据（带 dataDir 才说明这个令牌真被认了）：只看 ok:true 的话，
+            // 万一隧道把域名接到了别人的 deepsleep 上也会判通过，实际却连不到本机。
+            return s.Contains("\"ok\":true", StringComparison.Ordinal)
+                && s.Contains("\"dataDir\":", StringComparison.Ordinal);
         }
         catch { return false; }
     }

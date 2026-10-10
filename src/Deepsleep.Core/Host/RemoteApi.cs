@@ -16,10 +16,22 @@ public static partial class CoreServer
         => r.TryGetProperty(name, out var e) && e.TryGetDouble(out double v) ? v : 0;
 
     private static string RdInfoJson()
-        => "{\"ok\":true,\"available\":" + (RemoteDesktop.Available ? "true" : "false") +
+    {
+        // 每次打开远控页都顺手重探一次：用户按提示装好截屏工具后，刷新页面就能用上（内部 15 秒节流）。
+        RemoteDesktop.Reprope();
+        return "{\"ok\":true,\"available\":" + (RemoteDesktop.Available ? "true" : "false") +
            ",\"screenW\":" + RemoteDesktop.ScreenWidth +
            ",\"screenH\":" + RemoteDesktop.ScreenHeight +
-           ",\"name\":" + JsonSerializer.Serialize(Environment.MachineName) + "}";
+           ",\"name\":" + JsonSerializer.Serialize(Environment.MachineName) +
+           // 键鼠 / 截屏的限制说明（Wayland 只能操作 XWayland 应用之类），控制端用来提示用户
+           ",\"note\":" + JsonSerializer.Serialize(Platform.IsWindows ? "" : RemoteDesktopNote()) + "}";
+    }
+
+#if WINDOWS
+    private static string RemoteDesktopNote() => "";
+#else
+    private static string RemoteDesktopNote() => RemoteDesktop.Note ?? "";
+#endif
 
     private static async Task RdFrameAsync(Res res, Req req)
     {

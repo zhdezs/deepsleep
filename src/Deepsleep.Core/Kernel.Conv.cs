@@ -256,7 +256,7 @@ public sealed partial class Kernel
         else _clusterAgent.NewSession(conv.Sid);
         foreach (var m in dto.Messages)
         {
-            conv.Items.Add(new ChatItem
+            var item = new ChatItem
             {
                 Text = m.Text,
                 Meta = m.Meta,
@@ -270,9 +270,50 @@ public sealed partial class Kernel
                 AvatarText = kind switch { 0 => "AI", 1 => "侠", _ => "集" },
                 SelfAvatarText = kind switch { 0 => "你", 1 => "理", _ => "你" },
                 AvatarColor = kind switch { 0 => "#4A90D9", 1 => "#B0B0B0", _ => "#7C4DFF" },
-            });
+                Thought = m.Thought,
+                ImagePath = m.ImagePath,
+                AttachmentName = m.AttachmentName,
+                AttachmentSize = m.AttachmentSize,
+                Speaker = m.Speaker,
+                ToolName = m.ToolName,
+                ToolSummary = m.ToolSummary,
+                ToolDetail = m.ToolDetail,
+                ToolKind = m.ToolKind,
+            };
+            // 兼容旧版 conversations.json（version 2 没存工具字段）：从「【工具「X」调用结果】」
+            // 前缀反推工具身份，让老对话重开后仍然是折叠卡片，而不是一段裸文本。
+            // ⚠ 旧版把工具结果存成了 IsSys=true 的系统消息，所以这里**不能**用 !IsSys 过滤，
+            //   真正的判据是「正文有工具结果前缀」——用户自己发的消息不会带这个前缀。
+            bool looksLikeToolResult = (item.Text ?? "").StartsWith(ToolResultPrefix, StringComparison.Ordinal);
+            if (string.IsNullOrEmpty(item.ToolName) && !item.IsSelf && looksLikeToolResult)
+            {
+                var guess = GuessToolFromText(item.Text);
+                if (!string.IsNullOrEmpty(guess))
+                {
+                    item.ToolName = guess;
+                    item.ToolKind = ToolKindOf(guess);
+                    item.ToolSummary = ToolCardSummary(guess, item.Text ?? "");
+                    item.ToolDetail = item.Text ?? "";
+                    // 旧数据把它当系统消息存的（IsSys 走 sysbar 分支只渲染 text）→ 要拉回普通气泡
+                    item.IsSys = false;
+                    item.Meta = "工具";
+                }
+            }
+            conv.Items.Add(item);
         }
         return conv;
+    }
+
+    /// <summary>工具结果正文的固定前缀（存盘时可见，重启后可用于反推工具名）。</summary>
+    private const string ToolResultPrefix = "【工具「";
+
+    /// <summary>从旧版存盘文本反推工具名：取「【工具「X」调用结果】」里的 X，取不到就返回空。</summary>
+    private static string GuessToolFromText(string? text)
+    {
+        if (string.IsNullOrEmpty(text) || !text.StartsWith(ToolResultPrefix, StringComparison.Ordinal)) return "";
+        int end = text.IndexOf("」调用结果】", StringComparison.Ordinal);
+        if (end <= ToolResultPrefix.Length) return "";
+        return text[ToolResultPrefix.Length..end].Trim();
     }
 
     private void SaveConversations()
@@ -299,6 +340,15 @@ public sealed partial class Kernel
             Accepted = m.Accepted,
             TimeStr = m.TimeStr,
             ShowTime = m.ShowTime,
+            ToolName = m.ToolName,
+            ToolSummary = m.ToolSummary,
+            ToolDetail = m.ToolDetail,
+            ToolKind = m.ToolKind,
+            Thought = m.Thought,
+            ImagePath = m.ImagePath,
+            AttachmentName = m.AttachmentName,
+            AttachmentSize = m.AttachmentSize,
+            Speaker = m.Speaker,
         }).ToList(),
     };
 

@@ -3,6 +3,12 @@ name: macOS dmg
 # macOS 的 .dmg 只能在 macOS 上生成（hdiutil / codesign），Windows 上做不出来。
 # 这里在 GitHub 的 macos-14 runner 上把 Release 里的 osx tar.gz 拼成 deepsleep.app，
 # 打成 .dmg 再传回同一个 Release。也可以在 Actions 页面手动 Run workflow。
+#
+# ⚠ 以前这个工作流"永远绿"：mk-macos-dmg.sh 里签名那句带了 `|| true`，签失败也照样出包，
+#   结果就是可能发出一个双击没反应的 .dmg 而没人知道。现在：
+#   · 打包脚本自己会在架构不符 / 签名失败时直接退出非 0；
+#   · 下面多一步「校验成品」，把 .dmg 挂起来真验一遍签名、架构、关键文件，
+#     不过就把工作流标红，绝不让坏包进 Release。
 
 on:
   workflow_dispatch:
@@ -57,6 +63,74 @@ jobs:
             bash release/tools/mk-macos-dmg.sh "in/deepsleep-$V-$rid.tar.gz" "$rid" "$V" out "src/deepsleep.ico"
           done
           ls -l out
+
+      - name: 校验成品（挂载 .dmg → 验签名 → 验架构 → 验关键文件 → 卸载）
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          fail=0
+          for rid in osx-arm64 osx-x64; do
+            dmg="out/deepsleep-$V-$rid.dmg"
+            echo "──────── 校验 $dmg"
+            MP="$(mktemp -d)"
+            trap 'hdiutil detach "$MP" -quiet >/dev/null 2>&1 || true' EXIT
+            if ! hdiutil attach "$dmg" -nobrowse -readonly -mountpoint "$MP"; then
+              echo "::error::$dmg 挂载失败"; fail=1; continue
+            fi
+            APP="$MP/deepsleep.app"
+
+            # 1) 可执行文件在、有执行位
+            if [ ! -x "$APP/Contents/MacOS/deepsleep" ]; then
+              echo "::error::$dmg 里找不到可执行文件（或没有执行位）—— 双击必然没反应"; fail=1
+            fi
+            # 2) 关键伴随文件都在（少了任何一个窗口都起不来）
+            for f in Contents/MacOS/Photino.Native.dylib Contents/MacOS/ui/index.html Contents/Info.plist; do
+              if [ ! -f "$APP/$f" ]; then
+                echo "::error::$dmg 里缺 $f"; fail=1
+              fi
+            done
+            # 3) 签名必须真的有效（ad-hoc 也要过 --verify）；被改过的签名这里会露出来
+            if ! codesign --verify --deep --strict --verbose=2 "$APP"; then
+              echo "::error::$dmg 的签名校验没通过 —— 用户那边会提示「已损坏」"; fail=1
+            fi
+            # 3b) 内层 Photino dylib 必须整份都有签名。上游那份 fat 二进制原本只有 arm64 分片
+            #     带签名、x86_64 分片是光的，半签的嵌套代码会让外层封印对不上 → 「已损坏」。
+            DY="$APP/Contents/MacOS/Photino.Native.dylib"
+            if [ -f "$DY" ]; then
+              echo "  Photino.Native.dylib 架构 = $(lipo -archs "$DY" 2>/dev/null || echo '?')"
+              if ! codesign --verify --strict --verbose=2 "$DY"; then
+                echo "::error::$dmg 的 Photino.Native.dylib 签名不完整（多半有分片没签上）"; fail=1
+              fi
+            fi
+            # 3c) 声明的最低系统版本必须跟 Photino 二进制真实要求一致（实测 14.0）。
+            #     写低了系统会以为能装，装上却加载不了窗口库。
+            MINOS="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$APP/Contents/Info.plist" 2>/dev/null || echo '')"
+            echo "  LSMinimumSystemVersion = ${MINOS:-（读不到）}"
+            if [ -z "$MINOS" ]; then
+              echo "::error::$dmg 的 Info.plist 里读不到 LSMinimumSystemVersion"; fail=1
+            elif ! awk -v a="$MINOS" 'BEGIN{ exit !(a + 0 >= 14.0) }'; then
+              echo "::error::$dmg 的 LSMinimumSystemVersion=$MINOS 低于实际要求（14.0），装了会起不来"; fail=1
+            fi
+            # 4) 架构必须跟这个包的名字对得上
+            ARCH="$(lipo -archs "$APP/Contents/MacOS/deepsleep" 2>/dev/null || echo '?')"
+            echo "  deepsleep 架构 = $ARCH"
+            case "$rid" in
+              osx-arm64) [ "$ARCH" = "arm64" ]  || { echo "::error::$dmg 声明 Apple 芯片，实际架构 $ARCH"; fail=1; } ;;
+              osx-x64)   [ "$ARCH" = "x86_64" ] || { echo "::error::$dmg 声明 Intel，实际架构 $ARCH"; fail=1; } ;;
+            esac
+            # 5) 给用户的绕过说明要跟着包走
+            if [ ! -f "$MP/使用说明.txt" ]; then
+              echo "::error::$dmg 里没有 使用说明.txt（第一次打开被拦时的解决办法）"; fail=1
+            fi
+
+            hdiutil detach "$MP" -quiet || true
+            trap - EXIT
+            rmdir "$MP" 2>/dev/null || true
+            echo "  完成"
+          done
+          if [ "$fail" != 0 ]; then
+            echo "::error::有 .dmg 没通过校验，不往上发（发了用户也是双击没反应）"
+            exit 1
+          fi
 
       - name: 传回 Release
         env:

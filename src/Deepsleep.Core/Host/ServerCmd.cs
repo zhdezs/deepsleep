@@ -57,7 +57,9 @@ public static partial class CoreServer
             case "openUrl":
                 if (!string.IsNullOrWhiteSpace(url) && url!.StartsWith("http", StringComparison.OrdinalIgnoreCase))
                 {
-                    try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); } catch { }
+                    // 内核版（没有桌面外壳）也走 Platform 的跨平台实现：Windows 默认浏览器、
+                    // Linux 用 xdg-open、macOS 用 open —— 直接 Process.Start 在 Linux 上不一定能打开。
+                    try { TrollWrangler.Platform.OpenWithShell(url!, false); } catch { }
                 }
                 return "{\"id\":" + id + ",\"ok\":true}";
             case "showWindow":

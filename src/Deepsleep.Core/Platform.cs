@@ -222,16 +222,32 @@ public static class Platform
             return;
         }
 
-        // Linux：桌面环境用 xdg-open；没有桌面（纯 SSH）时退化为打印路径
-        try
+        // Linux：桌面环境用 xdg-open；GNOME 那边一定还有 gio（glib），xdg-open 没装也能顶上；
+        // 两个都没有（纯 SSH / 没装 xdg-utils）就静默放弃 —— 以前只试 xdg-open，
+        // 缺了它「远程桌面」按钮就等于没反应。
+        string target = path;
+        if (revealInFolder)
         {
-            Process.Start(new ProcessStartInfo("xdg-open", $"\"{path}\"")
+            // Linux 没有"在文件管理器里选中文件"的统一接口，退一步打开所在目录
+            try
             {
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            });
+                string? dir = Directory.Exists(path) ? path : Path.GetDirectoryName(path);
+                if (!string.IsNullOrEmpty(dir)) target = dir;
+            }
+            catch { }
         }
-        catch { /* 无桌面环境，忽略 */ }
+        foreach (string opener in new[] { "xdg-open", "gio", "sensible-browser" })
+        {
+            try
+            {
+                var psi = new ProcessStartInfo(opener) { UseShellExecute = false, CreateNoWindow = true };
+                if (opener == "gio") psi.ArgumentList.Add("open");
+                psi.ArgumentList.Add(target);
+                Process.Start(psi);
+                return;
+            }
+            catch { /* 这个没有 / 起不来，试下一个 */ }
+        }
     }
 
     // ------------------------------------------------------------------
