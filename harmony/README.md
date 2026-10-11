@@ -45,19 +45,7 @@
 
 ## 编译
 
-### 不装 DevEco：CI 自动出包
-
-`.github/workflows/harmony-hap.yml` 已经配好：只要 `harmony/**` 有改动推到仓库，
-Actions 就会用 **OpenHarmony 公开 SDK**（华为云镜像，无需华为账号）+ hvigor 4.0.9
-（华为公开 npm 源）编译整个工程，把**未签名 .hap** 传到本次运行的 Artifacts 里
-（名字 `deepsleep-harmony-unsigned`）。也可以在 Actions 页面手动点
-`harmony-hap → Run workflow` 触发。
-
-⚠ CI 产物是「验证用」的：为了不依赖账号，CI 用 OpenHarmony SDK 编译（编译前临时把
-`runtimeOS` 切成 OpenHarmony）。它能证明代码、资源、配置全都能编过，但**装不进鸿蒙 PC**
-—— 可安装的包要签名，见下。
-
-### 装 DevEco：出可安装的签名包（推荐）
+### 装 DevEco：出可安装的签名包（主路径，推荐）
 
 ```bash
 # 1) 用 DevEco Studio 打开本目录（File → Open → 选 harmony/）
@@ -69,6 +57,15 @@ Actions 就会用 **OpenHarmony 公开 SDK**（华为云镜像，无需华为账
 #    产物在 entry/build/default/outputs/default/，*-signed.hap 就是可安装的
 # 6) 装到鸿蒙 PC：hdc install -r xxx-signed.hap，或者把 hap 拷过去用文件管理器装
 ```
+
+### 不装 DevEco：CI 出验证包（可选，手动触发）
+
+`.github/workflows/harmony-hap.yml` 用 OpenHarmony 公开 SDK（华为云镜像，无需华为账号）
++ hvigor 4.0.9（华为公开 npm 源）编译工程，产出**未签名 .hap**。
+⚠ **实测限制**：SDK 完整包有 **4.25 GB**，GitHub 海外 runner 下载不稳定（run #1 就栽在这），
+所以只保留手动触发（Actions → harmony-hap → Run workflow），跑一次可能要 10~30 分钟。
+产物是「验证用」的：能证明代码、资源、配置全都能编过，但**装不进鸿蒙 PC** —— 可安装的
+包要签名，走上面 DevEco 自动签名那条路。
 
 ### 命令行签名（不想装 DevEco 的场合）
 

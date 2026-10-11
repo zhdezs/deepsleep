@@ -9,14 +9,16 @@ name: harmony-hap
 #   ⚠ 因此 CI 在编译前会临时把 runtimeOS 改成 OpenHarmony —— 产物只用于验证，
 #   **不能**装进鸿蒙 PC；可安装的包要在 DevEco 里签名出（见 harmony/README.md）。
 #
+# ⚠ 实测结论（run #1）：OpenHarmony 公开 SDK 的完整包有 **4.25 GB**
+# （Content-Length 4563988878），GitHub 海外 runner 访问华为云 CDN 下载不稳定，
+# 64 秒内三次重试失败。所以本 workflow **只保留手动触发**，作为可选的重型验证；
+# 日常的编译验证主路径是 DevEco Studio 本地打开 harmony/ 编（见 harmony/README.md），
+# 签名本来也绕不开 DevEco。
+#
 # 产物：未签名 .hap（GitHub Actions artifact）。
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - 'harmony/**'
-      - '.github/workflows/harmony-hap.yml'
 
 permissions:
   contents: read
@@ -48,8 +50,11 @@ jobs:
           ROOT="$RUNNER_TEMP/ohsdk"
           mkdir -p "$ROOT" && cd "$ROOT"
           URL="https://repo.huaweicloud.com/openharmony/os/$OHOS_RELEASE/ohos-sdk-windows_linux-public.tar.gz"
-          echo "下载 $URL"
-          curl -fL --retry 3 --retry-delay 5 -o sdk.tar.gz "$URL"
+          echo "下载 $URL （4.25GB，海外 runner 上可能要 10~30 分钟）"
+          # -C - 断点续传；--retry-all-errors 让瞬时断连也重试；不设总超时，让大文件慢慢拉
+          curl -fL --retry 8 --retry-delay 10 --retry-all-errors --connect-timeout 30 -C - \
+            -o sdk.tar.gz "$URL"
+          ls -lh sdk.tar.gz
           tar xzf sdk.tar.gz
           # 解出来是 linux/*.zip（ets / js / native / toolchains / previewer），
           # hvigor 要的是 <SDK根>/<API版本>/<组件>/ 的结构，逐个展开并压平双层目录。
