@@ -1,0 +1,127 @@
+name: harmony-hap
+
+# deepsleep 鸿蒙壳的编译验证 + 产出未签名 .hap。
+#
+# 为什么用 OpenHarmony 公开 SDK 而不是华为 commandline-tools：
+#   commandline-tools（内含 HarmonyOS SDK）要登录华为开发者账号才能下载，CI 上拿不到；
+#   而本工程的用途是「验证 ArkTS 代码可编译 + 出包」，OpenHarmony 5.0.3（API 12）
+#   与工程的 compatibleSdkVersion 同级、@kit.* 声明也齐 —— 语法与资源检查同样有效。
+#   ⚠ 因此 CI 在编译前会临时把 runtimeOS 改成 OpenHarmony —— 产物只用于验证，
+#   **不能**装进鸿蒙 PC；可安装的包要在 DevEco 里签名出（见 harmony/README.md）。
+#
+# 产物：未签名 .hap（GitHub Actions artifact）。
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'harmony/**'
+      - '.github/workflows/harmony-hap.yml'
+
+permissions:
+  contents: read
+
+env:
+  HVIGOR_VER: '4.0.9'
+  OHOS_RELEASE: '5.0.3-Release'
+  OHOS_NPM: 'https://repo.harmonyos.com/npm/'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 装 JDK 17 与 Node 18
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: 下载并展开 OpenHarmony 公开 SDK
+        run: |
+          set -euo pipefail
+          ROOT="$RUNNER_TEMP/ohsdk"
+          mkdir -p "$ROOT" && cd "$ROOT"
+          URL="https://repo.huaweicloud.com/openharmony/os/$OHOS_RELEASE/ohos-sdk-windows_linux-public.tar.gz"
+          echo "下载 $URL"
+          curl -fL --retry 3 --retry-delay 5 -o sdk.tar.gz "$URL"
+          tar xzf sdk.tar.gz
+          # 解出来是 linux/*.zip（ets / js / native / toolchains / previewer），
+          # hvigor 要的是 <SDK根>/<API版本>/<组件>/ 的结构，逐个展开并压平双层目录。
+          API_DIR="$ROOT/12"
+          mkdir -p "$API_DIR"
+          cd linux
+          for z in *.zip; do
+            comp="${z%%-*}"
+            tmp="$API_DIR/.unpack-$comp"
+            mkdir -p "$tmp"
+            unzip -q "$z" -d "$tmp"
+            # 有些组件 zip 里还套一层同名目录，压平
+            if [ -d "$tmp/$comp" ]; then
+              rm -rf "$API_DIR/$comp"
+              mv "$tmp/$comp" "$API_DIR/$comp"
+            else
+              mkdir -p "$API_DIR/$comp"
+              mv "$tmp"/* "$API_DIR/$comp"/ 2>/dev/null || true
+            fi
+            rm -rf "$tmp"
+            echo "  $comp -> $(du -sh "$API_DIR/$comp" | cut -f1)"
+          done
+          test -d "$API_DIR/ets" || { echo "::error::SDK 里没有 ets 组件"; exit 1; }
+          echo "OHOS_SDK_HOME=$ROOT" >> "$GITHUB_ENV"
+          echo "SDK 就绪：$(du -sh "$API_DIR" | cut -f1)"
+
+      - name: 装 hvigor（华为公开 npm 源）
+        run: |
+          set -euo pipefail
+          cd harmony
+          npm install "@ohos/hvigor@$HVIGOR_VER" "@ohos/hvigor-ohos-plugin@$HVIGOR_VER" \
+            --registry="$OHOS_NPM" --no-fund --no-audit
+          npx hvigor --version
+
+      - name: 切到 CI 验证模式（OpenHarmony SDK 不认 HarmonyOS 的 runtimeOS）
+        run: |
+          set -euo pipefail
+          cd harmony
+          cp build-profile.json5 build-profile.json5.orig
+          sed -i 's/"runtimeOS": "HarmonyOS"/"runtimeOS": "OpenHarmony"/' build-profile.json5
+          sed -i 's/"compatibleSdkVersion": "5.0.0(12)"/"compatibleSdkVersion": "5.0.0"/' build-profile.json5
+          grep -nE 'runtimeOS|compatibleSdkVersion' build-profile.json5
+          echo "sdk.dir=$OHOS_SDK_HOME" > local.properties
+          echo "OHOS_SDK_HOME=$OHOS_SDK_HOME" >> "$GITHUB_ENV"
+
+      - name: 编译 HAP
+        run: |
+          set -o pipefail
+          cd harmony
+          npx hvigor assembleHap --mode module -p product=default -p buildMode=debug --no-daemon \
+            2>&1 | tee build.log || {
+              # 失败时把关键报错转成注解 —— Actions 日志正文 API 读不到，注解能直接读到
+              echo "::error::hvigor 编译失败，关键报错："
+              grep -aiE "error|失败|ERROR" build.log | tail -25 | while IFS= read -r l; do
+                echo "::error::$l"
+              done
+              exit 1
+            }
+          echo "::notice::编译通过"
+          find entry/build -name '*.hap' -exec ls -lh {} \;
+
+      - name: 上传未签名 HAP
+        uses: actions/upload-artifact@v4
+        with:
+          name: deepsleep-harmony-unsigned
+          path: |
+            harmony/entry/build/**/outputs/**/*.hap
+          if-no-files-found: error
+
+      - name: 恢复工程配置（仅本仓库干净度；checkout 是临时的，保险起见）
+        if: always()
+        run: |
+          cd harmony
+          [ -f build-profile.json5.orig ] && mv -f build-profile.json5.orig build-profile.json5 || true
+          rm -f local.properties

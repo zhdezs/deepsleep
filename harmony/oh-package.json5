@@ -1,0 +1,8 @@
+{
+  "modelVersion": "5.0.0",
+  "description": "deepsleep 鸿蒙电脑版客户端（ArkWeb 壳）",
+  "dependencies": {},
+  "devDependencies": {
+    "@ohos/hypium": "1.0.19"
+  }
+}

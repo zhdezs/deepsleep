@@ -1,0 +1,4 @@
+# 混淆规则（release 构建用）。壳很小，暂时不混淆。
+# 将来要开就把 enable 改成 true，再按需加 keep 规则。
+-enable-property-obfuscation
+-enable-toplevel-obfuscation

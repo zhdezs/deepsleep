@@ -1,0 +1,37 @@
+{
+  "app": {
+    "signingConfigs": [],
+    "products": [
+      {
+        "name": "default",
+        // ⚠ 不写 signingConfig：signingConfigs 是空的，引用不存在的签名配置
+        //   hvigor 会直接报错。这样产出「未签名 hap」，在 DevEco 里配好自动签名
+        //   （File → Project Structure → Signing Configs）之后 hvigor 会同时产出签名包。
+        "compatibleSdkVersion": "5.0.0(12)",
+        "runtimeOS": "HarmonyOS"
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug"
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    }
+  ]
+}

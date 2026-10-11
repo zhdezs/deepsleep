@@ -1,0 +1,13 @@
+{
+  "app": {
+    "bundleName": "io.github.zhdezs.deepsleep",
+    "vendor": "zhdezs",
+    "versionCode": 3000005,
+    "versionName": "3.0.5",
+    "icon": "$media:app_icon",
+    "label": "$string:app_name",
+    // 内核是 http://127.0.0.1:<端口> 的明文 HTTP，必须允许明文流量，
+    // 否则 ArkWeb 会被拦成白屏。
+    "cleartextTraffic": true
+  }
+}

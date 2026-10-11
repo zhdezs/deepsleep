@@ -1,0 +1,6 @@
+{
+  // hvigor 版本锁定。commandline-tools / DevEco 自带的 hvigor 以这里的
+  // modelVersion 为准挑兼容版本；本地没装对应版本时 hvigorw 会自动拉取。
+  "modelVersion": "5.0.0",
+  "dependencies": {}
+}

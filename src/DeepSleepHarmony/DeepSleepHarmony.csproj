@@ -1,0 +1,64 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- deepsleep 内核 · 鸿蒙（HarmonyOS）原生库。
+       鸿蒙禁 JIT（自 HarmonyOS 5.0.0(12) 起禁止映射可执行匿名内存），
+       CoreCLR 起不来，唯一的路是 NativeAOT 编成 musl 动态库，
+       再由鸿蒙壳的 NAPI 层 dlopen/dlsym 调进来。
+
+       编译目标：linux-musl-arm64（鸿蒙 PC 是新麒麟 ARM64，libc 是 musl 兼容的）。
+       ⚠ NativeAOT 不支持跨 OS 编译（Windows 上编 Linux 会报
+         "Cross-OS native compilation is not supported"），必须在 Linux 上编
+         —— 见 .github/workflows/harmony-native.yml。 -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Library</OutputType>
+    <AssemblyName>deepsleep</AssemblyName>
+    <RootNamespace>DeepSleepHarmony</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- NativeAOT 共享库：产出 libdeepsleep.so，入口是 [UnmanagedCallersOnly] 标注的静态方法 -->
+    <PublishAot>true</PublishAot>
+    <NativeLib>Shared</NativeLib>
+    <SelfContained>true</SelfContained>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- 鸿蒙上跑不了 ICU：系统那份路径不同、主版本是 72，且沙箱里读不到。
+         走 invariant 模式彻底不依赖 ICU —— deepsleep 的文案都是代码里的 UTF-8 常量，
+         只有 ToUpper/排序这类文化敏感操作会退化，影响可忽略。
+         （比 Avalonia 那个移植项目「从 Alpine 偷 libicu」干净得多。） -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+
+    <!-- System.Text.Json 在 AOT 下靠反射会失效，除非把 metadata 全留着。
+         内核里 JsonSerializer.Serialize<T>/Deserialize<T> 有几十处，逐个改成
+         source-gen 工作量太大；先把 metadata 保下来保证功能正确，代价是体积大些。
+         将来要瘦身再逐步换 JsonSerializerContext。 -->
+    <JsonSerializerIsReflectionEnabledByDefault>true</JsonSerializerIsReflectionEnabledByDefault>
+    <IlcTrimMetadata>false</IlcTrimMetadata>
+
+    <!-- 鸿蒙的 seccomp 会杀掉非法 syscall，栈回溯相关的东西在那边也用不上，
+         关掉能省不少体积（出问题时靠 NAPI 层的日志定位）。 -->
+    <StackTraceSupport>false</StackTraceSupport>
+
+    <!-- GC：鸿蒙不允许一次申请 256G 虚拟内存（会 OOM 被杀），
+         关掉服务端/并发 GC 能显著降低初始虚拟内存申请。
+         运行时还会再由 NAPI 层设 DOTNET_GCHeapHardLimit 兜底。 -->
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>false</ConcurrentGarbageCollection>
+
+    <!-- 这些是 AOT 的既有告警（System.Text.Json 反射序列化），上面的
+         IlcTrimMetadata=false 已经保证运行时正确，不必刷屏。 -->
+    <NoWarn>$(NoWarn);IL2026;IL3050;CA1416;NU1900</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Deepsleep.Core\Deepsleep.Core.csproj" />
+  </ItemGroup>
+
+  <!-- 内核的静态资源（界面 / 网页 / 工具脚本）不编进 .so：
+       它们由鸿蒙壳从 rawfile 释放到沙箱，把路径通过 deepsleep_start 传进来。 -->
+
+</Project>

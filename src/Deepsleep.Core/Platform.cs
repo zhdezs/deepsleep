@@ -15,10 +15,37 @@ public static class Platform
 {
     public static bool IsWindows { get; } = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
     public static bool IsMacOS { get; } = RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
+
+    /// <summary>
+    /// 鸿蒙（HarmonyOS）。
+    /// ⚠ 注意：鸿蒙的 libc 是 musl 兼容的，.NET 在那边
+    /// <c>IsOSPlatform(Linux)</c> 会返回 true —— **光看 IsLinux 分不出来**。
+    /// 所以优先认壳（NAPI 层）设的环境变量，其次才看鸿蒙特有的系统文件。
+    /// <para>
+    /// <see cref="IsLinux"/> 故意**不排除**鸿蒙：鸿蒙能跑大部分 Linux 分支代码
+    /// （chmod、/proc 读取、socket 那一套），排除掉反而要多写一遍。需要区分的地方
+    /// （远程桌面走 X11 / 隧道要靠 ssh / OTA）各自再判一次 <see cref="IsHarmony"/>。
+    /// </para>
+    /// </summary>
+    public static bool IsHarmony { get; } = DetectHarmony();
+
     public static bool IsLinux { get; } = !IsWindows && !IsMacOS;
 
-    /// <summary>平台短名：windows / macos / linux（界面文案用）。</summary>
-    public static string DisplayName => IsWindows ? "Windows" : IsMacOS ? "macOS" : "Linux";
+    private static bool DetectHarmony()
+    {
+        try
+        {
+            if (Environment.GetEnvironmentVariable("DEEPSLEEP_PLATFORM") == "harmony") return true;
+            if (File.Exists("/system/etc/param/ohos.para")) return true;          // 鸿蒙参数目录
+            if (File.Exists("/system/lib64/libace.z.so")) return true;           // ArkUI 引擎
+        }
+        catch { }
+        return false;
+    }
+
+    /// <summary>平台短名：windows / macos / linux / harmony（界面文案用）。</summary>
+    public static string DisplayName =>
+        IsWindows ? "Windows" : IsMacOS ? "macOS" : IsHarmony ? "HarmonyOS" : "Linux";
 
     /// <summary>命令壳的名字（提示词 / 报错文案用）。</summary>
     public static string ShellName => IsWindows ? "PowerShell" : "shell";

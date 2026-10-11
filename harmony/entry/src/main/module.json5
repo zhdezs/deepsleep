@@ -1,0 +1,50 @@
+{
+  "module": {
+    "name": "entry",
+    "type": "entry",
+    "description": "$string:module_desc",
+    "mainElement": "EntryAbility",
+    // 2in1 = 鸿蒙电脑（PC / 笔记本形态）。前两个是平板和手机，
+    // 顺手留着 —— 同一份壳在平板上也能用，只是窗口小一些。
+    "deviceTypes": [
+      "2in1",
+      "tablet",
+      "phone"
+    ],
+    "deliveryWithInstall": true,
+    "installationFree": false,
+    "pages": "$profile:main_pages",
+    "abilities": [
+      {
+        "name": "EntryAbility",
+        "srcEntry": "./ets/entryability/EntryAbility.ets",
+        "description": "$string:EntryAbility_desc",
+        "icon": "$media:app_icon",
+        "label": "$string:EntryAbility_label",
+        "startWindowIcon": "$media:app_icon",
+        "startWindowBackground": "$color:start_window_background",
+        "exported": true,
+        "skills": [
+          {
+            "entities": [
+              "entity.system.home"
+            ],
+            "actions": [
+              "action.system.home"
+            ]
+          }
+        ]
+      }
+    ],
+    "requestPermissions": [
+      {
+        // 要访问 http://127.0.0.1:<端口> 的内核（以及局域网 IP）
+        "name": "ohos.permission.INTERNET"
+      },
+      {
+        // 探测内核在不在、网络变了要不要重连
+        "name": "ohos.permission.GET_NETWORK_INFO"
+      }
+    ]
+  }
+}
