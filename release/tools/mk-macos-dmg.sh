@@ -35,42 +35,39 @@ chmod +x "$APP/Contents/MacOS/deepsleep" 2>/dev/null || true
 chmod +x "$APP/Contents/MacOS/deepsleep.sh" 2>/dev/null || true
 rm -f "$APP/Contents/MacOS/Deepsleep.Core.pdb"
 
+# ---------------------------------------------------------------- 0. 工具自检
+# 打包中途失败在日志里只剩一句 "exit code 1"，最难查。开头先把关键工具在不在打出来，
+# 下次一眼就能分清是"工具缺了"还是"包不对"。
+echo "  ── 工具自检 ──"
+for t in tar lipo file codesign hdiutil sips iconutil plutil python3; do
+  p="$(command -v "$t" 2>/dev/null || true)"
+  printf "    %-10s %s\n" "$t" "${p:-（没有）}"
+done
+
 # ---------------------------------------------------------------- 1. 架构核对
 # 交叉编译出来的东西最容易出的岔子就是"名字写着 arm64、里面其实是 x64"（或反过来）。
-# 这种包在对应机器上就是双击没反应，而且现场极难看出来。这里直接读 Mach-O 头核对，
-# 顺便确认 Photino.Native.dylib 真的含目标架构（它是 fat 二进制，两种都该有）。
-if ! python3 - "$APP/Contents/MacOS/deepsleep" "$APP/Contents/MacOS/Photino.Native.dylib" "$WANT_CPU" <<'PYEOF'
-import struct, sys
-
-CPU = {7: "x86", 0x01000007: "x86_64", 12: "arm", 0x0100000C: "arm64"}
-exe, dylib, want = sys.argv[1], sys.argv[2], sys.argv[3]
-
-def archs(path):
-    """返回 Mach-O 里的架构名列表（thin 一个，fat 多个）。"""
-    b = open(path, "rb").read(4096)
-    magic_be = struct.unpack(">I", b[:4])[0]
-    if magic_be in (0xcafebabe, 0xcafebabf):                 # fat（大端）
-        n = struct.unpack(">I", b[4:8])[0]
-        return [CPU.get(struct.unpack(">i", b[8 + 20 * i:12 + 20 * i])[0], "?") for i in range(n)]
-    magic_le = struct.unpack("<I", b[:4])[0]
-    if magic_le in (0xfeedface, 0xfeedfacf):                # thin（小端）
-        return [CPU.get(struct.unpack("<i", b[4:8])[0], "?")]
-    return ["?"]
-
-e = archs(exe)
-d = archs(dylib)
-print("    可执行文件架构 %s / Photino.Native.dylib 架构 %s" % (", ".join(e), ", ".join(d)))
-bad = False
-if e != [want]:
-    print("  ✗ 可执行文件的架构是 %s，但这份包应该只有 %s" % (", ".join(e), want))
-    bad = True
-if want not in d:
-    print("  ✗ Photino.Native.dylib 里没有 %s（只有 %s）—— 窗口根本起不来" % (want, ", ".join(d)))
-    bad = True
-sys.exit(1 if bad else 0)
-PYEOF
-then
-  echo "  ✗ $RID 包的架构不对，停在这里（打出来也没法用）" >&2
+# 这种包在对应机器上就是双击没反应，而且现场极难看出来。
+#
+# ⚠ 这里刻意**不用 python3**：lipo 是 macOS 自带的（Xcode CLT 提供），一定在；
+#   而 python3 在 macOS 上并不保证存在。第一版用了 python3，还写成"取不到就 exit 1"，
+#   结果整条流水线 1 秒内就挂了 —— 旧脚本里 python3 只用于图标，失败只是跳过，
+#   所以这个依赖从来没暴露过。**关键校验用的工具，必须是这个平台上一定有那个。**
+echo "  ── 架构核对（$RID 应该是 $WANT_CPU）──"
+EXE_ARCHS="$(lipo -archs "$APP/Contents/MacOS/deepsleep" 2>/dev/null || echo '')"
+DYLIB_ARCHS="$(lipo -archs "$APP/Contents/MacOS/Photino.Native.dylib" 2>/dev/null || echo '')"
+echo "    deepsleep 架构          = ${EXE_ARCHS:-（读不出来）}"
+echo "    Photino.Native.dylib 架构 = ${DYLIB_ARCHS:-（读不出来）}"
+if [ -z "$EXE_ARCHS" ]; then
+  echo "    （file 看一眼：$(file "$APP/Contents/MacOS/deepsleep" 2>/dev/null || echo 取不到)）"
+fi
+ARCH_BAD=""
+[ "$EXE_ARCHS" = "$WANT_CPU" ] || ARCH_BAD="可执行文件架构是 ${EXE_ARCHS:-空}，应该是 $WANT_CPU"
+case " $DYLIB_ARCHS " in
+  *" $WANT_CPU "*) ;;
+  *) ARCH_BAD="${ARCH_BAD}${ARCH_BAD:+；}Photino.Native.dylib 里没有 $WANT_CPU（只有 ${DYLIB_ARCHS:-空}）" ;;
+esac
+if [ -n "$ARCH_BAD" ]; then
+  echo "  ✗ $RID 包的架构不对，停在这里（打出来也没法用）：$ARCH_BAD" >&2
   exit 1
 fi
 
@@ -94,19 +91,28 @@ if not best:
 open(sys.argv[2], "wb").write(b[best[1]:best[1] + best[2]])
 PYEOF
   then
-    SET="$WORK/deepsleep.iconset"
-    mkdir -p "$SET"
-    for s in 16 32 64 128 256 512; do
-      sips -z $s $s "$WORK/icon.png" --out "$SET/icon_${s}x${s}.png" >/dev/null
-    done
-    cp "$SET/icon_32x32.png" "$SET/icon_16x16@2x.png"
-    cp "$SET/icon_64x64.png" "$SET/icon_32x32@2x.png"
-    cp "$SET/icon_256x256.png" "$SET/icon_128x128@2x.png"
-    cp "$SET/icon_512x512.png" "$SET/icon_256x256@2x.png"
-    sips -z 1024 1024 "$WORK/icon.png" --out "$SET/icon_512x512@2x.png" >/dev/null
-    if iconutil -c icns "$SET" -o "$APP/Contents/Resources/deepsleep.icns"; then
+    # ⚠ 图标纯粹是外观：这里任何一步失败都只跳过图标，绝不能让整个打包挂掉。
+    #   所以整段塞进一个子 shell 当 if 的条件（if 的条件上下文里 set -e 不生效）。
+    if (
+      SET="$WORK/deepsleep.iconset"
+      mkdir -p "$SET"
+      for s in 16 32 64 128 256 512; do
+        sips -z $s $s "$WORK/icon.png" --out "$SET/icon_${s}x${s}.png" >/dev/null
+      done
+      cp "$SET/icon_32x32.png" "$SET/icon_16x16@2x.png"
+      cp "$SET/icon_64x64.png" "$SET/icon_32x32@2x.png"
+      cp "$SET/icon_256x256.png" "$SET/icon_128x128@2x.png"
+      cp "$SET/icon_512x512.png" "$SET/icon_256x256@2x.png"
+      sips -z 1024 1024 "$WORK/icon.png" --out "$SET/icon_512x512@2x.png" >/dev/null
+      iconutil -c icns "$SET" -o "$APP/Contents/Resources/deepsleep.icns"
+    ); then
       ICON_LINE='  <key>CFBundleIconFile</key><string>deepsleep</string>'
+      echo "    .icns 图标已生成"
+    else
+      echo "    图标没做出来，跳过（只是没有自定义图标，不影响程序能不能跑）"
     fi
+  else
+    echo "    从 .ico 里取 PNG 失败（python3：$(command -v python3 2>/dev/null || echo 没有)），跳过图标"
   fi
 fi
 
