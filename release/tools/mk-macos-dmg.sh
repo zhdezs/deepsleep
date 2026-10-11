@@ -30,10 +30,27 @@ tar -xzf "$TAR" -C "$WORK/root"
 
 APP="$WORK/deepsleep.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp -R "$WORK/root/." "$APP/Contents/MacOS/"
+
+# ⚠⚠ 布局是这个脚本最要紧的一件事：**Contents/MacOS/ 里只能放可执行代码**。
+#   把 ui/ web/ tools/ pet.png 这些资源塞进 Contents/MacOS/，codesign 会把它们
+#   当成"未签名的嵌套代码"而**拒绝签名**，报的就是：
+#       deepsleep.app: code object is not signed at all
+#       In subcomponent: .../Contents/MacOS/ui/app.js
+#   而旧脚本把签名失败用 `|| true` 吞了 —— 于是发出去的 App **压根没签名**，
+#   Apple 芯片上双击就报「已损坏，无法打开」（右键绕过也没用）。这就是那个 bug 的根。
+#
+#   所以：资源全部放 Contents/Resources/，只有 deepsleep 和原生库 Photino.Native.dylib
+#   放 Contents/MacOS/。程序那边会自动识别这种布局（见 src/DeepSleepDesktop/Program.cs：
+#   可执行文件旁边没有 ui/ 时，就去 ../Resources/ 找）。
+RES="$APP/Contents/Resources"
+cp -R "$WORK/root/." "$RES/"
+mv "$RES/deepsleep" "$APP/Contents/MacOS/deepsleep"
+if [ -f "$RES/Photino.Native.dylib" ]; then
+  mv "$RES/Photino.Native.dylib" "$APP/Contents/MacOS/Photino.Native.dylib"
+fi
 chmod +x "$APP/Contents/MacOS/deepsleep" 2>/dev/null || true
-chmod +x "$APP/Contents/MacOS/deepsleep.sh" 2>/dev/null || true
-rm -f "$APP/Contents/MacOS/Deepsleep.Core.pdb"
+chmod +x "$RES/deepsleep.sh" 2>/dev/null || true
+rm -f "$RES/Deepsleep.Core.pdb"
 
 # ---------------------------------------------------------------- 0. 工具自检
 # 打包中途失败在日志里只剩一句 "exit code 1"，最难查。开头先把关键工具在不在打出来，
@@ -283,10 +300,18 @@ echo "  ── 交付前校验（${RID}）──"
 APP_IN="$DMGROOT/deepsleep.app"
 
 # 1) 关键文件必须在（少任何一个，App 都起不来）
+#    注意路径：资源在 Contents/Resources/，不是 MacOS/ —— 见前面那段布局说明。
 for f in Contents/Info.plist Contents/MacOS/deepsleep Contents/MacOS/Photino.Native.dylib \
-         Contents/MacOS/ui/index.html Contents/MacOS/web/core/rd.html; do
+         Contents/Resources/ui/index.html Contents/Resources/web/core/rd.html \
+         Contents/Resources/pet.png Contents/Resources/tools/websearch.py; do
   [ -f "$APP_IN/$f" ] || vfail "缺文件 $f"
 done
+# 1b) ⚠ 反回归：Contents/MacOS/ 里**只准有可执行代码**。混进任何别的文件，
+#     codesign 都会把它当"未签名的嵌套代码"而拒签 → 又是「已损坏」。
+#     ⚠ 末尾必须 `|| true`：grep 在"一行都没匹配上"时返回 1，
+#       而这里开着 set -e + pipefail —— 那会把"检查通过"误判成脚本故障直接退出。
+stray="$(ls -A "$APP_IN/Contents/MacOS" | grep -Ev '^(deepsleep|Photino\.Native\.dylib)$' | tr '\n' ' ' || true)"
+[ -z "$stray" ] || vfail "Contents/MacOS/ 里混进了非代码文件（会让 codesign 拒签）：$stray"
 # 2) 可执行位
 [ -x "$APP_IN/Contents/MacOS/deepsleep" ] || vfail "Contents/MacOS/deepsleep 没有可执行位"
 # 3) 架构

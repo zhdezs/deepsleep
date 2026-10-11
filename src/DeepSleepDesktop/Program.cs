@@ -17,6 +17,22 @@ internal static class Program
         try { Console.OutputEncoding = Encoding.UTF8; } catch { }
 
         string rootDir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
+
+        // macOS .app 的布局：可执行文件在 Contents/MacOS/，资源在 Contents/Resources/。
+        // 为什么必须分开：Contents/MacOS/ 里塞非代码文件（ui/ web/ tools/ pet.png）会让
+        // codesign 把它们当成"未签名的嵌套代码"而**拒绝签名**（code object is not signed at all），
+        // 签名一失败，Apple 芯片上双击就报「已损坏，无法打开」。所以打包时资源挪到 Resources/，
+        // 这里自动切过去。免安装的 tar.gz 里 ui/ 就在可执行文件旁边，走不到这个分支。
+        if (!Directory.Exists(Path.Combine(rootDir, "ui")))
+        {
+            try
+            {
+                string res = Path.GetFullPath(Path.Combine(rootDir, "..", "Resources"));
+                if (Directory.Exists(Path.Combine(res, "ui"))) rootDir = res;
+            }
+            catch { }
+        }
+
         string dataDir = ArgStr(args, "--data") ?? Platform.DefaultDataDir();
 
         // ⚠ 桌面版是从 Finder / 启动台 / 文件管理器点开的，**没有终端可看**。
