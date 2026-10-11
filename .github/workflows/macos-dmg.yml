@@ -67,11 +67,11 @@ jobs:
             # 读不到（要鉴权），只有注解读得到，所以下面会把尾巴发成 notice。
             bash -x release/tools/mk-macos-dmg.sh \
               "in/deepsleep-$V-$rid.tar.gz" "$rid" "$V" out "src/deepsleep.ico" > "$LOG" 2>&1 || rc=$?
-            echo "════════ $rid 打包结束（退出码 $rc）"
+            echo "════════ $rid 打包结束（退出码 ${rc}）"
             cat "$LOG"
 
             if [ ! -f "out/deepsleep-$V-$rid.dmg" ]; then
-              echo "::error::$rid 没有产出 .dmg（脚本退出码 $rc）"
+              echo "::error::$rid 没有产出 .dmg（脚本退出码 ${rc}）"
               tail -8 "$LOG" | while IFS= read -r line; do
                 echo "::notice::$rid trace | $line"
               done

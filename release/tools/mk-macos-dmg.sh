@@ -20,7 +20,7 @@ ICO="${5:-}"
 case "$RID" in
   osx-arm64) WANT_CPU="arm64" ;;
   osx-x64)   WANT_CPU="x86_64" ;;
-  *) echo "未知 RID：$RID（只认 osx-arm64 / osx-x64）" >&2; exit 2 ;;
+  *) echo "未知 RID：${RID}（只认 osx-arm64 / osx-x64）" >&2; exit 2 ;;
 esac
 
 WORK="$(mktemp -d)"
@@ -52,7 +52,7 @@ done
 #   而 python3 在 macOS 上并不保证存在。第一版用了 python3，还写成"取不到就 exit 1"，
 #   结果整条流水线 1 秒内就挂了 —— 旧脚本里 python3 只用于图标，失败只是跳过，
 #   所以这个依赖从来没暴露过。**关键校验用的工具，必须是这个平台上一定有那个。**
-echo "  ── 架构核对（$RID 应该是 $WANT_CPU）──"
+echo "  ── 架构核对（$RID 应该是 ${WANT_CPU}）──"
 EXE_ARCHS="$(lipo -archs "$APP/Contents/MacOS/deepsleep" 2>/dev/null || echo '')"
 DYLIB_ARCHS="$(lipo -archs "$APP/Contents/MacOS/Photino.Native.dylib" 2>/dev/null || echo '')"
 echo "    deepsleep 架构          = ${EXE_ARCHS:-（读不出来）}"
@@ -64,7 +64,7 @@ ARCH_BAD=""
 [ "$EXE_ARCHS" = "$WANT_CPU" ] || ARCH_BAD="可执行文件架构是 ${EXE_ARCHS:-空}，应该是 $WANT_CPU"
 case " $DYLIB_ARCHS " in
   *" $WANT_CPU "*) ;;
-  *) ARCH_BAD="${ARCH_BAD}${ARCH_BAD:+；}Photino.Native.dylib 里没有 $WANT_CPU（只有 ${DYLIB_ARCHS:-空}）" ;;
+  *) ARCH_BAD="${ARCH_BAD}${ARCH_BAD:+；}Photino.Native.dylib 里没有 ${WANT_CPU}（只有 ${DYLIB_ARCHS:-空}）" ;;
 esac
 if [ -n "$ARCH_BAD" ]; then
   echo "  ✗ $RID 包的架构不对，停在这里（打出来也没法用）：$ARCH_BAD" >&2
@@ -277,9 +277,9 @@ spctl -a -vvv -t exec "$DMGROOT/deepsleep.app" 2>&1 | sed 's/^/      /' || true
 #   这一点很关键：Actions 的日志正文在 API 里读不到（要鉴权），但注解能直接读到，
 #   所以"把诊断写进注解"是让远端失败可被远程诊断的唯一可靠办法。
 VERIFY_BAD=0
-vfail() { echo "::error::$RID：$1"; VERIFY_BAD=1; }
+vfail() { echo "::error::${RID}：$1"; VERIFY_BAD=1; }
 
-echo "  ── 交付前校验（$RID）──"
+echo "  ── 交付前校验（${RID}）──"
 APP_IN="$DMGROOT/deepsleep.app"
 
 # 1) 关键文件必须在（少任何一个，App 都起不来）
@@ -293,7 +293,7 @@ done
 A="$(lipo -archs "$APP_IN/Contents/MacOS/deepsleep" 2>/dev/null || echo '')"
 [ "$A" = "$WANT_CPU" ] || vfail "可执行文件架构是 ${A:-空}，应该是 $WANT_CPU"
 DA="$(lipo -archs "$APP_IN/Contents/MacOS/Photino.Native.dylib" 2>/dev/null || echo '')"
-case " $DA " in *" $WANT_CPU "*) ;; *) vfail "Photino.Native.dylib 里没有 $WANT_CPU（只有 ${DA:-空}）" ;; esac
+case " $DA " in *" $WANT_CPU "*) ;; *) vfail "Photino.Native.dylib 里没有 ${WANT_CPU}（只有 ${DA:-空}）" ;; esac
 # 4) 签名：整包 + 内层 dylib（dylib 是"签一半"的来源，单独再验一次）
 if ! codesign --verify --deep --strict "$APP_IN" 2>&1 | tail -3; then
   vfail "签名校验没通过（用户那边会提示「已损坏」）"
