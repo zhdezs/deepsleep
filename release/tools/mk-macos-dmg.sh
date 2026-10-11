@@ -159,6 +159,11 @@ PLISTEOF
 DMGROOT="$WORK/dmg"
 mkdir -p "$DMGROOT"
 cp -R "$APP" "$DMGROOT/"
+# cp -R 不带 -p 时，新建文件的权限会被 umask 削一道。macOS 默认 umask 022 不会碰执行位，
+# 但别赌这个 —— 执行位一丢，App 双击就没反应，而且现场极难看懂。
+# 必须在**签名之前**补，签完再改权限会让签名信息对不上。
+chmod +x "$DMGROOT/deepsleep.app/Contents/MacOS/deepsleep" 2>/dev/null || true
+chmod +x "$DMGROOT/deepsleep.app/Contents/MacOS/deepsleep.sh" 2>/dev/null || true
 ln -s /Applications "$DMGROOT/Applications"
 
 # 用户第一次打开最常见的拦路虎是 Gatekeeper：从浏览器下载的 .dmg 带隔离标记，
@@ -263,6 +268,57 @@ echo "    签名信息："
 codesign -dv "$DMGROOT/deepsleep.app" 2>&1 | sed 's/^/      /' || true
 echo "    Gatekeeper 评估（ad-hoc 签名被判 rejected 属预期，不是故障）："
 spctl -a -vvv -t exec "$DMGROOT/deepsleep.app" 2>&1 | sed 's/^/      /' || true
+
+# ---------------------------------------------------------------- 6.5 交付前把 .app 验一遍
+# 在**做成 .dmg 之前**把该验的都验掉：这里的文件是明文目录，不用挂载磁盘映像，
+# 哪一项不对看得最清楚。
+#
+# ⚠ 失败一律用 `::error::` 前缀 —— 它会变成 GitHub Actions 的**注解**。
+#   这一点很关键：Actions 的日志正文在 API 里读不到（要鉴权），但注解能直接读到，
+#   所以"把诊断写进注解"是让远端失败可被远程诊断的唯一可靠办法。
+VERIFY_BAD=0
+vfail() { echo "::error::$RID：$1"; VERIFY_BAD=1; }
+
+echo "  ── 交付前校验（$RID）──"
+APP_IN="$DMGROOT/deepsleep.app"
+
+# 1) 关键文件必须在（少任何一个，App 都起不来）
+for f in Contents/Info.plist Contents/MacOS/deepsleep Contents/MacOS/Photino.Native.dylib \
+         Contents/MacOS/ui/index.html Contents/MacOS/web/core/rd.html; do
+  [ -f "$APP_IN/$f" ] || vfail "缺文件 $f"
+done
+# 2) 可执行位
+[ -x "$APP_IN/Contents/MacOS/deepsleep" ] || vfail "Contents/MacOS/deepsleep 没有可执行位"
+# 3) 架构
+A="$(lipo -archs "$APP_IN/Contents/MacOS/deepsleep" 2>/dev/null || echo '')"
+[ "$A" = "$WANT_CPU" ] || vfail "可执行文件架构是 ${A:-空}，应该是 $WANT_CPU"
+DA="$(lipo -archs "$APP_IN/Contents/MacOS/Photino.Native.dylib" 2>/dev/null || echo '')"
+case " $DA " in *" $WANT_CPU "*) ;; *) vfail "Photino.Native.dylib 里没有 $WANT_CPU（只有 ${DA:-空}）" ;; esac
+# 4) 签名：整包 + 内层 dylib（dylib 是"签一半"的来源，单独再验一次）
+if ! codesign --verify --deep --strict "$APP_IN" 2>&1 | tail -3; then
+  vfail "签名校验没通过（用户那边会提示「已损坏」）"
+fi
+if ! codesign --verify --strict "$APP_IN/Contents/MacOS/Photino.Native.dylib" 2>&1 | tail -3; then
+  vfail "内层 Photino.Native.dylib 签名不完整（多半有分片没签上）"
+fi
+# 5) 声明的最低系统版本不能低于窗口库的真实要求（实测 14.0）
+MINOS="$(plutil -extract LSMinimumSystemVersion raw -o - "$APP_IN/Contents/Info.plist" 2>/dev/null || echo '')"
+echo "    LSMinimumSystemVersion = ${MINOS:-读不到}"
+if [ -z "$MINOS" ]; then
+  vfail "Info.plist 里读不到 LSMinimumSystemVersion"
+elif ! awk -v a="$MINOS" 'BEGIN{ exit !(a + 0 >= 14.0) }'; then
+  vfail "LSMinimumSystemVersion=$MINOS 低于实际要求 14.0，装了会起不来"
+fi
+# 6) 给用户的说明要跟着包走
+[ -f "$DMGROOT/使用说明.txt" ] || vfail "dmg 里没有 使用说明.txt"
+# Applications 是**指向目录的符号链接**：这里只能用 -L，用 -f 会永远判假
+[ -L "$DMGROOT/Applications" ] || vfail "dmg 里没有 Applications 快捷方式（用户拖不进去）"
+
+if [ "$VERIFY_BAD" != 0 ]; then
+  echo "  ✗ $RID 校验没过，不出这个包（出了用户也是双击没反应）" >&2
+  exit 1
+fi
+echo "    ✓ 关键文件 / 架构 / 签名 / 最低系统版本 都通过"
 
 # ---------------------------------------------------------------- 7. 出 dmg
 hdiutil create -volname "deepsleep $VER" -srcfolder "$DMGROOT" -ov -format UDZO \
