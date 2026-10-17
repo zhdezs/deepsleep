@@ -9,6 +9,11 @@ name: macOS dmg
 #   · 打包脚本自己会在架构不符 / 签名失败时直接退出非 0；
 #   · 下面多一步「校验成品」，把 .dmg 挂起来真验一遍签名、架构、关键文件，
 #     不过就把工作流标红，绝不让坏包进 Release。
+#
+# ⚠ 只保留手动触发：macOS 桌面版（含 .dmg）已停产 —— Photino + ad-hoc 签名在 Apple 芯片上
+#   会被 Gatekeeper 判成「已损坏」直接打不开（签名只覆盖 fat 包的一半）。macOS 现在只发
+#   内核版（deepsleep-core-osx-*），浏览器访问，不碰 .app / 签名这套。
+#   以前挂着 release:published 自动触发，每次发新版都会自动挂两个用不了的 .dmg 上去。
 
 on:
   workflow_dispatch:
@@ -17,8 +22,6 @@ on:
         description: "版本号（例如 3.0.4）"
         required: true
         type: string
-  release:
-    types: [published]
 
 permissions:
   contents: write

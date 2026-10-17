@@ -98,8 +98,13 @@ def source_files():
     return out
 
 
-# 跨平台桌面版包（Linux / macOS，同一个包 --headless 即内核版）：整包一起推，和 Windows 三个产物走同一套上传
-UNIX_RIDS = ["linux-x64", "linux-arm64", "osx-arm64", "osx-x64"]
+# 跨平台桌面版只给 Linux。macOS **不再发桌面版**（含 .dmg）：Photino + ad-hoc 签名
+# 在 Apple 芯片上会被 Gatekeeper 判成「已损坏」直接打不开，那条路已停产。
+# macOS / Linux 的内核形态是 deepsleep-core-*（纯命令行 + 浏览器界面），单独列。
+# ⚠ 这份列表必须和 publish.py 的 unix_packages() 保持一致 —— 以前两边各写各的，
+#   这边漏了 4 个内核包和万能安装程序，推完 GitHub 才发现少资产（verify 报「缺失」）。
+UNIX_RIDS = ["linux-x64", "linux-arm64"]
+CORE_RIDS = ["osx-arm64", "osx-x64", "linux-x64", "linux-arm64"]
 
 
 def assets_for(version):
@@ -108,13 +113,14 @@ def assets_for(version):
              os.path.join(ROOT, "release", "deepsleep-core-%s-win-x64.zip" % version)]
     for rid in UNIX_RIDS:
         cands.append(os.path.join(ROOT, "release", "deepsleep-%s-%s.tar.gz" % (version, rid)))
-    # Linux 安装包（debian / redhat）与 macOS 磁盘映像：整包一起推，和 Windows 三个产物走同一套上传
+    for rid in CORE_RIDS:
+        cands.append(os.path.join(ROOT, "release", "deepsleep-core-%s-%s.tar.gz" % (version, rid)))
+    # Linux 安装包（debian / redhat）与万能安装程序：整包一起推，和 Windows 三个产物走同一套上传
     cands += [os.path.join(ROOT, "release", "deepsleep_%s_amd64.deb" % version),
               os.path.join(ROOT, "release", "deepsleep_%s_arm64.deb" % version),
               os.path.join(ROOT, "release", "deepsleep-%s-1.x86_64.rpm" % version),
               os.path.join(ROOT, "release", "deepsleep-%s-1.aarch64.rpm" % version),
-              os.path.join(ROOT, "release", "deepsleep-%s-osx-arm64.dmg" % version),
-              os.path.join(ROOT, "release", "deepsleep-%s-osx-x64.dmg" % version)]
+              os.path.join(ROOT, "release", "deepsleep-universal-%s.zip" % version)]
     return [p for p in cands if os.path.isfile(p)]
 
 
