@@ -98,18 +98,22 @@ internal static partial class Program
 
     private static void Banner(string[] args)
     {
+        // 用 CoreServer.Port 而不是命令行里的 _port：端口起不来时内核会自动换成别的端口，
+        // 这里必须打印**实际**在用的那个，否则用户照着网址打开是拒绝连接。
+        int port = CoreServer.Port > 0 ? CoreServer.Port : _port;
         string link = CoreServer.PublicBound
-            ? "http://" + LanHint() + ":" + _port + "/web/core/#t=" + _token
-            : "https://zhdezs.github.io/deepsleep/web/core/#p=" + _port + "&t=" + _token;
+            ? "http://" + LanHint() + ":" + port + "/web/core/#t=" + _token
+            : "https://zhdezs.github.io/deepsleep/web/core/#p=" + port + "&t=" + _token;
         Console.WriteLine();
         Console.WriteLine("┌──────────────────────────────────────────────────────────────┐");
         Console.WriteLine("│  deepsleep 内核版（Core）已启动                              │");
         Console.WriteLine("└──────────────────────────────────────────────────────────────┘");
-        Console.WriteLine("  本机地址   http://127.0.0.1:" + _port + "/");
+        Console.WriteLine("  本机地址   http://127.0.0.1:" + port + "/" +
+                          (port != _port ? "　（端口 " + _port + " 被系统保留，已自动换到这个）" : ""));
         Console.WriteLine("  配对令牌   " + _token);
         Console.WriteLine("  数据目录   " + _dataDir);
         Console.WriteLine();
-        Console.WriteLine("  用法一（本机）：浏览器打开 http://127.0.0.1:" + _port + "/ ，点「内核版网页」");
+        Console.WriteLine("  用法一（本机）：浏览器打开 http://127.0.0.1:" + port + "/ ，点「内核版网页」");
         Console.WriteLine("  用法二（外网）：打开下面的网址，端口和令牌自动填好（这条链接别外传）：");
         Console.WriteLine("      " + link);
         if (CoreServer.PublicBound)

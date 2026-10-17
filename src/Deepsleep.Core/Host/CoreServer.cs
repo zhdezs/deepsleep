@@ -89,8 +89,39 @@ public static partial class CoreServer
 
         try
         {
-            _listener = new TcpListener(o.Bind, _port);
-            _listener.Start();
+            // 端口可能起不来，而且**不一定是因为被占用**：Windows 会把成片的动态端口预留给
+            // Hyper-V / WSL / Docker，落在那一段里绑定失败报的是「访问权限不允许」（WSAEACCES），
+            // 不是习惯上的「已被占用」。实测这台机器的 8756 就落在保留段 8722-8821 里，
+            // 于是内核版双击后一闪就退出（用户看到的就是「闪退」）。
+            // 所以这里不放弃：从请求的端口往后找一个真能绑上的，并把实际端口告诉用户。
+            int want = o.Port;
+            string? firstError = null;
+            // 往后找 1000 个端口。为什么不是 20 / 200：Windows 的保留段是**成片**的，
+            // 这台机器上 8622-9121 整段都被 Hyper-V/WSL 预留了（500 个端口连成一片），
+            // 小步长扫描会整段撞死在这里 —— 实测 +200 全失败，+1000 才出去。
+            const int ScanSpan = 1000;
+            for (int i = 0; i <= ScanSpan; i++)
+            {
+                int p = want + i;
+                if (p > 65535) break;
+                try
+                {
+                    _listener = new TcpListener(o.Bind, p);
+                    _listener.Start();
+                    _port = p;
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _listener = null;
+                    firstError ??= ex.Message;
+                }
+            }
+
+            if (_listener != null && _port != want)
+                Say($"端口 {want} 起不来（{firstError?.Trim()}），已自动改用 {_port}。");
+            else if (_listener == null)
+                Say($"端口 {want} 起不来（往后试了 {ScanSpan} 个都不行）：{firstError}");
         }
         catch (Exception ex)
         {

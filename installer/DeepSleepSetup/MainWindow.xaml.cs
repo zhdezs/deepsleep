@@ -11,9 +11,27 @@ public partial class MainWindow : Window
 {
     private const string AppName = "deepsleep";
     private const string AppDisplay = "deepsleep AI 助手";
-    private const string AppVersion = "3.0.4";
+    /// <summary>
+    /// 安装器版本：从编译期注入的 AssemblyMetadata 读，源头是 src\Directory.Build.props。
+    /// 以前这里写死 "3.0.4"，载荷早已是 3.0.5-alpha，注册表 DisplayVersion 就一直是错的。
+    /// </summary>
+    private static readonly string AppVersion = ResolveAppVersion();
     private const string Publisher = "deepsleep";
     private const string ExeName = "deepsleep.exe";
+
+    private static string ResolveAppVersion()
+    {
+        try
+        {
+            var meta = typeof(MainWindow).Assembly
+                .GetCustomAttributes<AssemblyMetadataAttribute>()
+                .FirstOrDefault(a => a.Key == "DeepSleepVersion");
+            if (!string.IsNullOrWhiteSpace(meta?.Value)) return meta!.Value!;
+        }
+        catch { /* 读不到就退回程序集版本 */ }
+        var v = typeof(MainWindow).Assembly.GetName().Version;
+        return v is null ? "0.0.0-dev" : v.ToString(3);
+    }
 
     private static string DefaultDir =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

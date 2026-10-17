@@ -43,6 +43,13 @@ public sealed class Agent
     public const string ToolWriteFile = "写入文件";
     public const string ToolRemember = "记住";
     public const string ToolForget = "删除记忆";
+    /// <summary>技能不是模型调用的「工具」，但界面上按同一套卡片展示（调用链默认折叠）。</summary>
+    public const string ToolSkill = "技能";
+    /// <summary>
+    /// 拆分任务：把一个复杂任务拆成若干子任务，交给独立的子智能体各自执行，最后汇总。
+    /// 以前这能力只存在于「Agent 集群」标签页里、要用户手动配团队；现在由主助手自己决定拆不拆。
+    /// </summary>
+    public const string ToolSplit = "拆分任务";
 
     /// <summary>以理服人回怼引擎系统提示（GLM-4-Flash-250414 生成）。</summary>
     public const string CounterSystemPrompt =
@@ -121,8 +128,11 @@ public sealed class Agent
     /// <summary>产生新消息时触发（UI 订阅，追加到对应会话的对话列表）。参数：会话 id、消息。</summary>
     public event Action<int, AgentMessage>? MessageAdded;
 
-    /// <summary>技能被自动匹配并启用时触发（参数：会话 id、技能名），用于 UI 显示技能调用链。</summary>
-    public event Action<int, string>? SkillUsed;
+    /// <summary>
+    /// 技能被自动匹配 / 补救启用时触发（参数：会话 id、技能名、触发方式），
+    /// 用于 UI 显示技能调用链。触发方式取值：自动匹配 / 补救启用 / 相关补强。
+    /// </summary>
+    public event Action<int, string, string>? SkillUsed;
 
     /// <summary>流式增量内容（参数：会话 id、增量文本），用于真·流式输出。</summary>
     public event Action<int, string>? DeltaAdded;
@@ -135,6 +145,12 @@ public sealed class Agent
     /// 绝不混进正文 —— 以前 Responses 接口的英文思考会被当答案拼进去。
     /// </summary>
     public event Action<int, string>? ReasoningAdded;
+
+    /// <summary>
+    /// 思考内容的**流式**版本（会话 id, 累积到当前的思考全文）。
+    /// 和 <see cref="ReasoningAdded"/> 的区别：那个只在整轮结束时抛一次，这个边生成边抛。
+    /// </summary>
+    public event Action<int, string>? ReasoningStreaming;
 
     private int _currentSid;
 
@@ -518,9 +534,7 @@ public sealed class Agent
             }
 
             // 工具调用标记（我们的 JSON，或模型自家的 DSML）没解析成功 → 这是格式问题，不能当最终回答
-            bool looksLikeToolMarkup = reply.Contains("\"tool\"", StringComparison.Ordinal) ||
-                                       reply.Contains("invoke name=\"", StringComparison.Ordinal) ||
-                                       reply.Contains("DSML", StringComparison.Ordinal);
+            bool looksLikeToolMarkup = LooksLikeToolAttempt(reply);
             bool malformedCall = useDecision && !isToolCall && !decisionDone && looksLikeToolMarkup;
             // 最终回答里含代码块 → 顺手落盘（保证 LLM 随口给的代码也有对应文件）；
             // chat（纯聊天）模式是「不改动电脑」，不落盘。
@@ -559,7 +573,7 @@ public sealed class Agent
                 {
                     Role = "tool",
                     Meta = "格式修正",
-                    Content = "你的工具调用格式错误：只能输出合法 JSON。调用工具写 {\"tool_call\":{\"name\":\"工具名\",\"arguments\":{...}}}；不需要工具写 {\"tool_call\":null}。字符串内换行写 \\n，双引号写 \\\"，不要解释。",
+                    Content = ToolFormatRule(),
                 };
                 history.Add(corr);
                 MessageAdded?.Invoke(sid, corr);
@@ -682,7 +696,12 @@ public sealed class Agent
         "- 读取文件：参数 {\"路径\":\"绝对路径\"}。读取文本文件内容。\n" +
         "- 写入文件：参数 {\"路径\":\"绝对路径\",\"内容\":\"要写入的内容\"}。写入或覆盖文本文件。\n" +
         "- 记住：参数 {\"内容\":\"要记住的事实或用户偏好\"}。把重要信息写入长期记忆（跨会话有效），之后任何对话都能用到。\n" +
-        "- 删除记忆：参数 {\"序号\":1}。删除系统提示词【长期记忆】里对应序号的一条记忆。\n\n" +
+        "- 删除记忆：参数 {\"序号\":1}。删除系统提示词【长期记忆】里对应序号的一条记忆。\n" +
+        "- 拆分任务：参数 {\"tasks\":[{\"role\":\"角色名（如 前端开发）\",\"task\":\"这一路要独立完成的具体任务\"}]}。" +
+        "把一个复杂任务拆成 2~5 个子任务，交给各自独立的子智能体**并行**执行，最后把各路的产出汇总回给你。" +
+        "适合「需要多方向同时推进」「可以分成互相独立的几块」的活（比如同时写前后端、同时调研几个方向、同时生成多份材料）。" +
+        "拆出来的每个子任务要**自包含**：说清楚目标、要给什么产物、放到哪个目录，因为子智能体看不到你和用户的上下文。" +
+        "子智能体不能反过来问你，所以别把需要用户拍板的事情拆出去。\n\n" +
         "规则：\n" +
         "1. 需要工具时只输出那一行 JSON；收到工具结果后继续思考，直到能给出最终回答。\n" +
         "2. 最终回答用普通中文文本，简洁、直接、专业，不要输出 JSON。\n" +
@@ -695,7 +714,7 @@ public sealed class Agent
         "8. 写代码 / 做网页 / 做项目时需要图片素材（图标、Logo、横幅、占位图、插图、配图等）时，用「生成图片」工具生成真实图片并引用本地路径，不要跳过、不要用手写 SVG 或纯色占位代替。\n" +
         "9. 工具执行失败、超时或被停止时：如实告知用户发生了什么并询问下一步；严禁调用无关工具、严禁假装任务已完成、严禁用「好的，我明白了」之类的通用话术敷衍。\n" +
         "10. 用户要求搜索、查价格、查资料、找最新信息时，必须用「网络搜索」工具（需要系统调研、写报告时用「深度研究」）；搜到链接后如需原文，用「抓取网页」读取；严禁用 curl / wget / Invoke-WebRequest 等命令行代替（会触发拦截并导致失败）。\n" +
-        "11. 工具选择指南：搜索/查价格/查资料/找最新信息→「网络搜索」；要系统调研/写报告→「深度研究」；阅读搜索结果的具体页面→「抓取网页」；执行命令/系统操作→「运行命令」；写代码跑脚本→「运行Python脚本」或「写入文件」；生成图片→「生成图片」；看图片→「看图」；读写文件→「读取文件/写入文件」；用默认程序打开文件→「打开文件」。\n" +
+        "11. 工具选择指南：搜索/查价格/查资料/找最新信息→「网络搜索」；要系统调研/写报告→「深度研究」；阅读搜索结果的具体页面→「抓取网页」；执行命令/系统操作→「运行命令」；写代码跑脚本→「运行Python脚本」或「写入文件」；生成图片→「生成图片」；看图片→「看图」；读写文件→「读取文件/写入文件」；用默认程序打开文件→「打开文件」；任务可以拆成几块互相独立的活→「拆分任务」。\n" +
         "12. 最终回答必须是纯文本中文，禁止输出任何 JSON、代码块或结构化片段。\n" +
         "13. 用户提到重要事实、偏好、要求（比如称呼、习惯、项目约定、不想要什么）时，用「记住」工具保存；保存后告知用户已记住。\n" +
         "14. 当【已安装技能】里出现与你任务匹配的技能时，必须真正执行技能：按说明调用「运行Python脚本」「写入文件」「运行命令」「生成图片」等工具，把产物（PPT/文档/网页/脚本等）真实生成到磁盘，并在最终回复里给出完整本地路径；严禁只讲解步骤、只描述怎么做、或假装已完成。" +
@@ -962,7 +981,7 @@ public sealed class Agent
             if (hit)
             {
                 injected?.Add(s.Name);
-                SkillUsed?.Invoke(_currentSid, s.Name);
+                SkillUsed?.Invoke(_currentSid, s.Name, "自动匹配");
                 Log($"技能启用：{s.Name}");
                 anyContent = true;
                 sb.AppendLine($"\n【技能「{s.Name}」使用说明】\n{Truncate(s.Content, 4000)}");
@@ -1014,7 +1033,7 @@ public sealed class Agent
         int score = BigramScore(user, best.Name + " " + best.Description) + AliasBonus(user, best) + (user.Contains(best.Name) ? 5 : 0);
         if (score < 1) return null;
         injected.Add(best.Name);
-        SkillUsed?.Invoke(_currentSid, best.Name);
+        SkillUsed?.Invoke(_currentSid, best.Name, "补救启用");
         Log($"技能补救启用：{best.Name}");
         return $"AI 表示无法完成。已自动找到可能适用的技能「{best.Name}」：{best.Description}\n\n技能说明：\n{Truncate(best.Content, 3000)}\n\n请立即按该技能说明重新完成任务，不要说不会。";
     }
@@ -1037,7 +1056,7 @@ public sealed class Agent
         int score = BigramScore(user, best.Name + " " + best.Description) + AliasBonus(user, best) + (user.Contains(best.Name) ? 5 : 0);
         if (score < 3 || (reply ?? "").Contains(best.Name, StringComparison.Ordinal)) return null;
         injected.Add(best.Name);
-        SkillUsed?.Invoke(_currentSid, best.Name);
+        SkillUsed?.Invoke(_currentSid, best.Name, "相关补强");
         Log($"技能补强：{best.Name}");
         return $"检测到任务与技能「{best.Name}」高度相关但尚未使用。技能说明：\n{Truncate(best.Content, 3000)}\n\n请按该技能说明重新完成任务，并真实调用对应工具。";
     }
@@ -1127,7 +1146,11 @@ public sealed class Agent
                 string? reply = null;
                 if (Streaming && onDelta != null)
                 {
-                    reply = await _api.ChatStreamAsync(system, msgs, sink, ct: ct);
+                    // 思考内容也走流式：边生成边推给界面，而不是等整轮结束才一次性出现
+                    reply = await _api.ChatStreamAsync(system, msgs, sink, ct: ct,
+                        onReasoning: emitReasoning
+                            ? t => ReasoningStreaming?.Invoke(_currentSid, t)
+                            : null);
                     // 流式不支持/失败（非限流、非取消）→ 回退普通请求，保证能出话
                     if (string.IsNullOrEmpty(reply) && !ct.IsCancellationRequested &&
                         !IsRateLimit(_api.LastError))
@@ -1663,21 +1686,157 @@ public sealed class Agent
         return -1;
     }
 
-    /// <summary>把模型可能输出的工具别名（含旧名「联网搜索」）归一成正式工具名。</summary>
-    private static string NormalizeToolName(string tool)
+    /// <summary>
+    /// 工具调用格式规则：既用于系统提示，也用于「格式修正」重试。
+    /// <para>
+    /// 必须把**合法工具名逐个列出来** —— 小模型编不出名字时会自造
+    /// <c>write_to_file</c> 这种训练里见过的英文名。虽然 <see cref="NormalizeToolName"/>
+    /// 已经能兜住绝大多数别名，但直接告诉它正确名字，比事后纠正少绕一圈。
+    /// </para>
+    /// </summary>
+    private static string ToolFormatRule()
+        => "你的工具调用格式错误：只能输出合法 JSON，不要输出解释，不要包在 ``` 代码块里。\n" +
+           "调用工具：{\"tool_call\":{\"name\":\"工具名\",\"arguments\":{...}}}\n" +
+           "不需要工具：{\"tool_call\":null}\n" +
+           "可用工具名（必须原样使用这几个中文名，不要用 write_to_file 等英文名）：" +
+           string.Join("、", ToolNames) + "\n" +
+           "参数键固定为 name + arguments；字符串里的换行写 \\n，双引号写 \\\"。\n" +
+           "如果要写入的文件很长（超过约 3000 字），先写一部分，再继续调用同样的工具追加剩余内容，" +
+           "不要试图一次输出完导致 JSON 被截断。";
+
+    /// <summary>本应用提供的工具名（格式修正提示里报给模型，避免它自己编名字）。</summary>
+    public static readonly string[] ToolNames =    {
+        ToolRunCommand, ToolPython, ToolWriteFile, ToolReadFile, ToolOpenFile,
+        ToolSearch, ToolResearch, ToolFetch, ToolImage, ToolVision, ToolRemember, ToolForget,
+        ToolSplit,
+    };
+
+    /// <summary>
+    /// 「拆分任务」的执行器（由内核注入）：参数是工具调用的原始 JSON，返回汇总结论文本。
+    /// Agent 自己不持有子智能体，用回调注入是为了让内核独占编排逻辑。
+    /// </summary>
+    public Func<string, CancellationToken, Task<string>>? SplitRunner;
+
+    /// <summary>
+    /// 判断这段输出「像是要调工具」但没能解析成功。
+    /// <para>
+    /// 为什么不能只查 <c>"tool"</c>：小模型的失败姿势五花八门，最常见的是
+    /// <c>{"tool_call":{"name":"write_to_file",...}}</c>（写的是 tool_call 而不是 tool），
+    /// 或者干脆 <c>{"name":"write_to_file","arguments":{...}}</c>；
+    /// 再常见的是 JSON 被输出长度上限截断、根本闭合不了。
+    /// 这些以前全都判不出来 → 落到「当普通文本显示」→ 用户看到模型说了一大段
+    /// 「我现在调用工具写入文件」，然后一个文件都没生成。
+    /// </para>
+    /// </summary>
+    private static bool LooksLikeToolAttempt(string? reply)
     {
-        string t = (tool ?? "").Trim();
-        return t switch
+        if (string.IsNullOrWhiteSpace(reply)) return false;
+        string r = reply;
+
+        if (r.Contains("\"tool\"", StringComparison.Ordinal)) return true;
+        if (r.Contains("tool_call", StringComparison.OrdinalIgnoreCase)) return true;
+        if (r.Contains("function_call", StringComparison.OrdinalIgnoreCase)) return true;
+        if (r.Contains("invoke name=\"", StringComparison.Ordinal)) return true;
+        if (r.Contains("DSML", StringComparison.Ordinal)) return true;
+        if (r.Contains("<|tool", StringComparison.Ordinal)) return true;   // OpenAI 原生 function calling 标记
+
+        // 裸的 {"name":"write_to_file","arguments":{…}}：有参数键 + 认识的工具名（含英文别名）
+        bool hasArgsKey = r.Contains("\"arguments\"", StringComparison.OrdinalIgnoreCase) ||
+                          r.Contains("\"args\"", StringComparison.OrdinalIgnoreCase) ||
+                          r.Contains("\"parameters\"", StringComparison.OrdinalIgnoreCase);
+        if (!hasArgsKey) return false;
+
+        foreach (Match m in Regex.Matches(r, "\"name\"\\s*:\\s*\"([^\"]+)\""))
         {
-            "联网搜索" or "网络搜索" or "搜索" or "网页搜索" or "在线搜索" or "websearch" or "web_search" or "online search" => ToolSearch,
-            "深度研究" or "深度调研" or "深入研究" or "研究报告" or "调研报告" or "research" or "deep research" or "deep_research" or "deepresearch" => ToolResearch,
-            _ => t,
-        };
+            string raw = m.Groups[1].Value.Trim();
+            if (ToolNames.Contains(raw)) return true;            // 本来就是我们定义的名字
+            if (NormalizeToolName(raw) != raw) return true;      // 命中英文/中文别名表
+        }
+        return false;
     }
 
-    /// <summary>chat（纯聊天）模式下只放开网络搜索 / 深度研究这两个只读工具。</summary>
+    /// <summary>
+    /// 把模型可能输出的工具别名归一成正式工具名。
+    /// <para>
+    /// ⚠ 这条极其关键：小模型（尤其本地 9B）几乎不会照着中文工具名来，它们按训练时见过的
+    /// 英文习惯输出 <c>write_to_file</c> / <c>run_command</c> / <c>read_file</c>。
+    /// 以前这里只映射了搜索/研究两个别名，于是「工具名不认识」→ 工具不执行 →
+    /// 用户看到模型说了一大段「我现在将调用工具写入文件」，然后什么都文件没生成。
+    /// </para>
+    /// </summary>
+    internal static string NormalizeToolName(string tool)
+    {
+        string t = (tool ?? "").Trim();
+        if (t.Length == 0) return t;
+
+        // 先按「驼峰拆词 + 分隔符统一成下划线 + 全小写」做一次宽松匹配，
+        // 兼容 writeToFile / write-to-file / Write To File / WRITE_FILE 各种写法
+        string key = Regex.Replace(t, "([a-z0-9])([A-Z])", "$1_$2");
+        key = Regex.Replace(key.ToLowerInvariant().Replace('-', '_').Replace(' ', '_'), @"_+", "_").Trim('_');
+
+        string? mapped = key switch
+        {
+            // 写入文件
+            "write_to_file" or "write_file" or "writefile" or "write" or "save_file" or "savefile"
+                or "save" or "create_file" or "createfile" or "file_write" or "filewrite"
+                or "output_file" or "写入" or "写文件" or "保存文件" or "创建文件" => ToolWriteFile,
+
+            // 读取文件
+            "read_file" or "readfile" or "read" or "open_and_read" or "cat" or "view_file"
+                or "读取" or "读文件" or "查看文件" => ToolReadFile,
+
+            // 打开文件（交给系统默认程序）
+            "open_file" or "openfile" or "open" or "launch_file" or "打开" or "打开文件" => ToolOpenFile,
+
+            // 运行命令
+            "run_command" or "runcommand" or "run_cmd" or "execute_command" or "exec_command"
+                or "shell" or "bash" or "cmd" or "terminal" or "run_shell" or "execute"
+                or "运行" or "执行命令" or "命令行" => ToolRunCommand,
+
+            // 运行 Python
+            "run_python" or "runpython" or "python" or "execute_python" or "python_script"
+                or "run_script" or "运行python" or "执行python" => ToolPython,
+
+            // 搜索 / 研究
+            "web_search" or "websearch" or "search" or "search_web" or "google" or "联网搜索"
+                or "网络搜索" or "网页搜索" or "在线搜索" or "搜索" => ToolSearch,
+            "deep_research" or "deepresearch" or "research" or "deep_dive" or "深度研究"
+                or "深度调研" or "深入研究" or "研究报告" or "调研报告" => ToolResearch,
+
+            // 抓网页
+            "fetch_url" or "fetch" or "crawl" or "http_get" or "get_url" or "scrape"
+                or "web_fetch" or "抓取网页" or "抓网页" or "读取网页" => ToolFetch,
+
+            // 图片
+            "generate_image" or "gen_image" or "text_to_image" or "image_gen" or "draw_image"
+                or "create_image" or "image" or "生成图片" or "画图" or "作图" => ToolImage,
+            "see_image" or "view_image" or "image_to_text" or "vision" or "ocr" or "describe_image"
+                or "看图" or "识别图片" or "图片理解" => ToolVision,
+
+            // 记忆
+            "remember" or "memory_save" or "save_memory" or "memorize" or "记住" or "记下来" => ToolRemember,
+            "forget" or "memory_delete" or "delete_memory" or "删除记忆" or "忘记" => ToolForget,
+
+            // 拆分任务 / 子智能体
+            "split_task" or "splittask" or "split" or "delegate" or "sub_agents" or "subagents"
+                or "spawn_agents" or "parallel_tasks" or "orchestrate" or "dispatch"
+                or "拆分任务" or "拆分" or "并行" or "子智能体" or "并行处理" => ToolSplit,
+
+            _ => null,
+        };
+        if (mapped != null) return mapped;
+
+        // 没命中别名表：原样返回，让工具层报「未知工具」，模型据此修正
+        return t;
+    }
+
+    /// <summary>
+    /// chat（纯聊天）模式下只放开「不改动电脑」的工具。
+    /// 「拆分任务」也放开：它本身不动系统，子智能体会继承 chat 模式（同样只读），
+    /// 所以纯聊天里也能用「拆开并行想」这件事，不会因此真的去改用户的电脑。
+    /// </summary>
     private bool ToolAllowedInMode(string tool)
-        => RunMode != "chat" || tool is ToolSearch or ToolResearch;
+        => RunMode != "chat" || tool is ToolSearch or ToolResearch or ToolSplit;
 
     /// <summary>用户这句话是否在要「深度研究 / 调研 / 整份资料」。</summary>
     private static bool WantsResearch(string? text)
@@ -1726,6 +1885,9 @@ public sealed class Agent
                 ToolWriteFile => WriteFileTool(args),
                 ToolRemember => RememberTool(args),
                 ToolForget => ForgetTool(args),
+                ToolSplit => SplitRunner == null
+                    ? "「拆分任务」当前不可用（未接入子智能体执行器）。"
+                    : await SplitRunner(args.GetRawText(), ct),
                 _ => $"未知工具：{tool}",
             };
         }

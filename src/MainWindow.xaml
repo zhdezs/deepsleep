@@ -22,6 +22,41 @@
 
         <WebView2 x:Name="Web" Grid.Row="1"/>
 
+        <!-- 一键绑定的授权窗口：**只盖内容区（Row=1），不盖标题栏**。
+             以前写成 RowSpan=2 把整窗盖住，结果右上角的按钮被压在 Windows 自带的
+             「最小化 / 最大化 / 关闭」下面，用户根本点不到 —— 而且窗口也没法拖动了。
+             留出标题栏还有一个好处：系统关闭按钮始终可用，卡住时不会变成没法关的模态窗。 -->
+        <Grid x:Name="AuthPane" Grid.Row="1" Visibility="Collapsed"
+              Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="36"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Grid x:Name="AuthBar" Grid.Row="0" Padding="16,0,12,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <!-- 这行会随导航变化给下一步提示（比如「GitHub 上还要点一次 Authorize」），
+                     所以必须能截断，不能被右边的按钮压住。 -->
+                <TextBlock x:Name="AuthTitle" Grid.Column="0" Text="授权登录" FontSize="12"
+                           VerticalAlignment="Center" Opacity="0.6"
+                           TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"
+                           Margin="0,0,12,0"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal"
+                            VerticalAlignment="Center" Spacing="8">
+                    <!-- 第三方登录（GitHub / Google）在嵌入式窗口里偶尔走不完，
+                         留一个「交给系统浏览器」的出口：PKCE 的 verifier 在进程里，
+                         换到浏览器继续走同一条授权，回环服务照样收得到结果。 -->
+                    <Button x:Name="BtnAuthExternal" Content="在系统浏览器完成授权" FontSize="12" Padding="10,2"
+                            Click="AuthExternalClick"/>
+                    <Button x:Name="BtnAuthClose" Content="取消" FontSize="12" Padding="10,2"
+                            Click="AuthCloseClick"/>
+                </StackPanel>
+            </Grid>
+            <WebView2 x:Name="AuthWeb" Grid.Row="1"/>
+        </Grid>
+
         <!-- 界面引擎起不来时的兜底（绝不留给用户一个白窗口） -->
         <Grid x:Name="Fallback" Grid.Row="1" Visibility="Collapsed">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"

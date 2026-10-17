@@ -99,6 +99,9 @@ public sealed partial class Kernel
             MaxConcurrentCalls = 4,
             AutoRemember = false,
         };
+        // 「拆分任务」：主助手可以直接把活拆出去并行做，不再需要用户手动配一个集群
+        _agent.SplitRunner = RunSplitAsync;
+        _clusterAgent.SplitRunner = RunSplitAsync;
     }
 
     public AppConfig Config => _config;
@@ -135,6 +138,7 @@ public sealed partial class Kernel
         _agent.DeltaAdded += OnAgentDelta;
         _agent.ToolStarted += OnAgentToolStarted;
         _agent.ReasoningAdded += OnAgentReasoning;
+        _agent.ReasoningStreaming += OnAgentReasoningStreaming;
         _agent.ConfirmRequested += ConfirmCommandAsync;
         _agent.SkillUsed += OnSkillUsed;
 
@@ -152,6 +156,7 @@ public sealed partial class Kernel
         _clusterAgent.DeltaAdded += OnClusterDelta;
         _clusterAgent.SkillUsed += OnSkillUsed;
         _clusterAgent.ReasoningAdded += OnClusterReasoning;
+        _clusterAgent.ReasoningStreaming += OnClusterReasoningStreaming;
         _clusterAgent.ToolStarted += OnClusterToolStarted;
         _clusterAgent.Skills = _skills;
         string workspace = Path.Combine(_dataDir, "cluster_workspace");
@@ -297,6 +302,15 @@ public sealed partial class Kernel
 
             case "settingsGet": EmitSettings(); break;
             case "settingsSave": SaveSettings(a); break;
+            // 按供应商保存的配置档案：一键恢复某家的 Key / 模型 / 协议
+            case "apiRestore": RestoreProfile(GetStr(a, "url") ?? ""); break;
+            // 对话框内直接换模型（不用进设置）
+            case "apiSetModel": SetApiModel(GetStr(a, "model") ?? ""); break;
+            // 绑定平台：联网拉模型列表 / 试连接（都在保存前就能用）
+            case "apiModels": await FetchApiModelsAsync(a).ConfigureAwait(false); break;
+            case "apiTest": await TestApiAsync(a).ConfigureAwait(false); break;
+            // 一键绑定：走 OAuth 授权页拿 Key，直接落盘
+            case "oauthBind": await OAuthBindAsync(a).ConfigureAwait(false); break;
             case "saveAgentMd": SaveAgentMd(GetStr(a, "text") ?? ""); break;
             case "installOllama": await InstallOllamaAsync().ConfigureAwait(false); break;
             case "setToken": SaveToken(GetStr(a, "token") ?? ""); break;
@@ -328,7 +342,13 @@ public sealed partial class Kernel
     private void Emit(Dictionary<string, object?> payload) => Emit((object)payload);
 
     private static string? GetStr(JsonElement a, string name)
-        => a.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+    {
+        // 防一手 default(JsonElement)：它的 ValueKind 是 Undefined，对它调 TryGetProperty
+        // 会抛 InvalidOperationException。以前内核内部有调用方直接传 default，
+        // 结果「一键绑定成功后拉模型列表」那一步反而抛异常，把成功报成了失败。
+        if (a.ValueKind != JsonValueKind.Object) return null;
+        return a.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+    }
 
     private static int GetInt(JsonElement a, string name, int fallback)
         => a.TryGetProperty(name, out var v) && v.TryGetInt32(out int n) ? n : fallback;
@@ -491,7 +511,46 @@ public sealed partial class Kernel
         ["search"] = _agent.WebSearchEnabled,
         ["local"] = _agent.Backend == "local" || _clusterAgent.Backend == "local",
         ["llmOnline"] = _llmOnline,
-        ["presets"] = FreePresets.Select(p => new { name = p.Name, url = p.Url, model = p.Model }).ToList(),
+        // 预设要把 Format 一起透出去：选了 Gemini 预设却带着 openai 格式发请求是必错的
+        ["presets"] = FreePresets
+            .Select(p => new { name = p.Name, url = p.Url, model = p.Model, format = p.Format })
+            .ToList(),
+        // 可绑定平台（选平台 → 领 Key → 拉模型 三步走）。自定义平台排在最后当兜底。
+        // oauthId 有值表示这家开放了第三方 OAuth，界面会把入口显示成「一键绑定」而不是「按引导绑定」。
+        ["platforms"] = Platforms
+            .Append(CustomPlatform)
+            .Select(p => new
+            {
+                name = p.Name,
+                url = p.Url,
+                format = p.Format,
+                keyUrl = p.KeyUrl,
+                quota = p.Quota,
+                oauthId = OAuthFlow.Providers
+                    .FirstOrDefault(o => o.ApiUrl == p.Url)?.Id,
+            })
+            .ToList(),
+        // 支持「一键绑定」的平台（真 OAuth 授权，点一次同意就自动拿到 Key）。
+        // 没在这里面的平台只能按引导手动建 Key —— 各家对第三方 OAuth 的开放程度不一样，
+        // 不能因为界面上少一个按钮就让用户点了个必然报错的入口。
+        ["oauthProviders"] = OAuthFlow.Providers
+            .Select(p => new { id = p.Id, name = p.Name, apiUrl = p.ApiUrl, format = p.Format, quota = p.Quota })
+            .ToList(),
+        ["oauthExplain"] = OAuthExplain,
+        // 已保存过配置的供应商（只告诉界面「哪些有档、什么时候存的、模型是什么」，
+        // 不含 Key —— 恢复由内核直接落盘，其它供应商的 Key 不必流到前端）。
+        ["apiProfiles"] = _config.ApiProfiles
+            .Where(kv => kv.Value != null && !string.IsNullOrWhiteSpace(kv.Value.ApiKey))
+            .Select(kv => new
+            {
+                url = kv.Key,
+                label = kv.Value!.Label,
+                model = kv.Value.ApiModel,
+                format = kv.Value.ApiFormat,
+                updated = kv.Value.Updated,
+                keyTail = kv.Value.ApiKey.Length > 4 ? kv.Value.ApiKey[^4..] : "",
+            })
+            .ToList(),
         ["freeKeyHint"] = FreeKeyHint,
         ["tokenSaved"] = Updater.HasToken,
     };

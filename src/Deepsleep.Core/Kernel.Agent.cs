@@ -319,6 +319,8 @@ public sealed partial class Kernel
     {
         Agent.ToolRunCommand or Agent.ToolPython => "cmd",
         Agent.ToolWriteFile => "file",
+        Agent.ToolSkill => "skill",
+        Agent.ToolSplit => "split",
         Agent.ToolSearch => "search",
         Agent.ToolResearch => "research",
         Agent.ToolVision => "vision",
@@ -342,43 +344,76 @@ public sealed partial class Kernel
         return first.Length > 0 ? first : $"已执行「{tool}」";
     }
 
-    /// <summary>技能调用链：技能被自动匹配 / 补救启用时，在对应会话里显示一条系统提示。</summary>
-    private void OnSkillUsed(int sid, string name)
+    /// <summary>
+    /// 技能调用链：技能被自动匹配 / 补救启用时，在对应会话里落一张**可折叠卡片**
+    /// （和「编辑的文件」「运行的命令」同一套样式，默认收起 —— 调用链细节不该糊在对话里）。
+    /// </summary>
+    private void OnSkillUsed(int sid, string name, string reason)
     {
         lock (_gate)
         {
+            var item = new ChatItem
+            {
+                IsSelf = false,
+                CanAccept = false,
+                ToolName = Agent.ToolSkill,
+                ToolSummary = $"{name}（{reason}）",
+                ToolDetail = SkillChainDetail(name, reason),
+                ToolKind = "skill",
+                Text = $"调用了技能「{name}」",
+                Meta = "技能",
+                AvatarText = "AI",
+                SelfAvatarText = "你",
+                AvatarColor = "#4A90D9",
+                SessionId = sid,
+                TimeStr = Now(),
+                ShowTime = ShouldShowTime(),
+            };
+
             var agentConv = _agentConvs.FirstOrDefault(c => c.Sid == sid);
             if (agentConv != null)
             {
-                var item0 = new ChatItem
-                {
-                    IsSys = true,
-                    Text = $"🧩 技能调用链：自动匹配并启用「{name}」",
-                    SessionId = sid,
-                    TimeStr = Now(),
-                    ShowTime = ShouldShowTime(),
-                };
-                agentConv.Items.Add(item0);
-                Emit(new { ev = "add", kind = 0, conv = sid, item = ItemJson(item0) });
+                agentConv.Items.Add(item);
+                Emit(new { ev = "add", kind = 0, conv = sid, item = ItemJson(item) });
                 ScheduleSave();
                 return;
             }
             var clusterConv = _clusterConvs.FirstOrDefault(c => c.Sid == sid);
             if (clusterConv != null)
             {
-                var item1 = new ChatItem
-                {
-                    IsSys = true,
-                    Text = $"🧩 技能调用链：自动匹配并启用「{name}」",
-                    SessionId = sid,
-                    TimeStr = Now(),
-                    ShowTime = ShouldShowTime(),
-                };
-                clusterConv.Items.Add(item1);
-                Emit(new { ev = "add", kind = 2, conv = clusterConv.Sid, item = ItemJson(item1) });
+                clusterConv.Items.Add(item);
+                Emit(new { ev = "add", kind = 2, conv = clusterConv.Sid, item = ItemJson(item) });
                 ScheduleSave();
             }
         }
+    }
+
+    /// <summary>技能卡片的展开内容：说明这次用了哪个技能、怎么被选中的、技能本身是什么。</summary>
+    private string SkillChainDetail(string name, string reason)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"**技能**：{name}");
+        sb.AppendLine($"**触发方式**：{reason}");
+        var skill = _agent.Skills.FirstOrDefault(s => s.Name == name)
+                 ?? _clusterAgent.Skills.FirstOrDefault(s => s.Name == name);
+        if (skill != null)
+        {
+            if (!string.IsNullOrWhiteSpace(skill.Description))
+                sb.AppendLine($"**用途**：{skill.Description}");
+            if (skill.Aliases.Count > 0)
+                sb.AppendLine($"**别名**：{string.Join("、", skill.Aliases)}");
+            if (skill.Files.Count > 0)
+                sb.AppendLine($"**附带文件**：{string.Join("、", skill.Files.Take(12))}");
+            if (!string.IsNullOrWhiteSpace(skill.Path))
+                sb.AppendLine($"**来源**：{skill.Path}");
+            if (!string.IsNullOrWhiteSpace(skill.Content))
+                sb.AppendLine("\n---\n" + (skill.Content.Length > 4000 ? skill.Content[..4000] + "\n…（已截断）" : skill.Content));
+        }
+        else
+        {
+            sb.AppendLine("\n技能内容已随系统提示注入本轮对话（技能文件可能已被移除，所以这里读不到详情）。");
+        }
+        return sb.ToString();
     }
 
     // ------------------------------------------------------------------
@@ -464,6 +499,84 @@ public sealed partial class Kernel
                 item.Thought = text;
                 Emit(new { ev = "msgUpdate", kind = 2, conv = conv.Sid, id = item.Id, thought = text });
             }
+        }
+    }
+
+    /// <summary>
+    /// 思考内容的流式推送。和 <see cref="OnAgentReasoning"/> 的差别是：
+    /// 思考往往在正文之前就开始产出，这时候流式气泡还不存在 —— 必须先把它建出来，
+    /// 否则思考内容没有落脚点，用户还是得等正文开始才能看到（那就不叫流式了）。
+    /// </summary>
+    private void OnAgentReasoningStreaming(int sid, string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        lock (_gate)
+        {
+            var conv = _agentConvs.FirstOrDefault(c => c.Sid == sid);
+            if (conv == null) return;
+            _agentThoughts[sid] = text;
+
+            if (!_streamItems.TryGetValue(sid, out var item) || !conv.Items.Contains(item))
+            {
+                if (_agentThinking.TryGetValue(sid, out var th) && conv.Items.Contains(th))
+                {
+                    RemoveRaw(conv, th);
+                    _agentThinking.Remove(sid);
+                }
+                item = new ChatItem
+                {
+                    IsSelf = false,
+                    CanAccept = false,
+                    Text = "",
+                    Thought = text,
+                    Meta = "AI",
+                    AvatarText = "AI",
+                    SelfAvatarText = "你",
+                    AvatarColor = "#4A90D9",
+                    SessionId = sid,
+                    TimeStr = Now(),
+                    ShowTime = ShouldShowTime(),
+                };
+                _streamItems[sid] = item;
+                conv.Items.Add(item);
+                Emit(new { ev = "add", kind = 0, conv = sid, item = ItemJson(item) });
+                return;
+            }
+            item.Thought = text;
+            Emit(new { ev = "msgUpdate", kind = 0, conv = sid, id = item.Id, thought = text });
+        }
+    }
+
+    /// <summary>集群 Agent 的思考流式推送（同上：先建气泡再往里灌）。</summary>
+    private void OnClusterReasoningStreaming(int sid, string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return;
+        lock (_gate)
+        {
+            var run = FindRunBySid(sid);
+            var conv = run == null ? null : ConvOfRun(run);
+            if (run == null || conv == null) return;
+            _clusterThoughts[sid] = text;
+
+            if (!_clusterStreamItems.TryGetValue(sid, out var item) || !conv.Items.Contains(item))
+            {
+                if (_clusterThinking.TryGetValue(conv.Sid, out var th) && conv.Items.Contains(th))
+                {
+                    RemoveRaw(conv, th);
+                    _clusterThinking.Remove(conv.Sid);
+                }
+                bool isSummary0 = run.SummarySid == sid;
+                string name0 = isSummary0 ? "指挥官"
+                    : run.Workers.FirstOrDefault(w => w.Sid == sid)?.Name ?? "Agent";
+                item = MakeClusterBubble(run, sid, name0, isSummary0);
+                item.Thought = text;
+                _clusterStreamItems[sid] = item;
+                conv.Items.Add(item);
+                Emit(new { ev = "add", kind = 2, conv = conv.Sid, item = ItemJson(item) });
+                return;
+            }
+            item.Thought = text;
+            Emit(new { ev = "msgUpdate", kind = 2, conv = conv.Sid, id = item.Id, thought = text });
         }
     }
 

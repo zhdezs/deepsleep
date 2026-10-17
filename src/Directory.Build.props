@@ -1,11 +1,12 @@
 ﻿<Project>
 
-  <!-- 版本号只在这里改一处：外壳（TrollWrangler）和内核（Deepsleep.Core）共用。
-       以前两边各写各的，内核那份忘了同步，导致程序自报的版本一直是旧的
-       （升到 2.1.0 还显示 2.0.0）—— 现在统一由这个文件提供。 -->
+  <!-- 版本号只在这里改一处：外壳（TrollWrangler）、内核（Deepsleep.Core）、
+       安装器（installer\DeepSleepSetup）三处共用，安装器通过 XmlPeek 读这里的 <Version>。
+       以前各写各的，内核那份忘了同步导致程序自报版本一直是旧的（升到 2.1.0 还显示 2.0.0）；
+       安装器又写死过 3.0.4，载荷已是 3.0.5 时注册表版本号还是错的。 -->
   <PropertyGroup>
-    <Version>3.0.5-alpha</Version>
-    <FileVersion>3.0.5.0</FileVersion>
+    <Version>3.1.0</Version>
+    <FileVersion>3.1.0.0</FileVersion>
   </PropertyGroup>
 
 </Project>

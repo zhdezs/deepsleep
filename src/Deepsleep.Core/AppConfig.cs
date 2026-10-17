@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -59,6 +60,28 @@ public sealed class AppConfig
 
     public int PetX { get; set; } = -1;
     public int PetY { get; set; } = -1;
+
+    /// <summary>
+    /// 按供应商保存的 API 配置档案：key = 该供应商的「API 地址」。
+    /// <para>
+    /// 用来解决「换了供应商就得把地址/模型/Key 全部重填一遍，想换回去又忘了上次填的啥」。
+    /// 每次保存设置都会把当前这套记进对应档案；在设置里换回某个供应商时一键恢复。
+    /// Key 存在 config.json 里（和主 Key 同一份文件、同样的明文口径，没有降低安全性）。
+    /// </para>
+    /// </summary>
+    public Dictionary<string, ApiProfile> ApiProfiles { get; set; } = new();
+
+    /// <summary>单个供应商的配置快照。</summary>
+    public sealed class ApiProfile
+    {
+        public string ApiKey { get; set; } = "";
+        public string ApiModel { get; set; } = "";
+        public string ApiFormat { get; set; } = "openai";
+        /// <summary>界面下拉里显示的供应商名（方便以后在列表里认出来）。</summary>
+        public string Label { get; set; } = "";
+        /// <summary>最后一次使用时间（ISO 8601），用于「最近使用」排序。</summary>
+        public string Updated { get; set; } = "";
+    }
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {

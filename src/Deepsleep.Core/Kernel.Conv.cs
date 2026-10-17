@@ -606,6 +606,12 @@ AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不�
     private void SaveSettings(JsonElement a)
     {
         string Str(string name, string fallback) => GetStr(a, name) ?? fallback;
+        // 记住「这次保存前」的地址：下面要用它把旧档案也落一次盘，
+        // 否则从 A 供应商切到 B 时，A 的那份配置会随着 apiUrl 被覆盖而丢掉。
+        string prevUrl = _config.ApiUrl;
+        string prevKey = _config.ApiKey;
+        string prevModel = _config.ApiModel;
+        string prevFormat = _config.ApiFormat;
         _config.ApiUrl = Str("apiUrl", _config.ApiUrl);
         _config.ApiModel = Str("apiModel", _config.ApiModel);
         _config.ApiKey = GetStr(a, "apiKey") ?? _config.ApiKey;
@@ -624,6 +630,12 @@ AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不�
         string? src = GetStr(a, "updateSource");
         if (src != null) _config.UpdateSource = src.Trim().ToLowerInvariant() == "github" ? "github" : "gitee";
         if (a.TryGetProperty("petEnabled", out _)) _config.PetEnabled = GetBool(a, "petEnabled");
+
+        // 保存前先把「旧供应商」的配置收进档案 —— 用户是从它切走的，这份档不能丢
+        if (!string.IsNullOrWhiteSpace(prevUrl) && prevUrl != _config.ApiUrl)
+            StoreProfile(prevUrl, prevKey, prevModel, prevFormat, "");
+        // 再把当前这套记进它自己的档案（下次切回来就能一键恢复）
+        StoreProfile(_config.ApiUrl, _config.ApiKey, _config.ApiModel, _config.ApiFormat, PlatformLabelFor(_config.ApiUrl));
         _config.Save();
         // 初始提示词（AGENT.md）：设置弹窗里一起提交，保存后立即对所有对话生效
         string? agentMd = GetStr(a, "agentMd");
@@ -645,6 +657,80 @@ AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不�
         EmitStatus(0);
         EmitStatus(2);
         Emit(new { ev = "pet", enabled = _config.PetEnabled });
+    }
+
+    /// <summary>
+    /// 把一套 API 配置写进「按供应商」的档案。空 Key 不会覆盖已有的 Key ——
+    /// 用户可能只是改了模型名就保存，不该把之前存好的 Key 清掉。
+    /// </summary>
+    private void StoreProfile(string url, string key, string model, string format, string label)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return;
+        if (!_config.ApiProfiles.TryGetValue(url, out var p))
+        {
+            p = new AppConfig.ApiProfile();
+            _config.ApiProfiles[url] = p;
+        }
+        if (!string.IsNullOrWhiteSpace(key)) p.ApiKey = key;
+        if (!string.IsNullOrWhiteSpace(model)) p.ApiModel = model;
+        if (!string.IsNullOrWhiteSpace(format)) p.ApiFormat = format;
+        if (!string.IsNullOrWhiteSpace(label)) p.Label = label;
+        p.Updated = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+    }
+
+    /// <summary>按地址反查供应商名（用于档案里存一个可读的标签）。</summary>
+    private static string PlatformLabelFor(string url)
+    {
+        foreach (var p in Platforms)
+            if (string.Equals(p.Url, url, StringComparison.OrdinalIgnoreCase)) return p.Name;
+        return "";
+    }
+
+    /// <summary>
+    /// 一键恢复某个供应商的配置：把档案里的 Key / 模型 / 协议写回当前配置并保存。
+    /// 由内核直接落盘，界面上不需要拿到其它供应商的 Key。
+    /// </summary>
+    private void RestoreProfile(string url)
+    {
+        url = (url ?? "").Trim();
+        if (url.Length == 0) { Toast("⚠ 没指定要恢复哪个供应商。", "error"); return; }
+        if (!_config.ApiProfiles.TryGetValue(url, out var p) || p == null)
+        {
+            Toast("这个供应商还没有保存过配置 —— 先填好 Key 保存一次。", "error");
+            return;
+        }
+        _config.ApiUrl = url;
+        if (!string.IsNullOrWhiteSpace(p.ApiKey)) _config.ApiKey = p.ApiKey;
+        if (!string.IsNullOrWhiteSpace(p.ApiModel)) _config.ApiModel = p.ApiModel;
+        if (!string.IsNullOrWhiteSpace(p.ApiFormat)) _config.ApiFormat = p.ApiFormat;
+        _config.Save();
+        _engine.ApplyConfig(_config);
+        _agent.ApplyConfig(_config);
+        _clusterAgent.ApplyConfig(_config);
+
+        string label = string.IsNullOrWhiteSpace(p.Label) ? url : p.Label;
+        EmitSettings();
+        EmitStatus(0);
+        EmitStatus(2);
+        Toast($"↩ 已恢复「{label}」的配置（Key 尾号 {(p.ApiKey.Length > 4 ? p.ApiKey[^4..] : "—")}，模型 {_config.ApiModel}）。", "info");
+    }
+
+    /// <summary>
+    /// 直接在对话界面里换模型（顶部「🧠 模型」按钮）。顺手把这家供应商的档案也更新，
+    /// 下次切走再切回来，恢复到的就是你最后用的那个模型。
+    /// </summary>
+    private void SetApiModel(string model)
+    {
+        model = (model ?? "").Trim();
+        if (model.Length == 0) { Toast("⚠ 模型名为空。", "error"); return; }
+        _config.ApiModel = model;
+        StoreProfile(_config.ApiUrl, _config.ApiKey, _config.ApiModel, _config.ApiFormat, PlatformLabelFor(_config.ApiUrl));
+        _config.Save();
+        _engine.ApplyConfig(_config);
+        _agent.ApplyConfig(_config);
+        _clusterAgent.ApplyConfig(_config);
+        EmitSettings();
+        Toast($"🧠 已切换到「{model}」。", "info");
     }
 
     private void SaveToken(string token)

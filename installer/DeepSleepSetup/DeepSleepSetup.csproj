@@ -16,7 +16,11 @@
     <ApplicationIcon>deepsleep.ico</ApplicationIcon>
     <AssemblyTitle>deepsleep AI 助手 安装程序</AssemblyTitle>
     <Product>deepsleep AI 助手</Product>
-    <Version>3.0.4</Version>
+    <!-- 版本号统一由 ..\..\src\Directory.Build.props 提供（外壳/内核/安装器同一个源）。
+         以前这里和 MainWindow.xaml.cs 各写各的 3.0.4，实际载荷已经是 3.0.5-alpha，
+         装完在「应用和功能」里看到的版本号是错的。—— 别再往这里写死版本号。 -->
+    <Version>$(DeepSleepVersion)</Version>
+    <AppDisplayVersion>$(DeepSleepVersion)</AppDisplayVersion>
     <SatelliteResourceLanguages>en;zh-Hans</SatelliteResourceLanguages>
   </PropertyGroup>
 
@@ -24,5 +28,25 @@
     <EmbeddedResource Include="..\payload.zip">
       <LogicalName>payload.zip</LogicalName>
     </EmbeddedResource>
+  </ItemGroup>
+
+  <!-- 单一版本源：读 src\Directory.Build.props 里的 <Version>，供上面 $(DeepSleepVersion) 使用。
+       解析失败时退化成 0.0.0-dev，让问题在界面上看得见，而不是悄悄装成旧版本号。 -->
+  <Target Name="ReadDeepSleepVersion" BeforeTargets="PrepareForBuild">
+    <PropertyGroup>
+      <_DbpPath>$(MSBuildThisFileDirectory)..\..\src\Directory.Build.props</_DbpPath>
+    </PropertyGroup>
+    <XmlPeek XmlInputPath="$(_DbpPath)" Query="/Project/PropertyGroup/Version/text()">
+      <Output TaskParameter="Result" ItemName="_VersionText" />
+    </XmlPeek>
+    <PropertyGroup>
+      <DeepSleepVersion Condition="'@(_VersionText)' != ''">@(_VersionText)</DeepSleepVersion>
+      <DeepSleepVersion Condition="'$(DeepSleepVersion)' == ''">0.0.0-dev</DeepSleepVersion>
+    </PropertyGroup>
+    <Message Importance="high" Text="deepsleep 安装器版本：$(DeepSleepVersion)" />
+  </Target>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="DeepSleepVersion" Value="$(DeepSleepVersion)" />
   </ItemGroup>
 </Project>

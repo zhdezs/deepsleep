@@ -5,9 +5,14 @@
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
     <RootNamespace>TrollWrangler</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Platforms>x64</Platforms>
-    <PlatformTarget>x64</PlatformTarget>
-    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <!-- 同时支持 x64 与 arm64：Windows on ARM 机器（骁龙 X / 各类 ARM 本）上，
+         x64 版只能靠系统模拟跑，WebView2 + WinAppSDK 这套在模拟层里经常直接崩。
+         现在打一份原生的 win-arm64，ARM 机器装原生版就不会崩。 -->
+    <Platforms>x64;arm64</Platforms>
+    <PlatformTarget Condition="'$(Platform)' == 'arm64'">arm64</PlatformTarget>
+    <PlatformTarget Condition="'$(Platform)' != 'arm64'">x64</PlatformTarget>
+    <!-- 不指定 RID 时默认 x64（老脚本/IDE 直接 F5 的行为保持不变） -->
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>
     <UseWinUI>true</UseWinUI>
     <EnableMsixTooling>true</EnableMsixTooling>

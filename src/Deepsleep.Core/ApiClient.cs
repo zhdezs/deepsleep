@@ -252,10 +252,15 @@ public sealed class ApiClient : IDisposable
         return text;
     }
 
-    /// <summary>流式版本：逐段回调增量内容，返回完整文本（供真·流式输出）。</summary>
+    /// <summary>
+    /// 流式版本：逐段回调增量内容，返回完整文本（供真·流式输出）。
+    /// <paramref name="onReasoning"/> 收的是**累积到当前的思考全文**（不是增量），
+    /// 界面直接整段替换即可 —— 这样思考内容和正文一样是边生成边显示的。
+    /// </summary>
     public async Task<string?> ChatStreamAsync(string system,
         IReadOnlyList<(string Role, string Content)> messages,
-        Action<string>? onDelta = null, int timeoutSeconds = 600, CancellationToken ct = default)
+        Action<string>? onDelta = null, int timeoutSeconds = 600, CancellationToken ct = default,
+        Action<string>? onReasoning = null)
     {
         if (!Configured)
         {
@@ -331,11 +336,18 @@ public sealed class ApiClient : IDisposable
                         fr.ValueKind == JsonValueKind.String && fr.GetString() == "length")
                         LastTruncated = true;
                     var delta = choices[0].GetProperty("delta");
-                    // 思考增量单独收集：界面上折叠，不跟正文混在一起
+                    // 思考增量单独收集：界面上折叠，不跟正文混在一起。
+                    // 同时按「累积全文」回调给界面 —— 思考也要流式显示，不能等整轮跑完才出现。
                     if (delta.TryGetProperty("reasoning_content", out var rc) && rc.ValueKind == JsonValueKind.String)
+                    {
                         AddReasoning(rc.GetString());
+                        onReasoning?.Invoke(Reasoning);
+                    }
                     else if (delta.TryGetProperty("reasoning", out var rj) && rj.ValueKind == JsonValueKind.String)
+                    {
                         AddReasoning(rj.GetString());
+                        onReasoning?.Invoke(Reasoning);
+                    }
                     if (delta.TryGetProperty("content", out var c) && c.ValueKind == JsonValueKind.String)
                     {
                         string chunk = c.GetString() ?? "";

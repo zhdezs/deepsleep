@@ -11,11 +11,13 @@
 
   <!-- 自绘标题栏（36px）之上是客户端区域，这里画 macOS 顶部工具条 -->
   <header id="topbar">
+    <!-- 集群标签页已撤掉：拆分任务改由主助手自己完成（「拆分任务」工具），
+         不再需要用户手动切到另一个标签页去拼一个团队。 -->
     <div class="seg" id="seg">
       <button data-tab="0" class="on">AI 助手</button>
-      <button data-tab="1">Agent 集群</button>
     </div>
     <div class="tb-right">
+      <button id="btnModel" class="pill" title="切换模型（列表联网获取，不用去设置里翻）">🧠 <span id="modelText">模型</span></button>
       <button id="btnUpdate" class="pill hidden">⬆ <span id="updateText">检查更新</span></button>
       <button id="btnTheme" class="icon" title="深浅色">🌙</button>
       <button id="btnLink" class="icon" title="超级连接（配对码 / 远程桌面）">🔗</button>

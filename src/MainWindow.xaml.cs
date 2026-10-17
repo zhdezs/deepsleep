@@ -177,6 +177,166 @@ public sealed partial class MainWindow : Window
         catch (Exception ex) { Log("打开目录失败：" + ex.Message); }
     }
 
+    // ==================================================================
+    // 一键绑定的授权窗口
+    // ==================================================================
+
+    private bool _authOpen;
+    private string _authRedirect = "";
+    private string _authUrl = "";
+    private bool _authWebReady;
+
+    /// <summary>给内核用的「打开应用内授权窗口」。返回 false 表示没建成，内核会退回系统浏览器。</summary>
+    private bool TryOpenAuthWindow(string url, string redirectPrefix)
+    {
+        try
+        {
+            if (_authOpen) { Log("授权窗口已开着，忽略重复请求"); return false; }
+            _authOpen = true;
+            _authRedirect = redirectPrefix ?? "";
+            _authUrl = url ?? "";
+
+            AuthPane.Visibility = Visibility.Visible;
+            AuthTitle.Text = "授权登录 · 完成后自动回到 deepsleep";
+            AuthWeb.Visibility = Visibility.Visible;
+            try { BarTitle.Text = "deepsleep · 授权登录中…"; } catch { }
+
+            var dispatcher = AuthWeb.DispatcherQueue;
+            _ = dispatcher.TryEnqueue(async () => await InitAuthWebAsync(url));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log("打开授权窗口失败：" + ex.Message);
+            _authOpen = false;
+            return false;
+        }
+    }
+
+    private async Task InitAuthWebAsync(string url)
+    {
+        try
+        {
+            // 复用已经建好的 WebView2：重复点「一键绑定」时 EnsureCoreWebView2Async 会抛
+            if (!_authWebReady)
+            {
+                var opts = new CoreWebView2EnvironmentOptions();
+                var env = await CoreWebView2Environment.CreateWithOptionsAsync(null,
+                    Path.Combine(_dataDir, "webview"), opts);
+                await AuthWeb.EnsureCoreWebView2Async(env);
+                for (int i = 0; i < 200 && AuthWeb.CoreWebView2 == null; i++) await Task.Delay(50);
+                var c0 = AuthWeb.CoreWebView2;
+                if (c0 == null) { Log("授权窗口 WebView2 未就绪"); CloseAuthWindow(); InternalBrowser.Release(); return; }
+
+                c0.Settings.AreDevToolsEnabled = false;
+                c0.Settings.IsStatusBarEnabled = false;
+
+                // 关键一步：拦下「平台跳回本机回调地址」的导航，把授权码直接拿走。
+                // 不能等它真的去请求 127.0.0.1 —— 拦截必须发生在导航阶段。
+                // （NavigationStarting 对 302 链的每一跳都会触发，所以这里不用再挂 Redirecting；
+                //   万一漏了，内核那边还有一条回环监听兜底。）
+                c0.NavigationStarting += (s, e) => HandleAuthNav(e.Uri, cancel => e.Cancel = cancel);
+                // 授权页里的第三方登录有可能会开新窗口 —— 默认行为是丢给系统浏览器（会话不共享，
+                // 用户在那儿登完，应用这边再也等不到结果）。这里强制留在同一个窗口里走完。
+                c0.NewWindowRequested += (s, e) =>
+                {
+                    e.Handled = true;
+                    Log("授权页请求新窗口 → 改为当前窗口打开：" + e.Uri);
+                    try { c0.Navigate(e.Uri); } catch { }
+                };
+                c0.NavigationCompleted += (s, e) =>
+                {
+                    Log($"授权页导航完成 success={e.IsSuccess} err={e.WebErrorStatus} host={HostOf(c0.Source)}");
+                    HintIfStuck(c0.Source);
+                };
+                _authWebReady = true;
+            }
+
+            Log("授权页打开：" + url.Substring(0, Math.Min(120, url.Length)));
+            AuthWeb.CoreWebView2!.Navigate(url);
+        }
+        catch (Exception ex)
+        {
+            Log("初始化授权窗口失败：" + ex.Message);
+            CloseAuthWindow();
+            try { InternalBrowser.Release(); } catch { }
+        }
+    }
+
+    private static string HostOf(string uri)
+    {
+        try { return new Uri(uri).Host; } catch { return uri ?? ""; }
+    }
+
+    /// <summary>命中回环回调 → 拿走授权码、关窗；返回 true 表示这次导航被接管。</summary>
+    private void HandleAuthNav(string uri, Action<bool> cancel)
+    {
+        try
+        {
+            if (InternalBrowser.ShouldIntercept(uri, _authRedirect))
+            {
+                Log("拦下授权回调，已取走授权码");
+                cancel(true);
+                CloseAuthWindow();
+            }
+        }
+        catch (Exception ex) { Log("拦截授权回调失败：" + ex.Message); }
+    }
+
+    /// <summary>
+    /// 按当前所在站点给「下一步该干嘛」的提示。
+    /// 最常见的误判是：在 GitHub 登录完以为结束了，其实 GitHub 上还有一步
+    /// 「Authorize OpenRouter」的授权确认页 —— 不点那个按钮，流程永远不会回到 deepsleep。
+    /// </summary>
+    private void HintIfStuck(string uri)
+    {
+        try
+        {
+            string host = HostOf(uri);
+            if (host.EndsWith("github.com", StringComparison.OrdinalIgnoreCase))
+                AuthTitle.Text = "GitHub 页面上还需要再点一次「Authorize」授权按钮，才会回到 deepsleep";
+            else if (host.Contains("google.com") || host.Contains("accounts."))
+                AuthTitle.Text = "Google 页面上还需要点「继续 / 允许」，才会回到 deepsleep";
+            else if (host.Contains("openrouter") || host.Contains("nano-gpt"))
+                AuthTitle.Text = "在这一页点「Authorize / 允许」完成授权；若没反应，点右上角「在系统浏览器完成授权」";
+        }
+        catch { }
+    }
+
+    private void AuthExternalClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (_authUrl.Length == 0) return;
+            // 同一个授权地址、同一个 PKCE，只是换到系统浏览器里走完 ——
+            // 内核那边的回环服务一直在监听，所以照样能收到结果。
+            Platform.OpenWithShell(_authUrl, false);
+            AuthTitle.Text = "已交给系统浏览器 · 完成后本窗口会自动关闭，无需回来操作";
+        }
+        catch (Exception ex) { Log("打开系统浏览器失败：" + ex.Message); }
+    }
+
+    private void AuthCloseClick(object sender, RoutedEventArgs e)
+    {
+        CloseAuthWindow();
+        try { InternalBrowser.Release(); } catch { }
+    }
+
+    private void CloseAuthWindow()
+    {
+        try
+        {
+            if (!_authOpen) return;
+            _authOpen = false;
+            _authRedirect = "";
+            _authUrl = "";
+            AuthPane.Visibility = Visibility.Collapsed;
+            try { BarTitle.Text = "deepsleep · AI 助手"; } catch { }
+            try { AuthWeb.CoreWebView2?.Navigate("about:blank"); } catch { }
+        }
+        catch { }
+    }
+
     private async Task RebuildWebAsync(bool compat)
     {
         try
@@ -387,6 +547,10 @@ public sealed partial class MainWindow : Window
     {
         try
         {
+            // 一键绑定：内核发起 OAuth 时，由外壳把授权页开在应用内的窗口里；
+            // 同时把授权流程的每一步写进日志，卡住时能看出断在哪。
+            InternalBrowser.Opener = TryOpenAuthWindow;
+            InternalBrowser.Log = Log;
             CoreServer.ShellOverride = OnShellCommandAsync;
             CoreServer.TunnelReady += () => PostToUi(CoreHostInfoJson());
             CoreServer.Log = line => PostToUi(JsonSerializer.Serialize(new { ev = "coreLog", text = line }));

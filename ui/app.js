@@ -210,10 +210,14 @@ function paintBubble(row, it) {
     }
     b.classList.remove('thinking');
     b.style.opacity = '';
+    // 流式过程中正文每次增量都会重刷这个气泡，<details> 的展开状态会跟着丢。
+    // 思考内容是边生成边刷的，用户想一直看着它，所以这里把展开状态接住。
+    const prevThink = b.querySelector('details.thinkbox');
+    const thinkOpen = !!(prevThink && prevThink.open);
     let html = '';
     if (it.speaker) html += '<div class="who">' + esc(it.speaker) + '</div>';
     else if (it.meta && it.meta !== 'AI' && it.meta !== '你') html += '<div class="who">' + esc(it.meta) + '</div>';
-    if (it.thought) html += thinkBox(it.thought);
+    if (it.thought) html += thinkBox(it.thought, !it.text, thinkOpen);
     if (it.image) html += '<img src="' + esc(it.image) + '" alt="图片">';
     if (it.attName) html += '<div class="who">📎 ' + esc(it.attName) + '　' + esc(it.attSize) + '</div>';
     html += md(it.text);
@@ -225,16 +229,19 @@ function paintBubble(row, it) {
 }
 
 /* 思考内容（模型 reasoning）：默认折叠在正文上方，不混进正文；
-   模型若用英文思考，就在标题里说明，避免用户以为 AI「突然冒出一大段英文」。 */
+   模型若用英文思考，就在标题里说明，避免用户以为 AI「突然冒出一大段英文」。
+   streaming=true 表示正文还没开始（思考还在往外吐）→ 标题写「正在思考…」。 */
 function thoughtIsEnglish(t) {
   const s = String(t || '');
   const cjk = (s.match(/[\u4e00-\u9fff]/g) || []).length;
   const lat = (s.match(/[A-Za-z]/g) || []).length;
   return lat > 40 && cjk < lat / 6;
 }
-function thinkBox(t) {
-  const label = thoughtIsEnglish(t) ? '已思考（模型用英文思考，已折叠）' : '已思考';
-  return '<details class="thinkbox"><summary>' + label + '</summary><div class="thinkbody">' + esc(t) + '</div></details>';
+function thinkBox(t, streaming, open) {
+  const label = streaming ? '正在思考…'
+    : thoughtIsEnglish(t) ? '已思考（模型用英文思考，已折叠）' : '已思考';
+  return '<details class="thinkbox"' + (open ? ' open' : '') + '><summary>' + esc(label) +
+    '</summary><div class="thinkbody">' + esc(t) + '</div></details>';
 }
 
 function toolSig(it) {
@@ -262,11 +269,12 @@ function paintTool(b, it) {
   b.appendChild(det);
 }
 
-/* ---- 命令 / 文件聚合卡：同一轮里「运行命令」「写入文件」各并成一张，点开看全部 ---- */
+/* ---- 命令 / 文件 / 技能聚合卡：同一轮里各并成一张，点开看全部 ----
+   技能也走同一套：调用链默认收起，不糊在对话里。 */
 function groupKind(it) {
   if (!it || !it.tool || it.thinking) return '';
   const k = it.toolKind;
-  return (k === 'cmd' || k === 'file') ? k : '';
+  return (k === 'cmd' || k === 'file' || k === 'skill' || k === 'split') ? k : '';
 }
 
 function groupEntries(items) {
@@ -288,8 +296,19 @@ function fileNameOf(it) {
   return (seg && seg.trim()) ? seg.trim() : (it.tool || '文件');
 }
 
+function groupTitle(kind) {
+  if (kind === 'cmd') return '运行的命令';
+  if (kind === 'skill') return '调用的技能';
+  if (kind === 'split') return '拆分的子任务';
+  return '编辑的文件';
+}
+
 function groupSummary(kind, items) {
   if (kind === 'cmd') return items.length + ' 条（点开看全部命令与输出）';
+  if (kind === 'skill' || kind === 'split') {
+    const names = items.map(it => String(it.toolSummary || it.tool || ''));
+    return items.length + ' 个：' + names.slice(0, 4).join('、') + (names.length > 4 ? ' 等' : '');
+  }
   const names = items.map(fileNameOf);
   return items.length + ' 个：' + names.slice(0, 4).join('、') + (names.length > 4 ? ' 等' : '');
 }
@@ -314,7 +333,7 @@ function paintGroup(row, kind, items) {
   det.open = open;
   const sum = document.createElement('summary');
   const nm = document.createElement('span'); nm.className = 'tname';
-  nm.textContent = kind === 'cmd' ? '运行的命令' : '编辑的文件';
+  nm.textContent = groupTitle(kind);
   const tx = document.createElement('span'); tx.className = 'tsum';
   tx.textContent = groupSummary(kind, items);
   sum.append(nm, tx);
@@ -421,7 +440,15 @@ function updateText(conv, id, text) {
 
 function patchItem(conv, m) {
   const it = S.items.find(x => x.id === m.id);
-  if (it) { if (m.text != null) it.text = m.text; if (m.thinking != null) it.thinking = m.thinking; if (m.opacity != null) it.opacity = m.opacity; if (m.thought != null) it.thought = m.thought; }
+  if (it) {
+    if (m.text != null) it.text = m.text;
+    if (m.thinking != null) it.thinking = m.thinking;
+    if (m.opacity != null) it.opacity = m.opacity;
+    if (m.thought != null) it.thought = m.thought;
+    // 拆分任务的子任务卡片是先落一张空的、跑完再回填产出的，所以这两项必须能更新
+    if (m.toolDetail != null) it.toolDetail = m.toolDetail;
+    if (m.toolSummary != null) it.toolSummary = m.toolSummary;
+  }
   const row = findRow(conv, m.id);
   if (!row) return;
   if (row.dataset.gkind) paintGroup(row, row.dataset.gkind, groupRowItems(row));
@@ -475,15 +502,14 @@ function renderStatus(st) {
 }
 
 function setTabUI(t) {
-  S.tab = t === 1 ? 1 : 0;
+  // 集群标签页已撤掉，界面永远停在「AI 助手」；内核里 kind=2 的历史会话仍能正常读取
+  S.tab = 0;
   document.querySelectorAll('#seg button').forEach(b =>
     b.classList.toggle('on', +b.dataset.tab === S.tab));
-  $('#btnClusterTpl').classList.toggle('hidden', S.tab !== 1);
+  $('#btnClusterTpl').classList.add('hidden');
   renderAgents();
-  $('#mode').classList.toggle('hidden', S.tab === 1);
-  $('#input').placeholder = S.tab === 1
-    ? '一句话指挥集群…（Enter 发送 / Shift+Enter 换行 / Esc 停止）'
-    : '说点什么…（Enter 发送 / Shift+Enter 换行 / Esc 停止）';
+  $('#mode').classList.remove('hidden');
+  $('#input').placeholder = '说点什么…（Enter 发送 / Shift+Enter 换行 / Esc 停止）';
   document.querySelector('#composer').dataset.tab = S.tab;
 }
 
@@ -642,6 +668,64 @@ function handleEvent(m) {
     case 'memory': openMemory(m); break;
     case 'skills': S.skills = m.list || []; if (modalName === 'skills') openSkills(m); break;
     case 'settings': S.settings = m.settings || {}; applySettings(); if (modalName === 'settings') openSettings(m.settings); break;
+    case 'apiModels': {
+      apiModelList = m.ok ? (m.models || []) : null;
+      // 没选过模型时内核会默认用列表第一个（列表已是免费优先排序）。
+      // 这里把界面同步过来：设置里的输入框、顶部模型按钮、下拉选中项一起更新，
+      // 别让用户看到「列表有 80 个模型，但当前模型还是空的」。
+      if (m.autoModel) {
+        if ($('#apiModel')) $('#apiModel').value = m.autoModel;
+        if (S.settings) S.settings.apiModel = m.autoModel;
+        renderModelLabel();
+      }
+      const st = $('#apiModelsStatus');
+      if (st) {
+        st.textContent = m.ok
+          ? ('✅ 拉到 ' + m.count + ' 个模型'
+             + (m.freeCount ? '，其中 ' + m.freeCount + ' 个确认免费（🆓 标出）' : '')
+             + (m.autoModel ? '。已默认选用第一个：' + m.autoModel : '，在下面挑一个即可。'))
+          : ('❌ ' + (m.error || '拉取失败'));
+        st.style.color = m.ok ? '' : '#c0392b';
+      }
+      renderModelPicker();
+      if (m.autoModel) toast('已默认选用第一个模型：' + m.autoModel);
+      if (modelPickerRefresh) modelPickerRefresh();   // 对话框里的选择器开着就地刷新
+      releaseBtn('btnFetchModels');   // 结果到了就把按钮恢复，别一直停在「正在拉取…」
+      break;
+    }
+    case 'apiTest': {
+      const st = $('#apiTestResult');
+      if (st) {
+        st.textContent = m.ok
+          ? ('✅ 连接正常 · ' + m.model + ' · ' + m.ms + ' ms · 模型回了：' + (m.reply || '（空）'))
+          : ('❌ ' + (m.error || '连接失败'));
+        st.style.color = m.ok ? '' : '#c0392b';
+      }
+      releaseBtn('btnApiTest');
+      break;
+    }
+    case 'oauthBind': {
+      const out = $('#oauthResult');
+      const btn = $('#btnOAuthBind');
+      if (btn) { btn.disabled = false; }
+      if (m.phase === 'waiting') break;   // 只是「窗口已开」的进度提示
+      if (m.ok) {
+        // Key 内核已经落盘了，这里把界面同步过来，让用户看得见填了什么
+        if ($('#apiKey')) $('#apiKey').value = '••••••••（已保存，尾号 ' + (m.keyTail || '') + '）';
+        if ($('#apiUrl')) $('#apiUrl').value = m.url || '';
+        if (m.format && $('#apiFormat')) $('#apiFormat').value = m.format;
+        if (out) {
+          // 用主题变量，深浅色都对；写死绿色在浅色下会发灰
+          out.style.color = 'var(--blue)';
+          out.textContent = '✅ 已绑定 ' + m.provider + '，Key 已保存（尾号 ' + (m.keyTail || '') + '）。'
+            + '下面已经自动拉回模型列表，挑一个再点「保存」即可。';
+        }
+      } else if (out) {
+        out.style.color = '#c0392b';
+        out.textContent = '❌ 绑定失败：' + (m.error || '未知错误') + '　（可以改用下面的「按引导绑定」）';
+      }
+      break;
+    }
     case 'ask': showAsk(m); break;
     case 'askClose': closeAsk(m.askId); break;
     case 'update': S.update = m.update; showUpdatePill(m.update); break;
@@ -988,6 +1072,130 @@ function applySettings() {
   if ($('#tgLocal')) $('#tgLocal').checked = !!s.local;
   if ($('#tgSearch')) $('#tgSearch').checked = !!s.search;
   if (s.theme) setTheme(s.theme);
+  renderModelLabel();   // 顶部「🧠 模型」始终显示当前模型
+}
+
+/* ---------------- 外部 API：联网模型列表 ---------------- */
+// 上一次「联网获取模型列表」的结果。存在全局是为了弹窗被重建（保存后内核会回推 settings 事件）时不丢。
+let apiModelList = null;
+let apiModelSource = '';   // 这份列表是从哪个地址拉来的，换平台后要作废
+let modelPickerRefresh = null;   // 对话框内的模型选择器开着时，拉到列表就地刷新
+
+// 「正在测试…」这类按钮的统一收尾：内核一有结果就恢复。
+// 以前只靠 setTimeout 兜底，结果明明回来了按钮还写着「正在测试…」，看着就像卡死了。
+const BTN_BUSY = new Map();
+function markBtnBusy(btn, busyText) {
+  if (!btn) return;
+  if (!BTN_BUSY.has(btn)) BTN_BUSY.set(btn, btn.textContent);
+  btn.disabled = true;
+  btn.textContent = busyText;
+}
+function releaseBtn(id) {
+  const btn = $('#' + id);
+  if (!btn) return;
+  btn.disabled = false;
+  if (BTN_BUSY.has(btn)) { btn.textContent = BTN_BUSY.get(btn); BTN_BUSY.delete(btn); }
+}
+
+function renderModelPicker() {
+  const wrap = $('#modelPickerWrap');
+  const sel = $('#modelPicker');
+  if (!wrap || !sel) return;
+  const list = apiModelList;
+  if (!list || !list.length) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+  const cur = val('apiModel');
+  sel.innerHTML = list.map((m, i) => {
+    const name = m.label && m.label !== m.id ? (m.label + '  ·  ' + m.id) : m.id;
+    return '<option value="' + i + '">' + (m.free ? '🆓 ' : '') + esc(name) + '</option>';
+  }).join('');
+  const hit = list.findIndex(m => m.id === cur);
+  sel.value = String(hit >= 0 ? hit : 0);
+  sel.onchange = () => { const m = list[+sel.value]; if (m) $('#apiModel').value = m.id; };
+}
+
+/* ---------------- 对话框内的模型选择器 ----------------
+   以前换模型只能进设置、点「联网获取」、再从下拉里挑 —— 三步而且藏在里面。
+   现在顶部就有一个按钮，点开直接搜、直接切；列表没拉过就自动拉一次。 */
+function modelShortName() {
+  const m = String((S.settings || {}).apiModel || '');
+  if (!m) return '模型';
+  return m.length > 22 ? m.slice(0, 21) + '…' : m;
+}
+
+function renderModelLabel() {
+  const el = $('#modelText');
+  if (el) el.textContent = modelShortName();
+}
+
+function openModelPicker() {
+  const s = S.settings || {};
+  // closeOnPick：选完就关，不打断会话
+  const body = openModal('model', '🧠 切换模型', [{ t: '关闭' }]);
+
+  const head = document.createElement('div');
+  head.className = 'hint';
+  head.textContent = '当前：' + (s.apiModel || '（未设置）') + '　·　' + (s.apiUrl || '');
+  body.appendChild(head);
+
+  const filter = document.createElement('input');
+  filter.type = 'text';
+  filter.placeholder = '搜索模型名（例如 flash / qwen / deepseek）';
+  filter.style.margin = '10px 0 6px';
+  body.appendChild(filter);
+
+  const status = document.createElement('div');
+  status.className = 'hint';
+  body.appendChild(status);
+
+  const listBox = document.createElement('div');
+  listBox.className = 'scroll';
+  listBox.style.cssText = 'max-height:46vh;margin-top:6px';
+  body.appendChild(listBox);
+
+  function paint() {
+    const kw = filter.value.trim().toLowerCase();
+    const all = apiModelList || [];
+    const hits = kw ? all.filter(m => (m.id + ' ' + (m.label || '')).toLowerCase().includes(kw)) : all;
+    if (!hits.length) {
+      listBox.innerHTML = '<div class="hint">' + (all.length ? '没有匹配的模型。' : '还没有模型列表。') + '</div>';
+      return;
+    }
+    listBox.innerHTML = hits.slice(0, 400).map(m => {
+      const name = (m.label && m.label !== m.id) ? (m.label + '　·　' + m.id) : m.id;
+      const cur = m.id === s.apiModel ? ' ✔' : '';
+      return '<div class="mrow' + (cur ? ' cur' : '') + '" data-id="' + esc(m.id) + '">'
+        + (m.free ? '🆓 ' : '') + esc(name) + cur + '</div>';
+    }).join('');
+    listBox.querySelectorAll('.mrow').forEach(el => {
+      el.onclick = () => {
+        call('apiSetModel', { model: el.dataset.id });
+        toast('已切换到 ' + el.dataset.id);
+        closeModal();
+      };
+    });
+  }
+
+  filter.oninput = paint;
+  paint();
+  modelPickerRefresh = () => {
+    if (modalName !== 'model') { modelPickerRefresh = null; return; }
+    status.textContent = '共 ' + (apiModelList || []).length + ' 个模型（🆓 = 确认免费）';
+    paint();
+  };
+
+  // 列表为空 → 自动联网拉一次（不用手动点）
+  if (!apiModelList || apiModelSource !== String(s.apiUrl || '')) {
+    if (!s.apiKey) {
+      status.textContent = '还没有配置 API Key —— 先去 ⚙ 设置里绑定一个供应商。';
+      return;
+    }
+    status.textContent = '正在联网获取模型列表…';
+    apiModelSource = String(s.apiUrl || '');
+    call('apiModels', { url: s.apiUrl, key: s.apiKey, format: s.apiFormat });
+  } else {
+    status.textContent = '共 ' + apiModelList.length + ' 个模型（🆓 = 确认免费）';
+  }
 }
 
 function openSettings(fresh) {
@@ -999,34 +1207,220 @@ function openSettings(fresh) {
 
   const sect = t => { const d = document.createElement('div'); d.className = 'sect'; d.textContent = t; body.appendChild(d); };
 
-  sect('外部 API（OpenAI 兼容，如 DeepSeek）');
-  const presetSel = document.createElement('div');
-  presetSel.className = 'field';
-  presetSel.innerHTML = '<label>免费模型预设（选中自动填地址和模型名，只需再填自己的免费 Key）</label><select id="preset"></select>';
-  body.appendChild(presetSel);
-  const sel = $('#preset');
-  sel.innerHTML = '<option value="-1">（手动配置）</option>' +
-    (s.presets || []).map((p, i) => '<option value="' + i + '">' + esc(p.name) + '</option>').join('');
-  sel.onchange = () => {
-    const i = +sel.value;
-    if (i < 0) return;
-    $('#apiUrl').value = s.presets[i].url;
-    $('#apiModel').value = s.presets[i].model;
+  // ===== 外部 API：① 选平台 → ② 领 Key 并测试 → ③ 联网选模型 =====
+  // 「绑定账号」在各家的技术约束下不可能真做成 OAuth 一键授权（硅基流动等只给控制台建 Key，
+  // 不开放第三方应用授权），所以这里做成「半自动三步」：一键跳转申请页 → 粘贴 → 一键测试 + 拉模型列表。
+  sect('① 绑定平台（内置 18 家带免费额度的平台，选中自动填好地址和协议）');
+  const platWrap = document.createElement('div');
+  platWrap.className = 'field';
+  platWrap.innerHTML = '<label>平台</label><select id="platform"></select><div class="hint" id="platQuota"></div>';
+  body.appendChild(platWrap);
+
+  const platforms = s.platforms || [];
+  const selPlat = $('#platform');
+  selPlat.innerHTML = platforms
+    .map((p, i) => '<option value="' + i + '">' + esc(p.name) + '</option>').join('');
+  // 按已保存的地址回选平台；匹配不上就落到最后那个「自定义」
+  const matchedIdx = platforms.findIndex(p => p.url && p.url.trim() === String(s.apiUrl || '').trim());
+  selPlat.value = String(matchedIdx >= 0 ? matchedIdx : Math.max(0, platforms.length - 1));
+  const curPlat = () => platforms[+selPlat.value] || {};
+  const showQuota = () => { $('#platQuota').textContent = curPlat().quota || ''; };
+  showQuota();
+
+  const keyRow = document.createElement('div');
+  keyRow.className = 'field';
+
+  // ---- 一键绑定：只在平台真的开放了第三方 OAuth 时出现 ----
+  // 各家对 OAuth 的开放程度差很多：硅基流动、智谱只能在控制台手工建 Key；魔搭虽有 OIDC，
+  // 但换回的是身份 token（调不了推理接口）。所以这里按平台能力分两种入口，
+  // 不会让用户点了「一键绑定」撞到一个必然报错的授权页。
+  const oauthMap = {};
+  (s.oauthProviders || []).forEach(p => { oauthMap[p.id] = p; });
+
+  const oneClick = document.createElement('button');
+  oneClick.className = 'btn';
+  oneClick.id = 'btnOAuthBind';
+  oneClick.style.margin = '2px 0 4px';
+  oneClick.onclick = () => {
+    const p = curPlat();
+    const op = oauthTarget(p, oauthMap);
+    if (!op) return;
+    oneClick.disabled = true;
+    oneClick.textContent = '等待授权…请在弹出的窗口里登录并点「同意」';
+    const out = $('#oauthResult');
+    if (out) { out.textContent = '授权窗口已打开。登录并同意后会**自动**填好 Key，不用手动复制粘贴。'; out.style.color = ''; }
+    call('oauthBind', { provider: op.id });
+    setTimeout(() => { oneClick.disabled = false; syncOAuthBtn(); }, 330000);
   };
-  body.appendChild(field('API 地址', 'apiUrl', s.apiUrl));
-  body.appendChild(field('API 模型名', 'apiModel', s.apiModel));
+  keyRow.appendChild(oneClick);
+
+  const guide = document.createElement('button');
+  guide.className = 'btn';
+  guide.textContent = '🔑 按引导绑定（跳到官网申请页，手动创建 Key）';
+  guide.style.margin = '2px 0 4px';
+  guide.onclick = () => {
+    const p = curPlat();
+    if (p.keyUrl) {
+      call('openUrl', { url: p.keyUrl });
+      toast('已打开官网申请页 —— 登录后创建 API Key，复制回来粘到下面「API Key」。');
+    } else {
+      toast('这家没有预设申请页，去官网控制台创建 Key 即可。');
+    }
+  };
+  keyRow.appendChild(guide);
+
+  // 当前平台能不能一键绑定：能 → 显示一键按钮，不能 → 只显示引导按钮
+  function oauthTarget(plat, map) {
+    if (!plat) return null;
+    if (plat.oauthId && map[plat.oauthId]) return map[plat.oauthId];
+    return Object.values(map).find(o => o.apiUrl && plat.url && o.apiUrl === plat.url) || null;
+  }
+  function syncOAuthBtn() {
+    const op = oauthTarget(curPlat(), oauthMap);
+    oneClick.style.display = op ? '' : 'none';
+    guide.style.display = op ? 'none' : '';
+    if (op) oneClick.textContent = '⚡ 一键绑定 ' + op.name.split('（')[0] + '（授权登录，自动拿 Key）';
+  }
+  const oauthOut = document.createElement('div');
+  oauthOut.className = 'hint';
+  oauthOut.id = 'oauthResult';
+  oauthOut.textContent = s.oauthExplain || '';
+  keyRow.appendChild(oauthOut);
+  body.appendChild(keyRow);
+
+  // ---- 一键恢复：这家之前配好过就直接拉回来（Key / 模型 / 协议一起写回）----
+  const restoreRow = document.createElement('div');
+  restoreRow.className = 'field';
+  const bRestore = document.createElement('button');
+  bRestore.className = 'btn';
+  bRestore.id = 'btnRestoreProfile';
+  bRestore.style.margin = '2px 0 4px';
+  bRestore.onclick = () => {
+    markBtnBusy(bRestore, '正在恢复…');
+    call('apiRestore', { url: val('apiUrl') });
+    setTimeout(() => releaseBtn('btnRestoreProfile'), 5000);   // 内核会回推 settings，弹窗重建后按钮自然是新的
+  };
+  restoreRow.appendChild(bRestore);
+  const rHint = document.createElement('div');
+  rHint.className = 'hint';
+  rHint.id = 'profileHint';
+  restoreRow.appendChild(rHint);
+  body.appendChild(restoreRow);
+
+  const profiles = s.apiProfiles || [];
+  const profileFor = url => profiles.find(x => x.url === String(url || '').trim()) || null;
+
+  function syncRestoreBtn() {
+    const p = profileFor(val('apiUrl'));
+    if (p) {
+      bRestore.style.display = '';
+      bRestore.textContent = '↩ 恢复「' + (p.label || p.model || '这家') + '」上次的配置'
+        + (p.model ? '（模型 ' + p.model + '）' : '');
+      rHint.textContent = '上次保存于 ' + (p.updated || '未知时间') + '，Key 尾号 ' + (p.keyTail || '—')
+        + '。点一下就把 Key / 模型 / 协议全部写回并保存。';
+    } else {
+      bRestore.style.display = 'none';
+      rHint.textContent = profiles.length
+        ? ('已记住 ' + profiles.length + ' 家供应商的配置：'
+           + profiles.map(x => x.label || x.model || x.url).slice(0, 3).join('、')
+           + (profiles.length > 3 ? ' 等' : '') + '。切到对应平台就能一键恢复。')
+        : '填好 Key 并保存一次，这里就会记住这家供应商的配置；以后切换供应商可以一键恢复，不用重填。';
+    }
+  }
+  syncRestoreBtn();
+
+  selPlat.onchange = () => {
+    const p = curPlat();
+    showQuota();
+    if (p.url) {
+      $('#apiUrl').value = p.url;
+      $('#apiFormat').value = p.format || 'openai';
+      $('#apiModel').value = '';          // 各家的模型 ID 不通用，换了平台必须重新选
+    }
+    apiModelList = null;                  // 旧列表作废
+    renderModelPicker();
+    syncOAuthBtn();
+    syncRestoreBtn();                     // 换平台后，这家有没有存档要重新判
+    const st = $('#apiModelsStatus');
+    if (st) { st.textContent = '点了「联网获取模型列表」后在这里挑模型。'; st.style.color = ''; }
+  };
+  syncOAuthBtn();
+
+  sect('② 粘贴 Key 并测试连接');
   body.appendChild(field('API Key', 'apiKey', s.apiKey, 'password'));
+  const testRow = document.createElement('div');
+  testRow.className = 'field';
+  const bTest = document.createElement('button');
+  bTest.className = 'btn';
+  bTest.id = 'btnApiTest';
+  bTest.textContent = '🔌 测试连接（发一个最小请求验证 Key）';
+  bTest.style.margin = '2px 0 4px';
+  bTest.onclick = () => {
+    markBtnBusy(bTest, '正在测试…');
+    const out = $('#apiTestResult');
+    if (out) { out.textContent = ''; out.style.color = ''; }
+    call('apiTest', { url: val('apiUrl'), key: val('apiKey'), model: val('apiModel'), format: val('apiFormat') });
+    setTimeout(() => releaseBtn('btnApiTest'), 35000);   // 兜底：万一事件丢了也别一直卡着
+  };
+  testRow.appendChild(bTest);
+  const testOut = document.createElement('div');
+  testOut.className = 'hint';
+  testOut.id = 'apiTestResult';
+  testRow.appendChild(testOut);
+  body.appendChild(testRow);
+
+  sect('③ 选模型（联网拉取该平台的最新模型列表，不用背模型名）');
+  const fetchRow = document.createElement('div');
+  fetchRow.className = 'field';
+  const bFetch = document.createElement('button');
+  bFetch.className = 'btn';
+  bFetch.id = 'btnFetchModels';
+  bFetch.textContent = '🔄 联网获取模型列表';
+  bFetch.style.margin = '2px 0 4px';
+  bFetch.onclick = () => { fetchModels(true); };
+  fetchRow.appendChild(bFetch);
+  const mStatus = document.createElement('div');
+  mStatus.className = 'hint';
+  mStatus.id = 'apiModelsStatus';
+  fetchRow.appendChild(mStatus);
+  body.appendChild(fetchRow);
+
+  // 拉模型列表：bind 之后自动调，不必手动点。manual=true 表示用户主动点的。
+  function fetchModels(manual) {
+    if (!val('apiKey')) {
+      if (manual) toast('还没填 API Key —— 先点上面的「免费领取 Key」。', 'error');
+      return;
+    }
+    const st = $('#apiModelsStatus');
+    if (st) { st.textContent = '正在拉取模型列表…'; st.style.color = ''; }
+    markBtnBusy($('#btnFetchModels'), '正在拉取…');
+    apiModelSource = val('apiUrl');
+    call('apiModels', { url: val('apiUrl'), key: val('apiKey'), format: val('apiFormat') });
+    setTimeout(() => releaseBtn('btnFetchModels'), 35000);
+  }
+
+  const pickerWrap = document.createElement('div');
+  pickerWrap.className = 'field';
+  pickerWrap.id = 'modelPickerWrap';
+  pickerWrap.innerHTML = '<label>从列表里挑一个（🆓 = 确认免费）</label><select id="modelPicker"></select>';
+  body.appendChild(pickerWrap);
+
+  body.appendChild(field('API 模型名', 'apiModel', s.apiModel, 'text',
+    '也可以直接手填。少数平台要填的不是模型 ID（如火山方舟填「接入点 ID」）。'));
   const fmt = document.createElement('div');
   fmt.className = 'field';
-  fmt.innerHTML = '<label>API 协议格式（选错会报错）</label><select id="apiFormat">' +
-    '<option value="openai">OpenAI 兼容（DeepSeek / 智谱 / 硅基流动 / Groq / OpenRouter）</option>' +
+  fmt.innerHTML = '<label>API 协议格式（选平台时已自动设好，一般不用动）</label><select id="apiFormat">' +
+    '<option value="openai">OpenAI 兼容（硅基流动 / 魔搭 / OpenRouter / NVIDIA / Groq / 智谱 / DeepSeek…）</option>' +
     '<option value="anthropic">Anthropic Claude（/v1/messages）</option>' +
-    '<option value="gemini">Google Gemini（generateContent）</option>' +
+    '<option value="gemini">Google Gemini（generateContent 原生接口）</option>' +
     '<option value="responses">OpenAI Responses API（/v1/responses，GPT-5 等新模型）</option>' +
     '</select>';
   body.appendChild(fmt);
   $('#apiFormat').value = s.apiFormat || 'openai';
   $('#apiFormat').onchange = () => {
+    // 只在「自定义平台」下才用格式去猜地址；预设平台有自己的地址，别覆盖掉
+    const p = curPlat();
+    if (p && p.url) return;
     const map = {
       anthropic: 'https://api.anthropic.com/v1/messages',
       gemini: 'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent',
@@ -1035,6 +1429,37 @@ function openSettings(fresh) {
     };
     $('#apiUrl').value = map[$('#apiFormat').value] || map.openai;
   };
+  body.appendChild(field('API 地址', 'apiUrl', s.apiUrl, 'text', '选平台时已自动填好；只有「自定义平台」才需要手动改。'));
+
+  sect('⚡ 模型快速预设（离线可用，一步填好地址 + 模型 + 协议）');
+  const presetSel = document.createElement('div');
+  presetSel.className = 'field';
+  presetSel.innerHTML = '<label>预设</label><select id="preset"></select>' +
+    '<div class="hint">不想联网时可从这里直接选；选定会覆盖上面的地址 / 模型名 / 协议格式。</div>';
+  body.appendChild(presetSel);
+  const sel = $('#preset');
+  sel.innerHTML = '<option value="-1">（不选）</option>' +
+    (s.presets || []).map((p, i) => '<option value="' + i + '">' + esc(p.name) + '</option>').join('');
+  sel.onchange = () => {
+    const i = +sel.value;
+    if (i < 0) return;
+    const p = s.presets[i];
+    $('#apiUrl').value = p.url;
+    $('#apiModel').value = p.model;
+    // 协议格式必须一起回填：硅基流动等预设是 openai，但 Gemini/Claude 预设不是，
+    // 只改地址和模型名会把上一次的格式留在原地，发请求直接报错。
+    if (p.format && $('#apiFormat')) {
+      $('#apiFormat').value = p.format;
+    }
+    apiModelList = null;
+    renderModelPicker();
+  };
+
+  renderModelPicker();
+  // 已经绑好 Key 但还没有模型列表 → 打开设置就自动拉一次，不用手动点。
+  // （绑定成功时内核也会推一次 apiModels，这里只是覆盖「上次没拉到 / 换了电脑」的情况。）
+  if (!apiModelList && val('apiKey')) fetchModels(false);
+
   const hint = document.createElement('div');
   hint.className = 'field';
   hint.innerHTML = '<div class="hint">' + esc(s.freeKeyHint || '') + '</div>';
@@ -1153,6 +1578,12 @@ function openSettings(fresh) {
 }
 
 function saveSettings() {
+  // 配了外部 Key 就必须有模型名：换平台时模型名会被清空，防止把上一家的模型 ID 带过去。
+  // 返回 false 会让弹窗不关闭，用户能接着改（只用 Ollama 的话 apiKey 为空，不受影响）。
+  if (val('apiKey') && !val('apiModel')) {
+    toast('还没选模型 —— 点「③ 联网获取模型列表」挑一个，或手动填模型名。', 'error');
+    return false;
+  }
   call('settingsSave', {
     apiUrl: val('apiUrl'), apiModel: val('apiModel'), apiKey: val('apiKey'),
     apiFormat: val('apiFormat'),
@@ -1295,6 +1726,7 @@ function wire() {
   $('#seg').onclick = e => { const b = e.target.closest('button'); if (b) call('tab', { tab: +b.dataset.tab }); };
   $('#btnTheme').onclick = () => call('setTheme', { theme: document.body.classList.contains('dark') ? 'light' : 'dark' });
   $('#btnSettings').onclick = () => openSettings();
+  $('#btnModel').onclick = () => openModelPicker();
   $('#btnLink').onclick = () => openSuperLink();
   wireRd();
   $('#btnNew').onclick = () => call('newConv', { kind: kind() });

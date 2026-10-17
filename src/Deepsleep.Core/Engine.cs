@@ -65,6 +65,11 @@ public sealed class Engine
         _api.Url = cfg.ApiUrl;
         _api.Model = cfg.ApiModel;
         _api.ApiKey = cfg.ApiKey;
+        // 这三项以前漏了：回怼引擎永远按 openai 协议发请求，
+        // 用户在设置里选 Anthropic / Gemini / Responses 完全不生效（只有 AI 助手那边生效）。
+        _api.Format = cfg.ApiFormat;
+        _api.Thinking = cfg.ApiThinking;
+        _api.ReasoningEffort = cfg.ReasoningEffort;
     }
 
     // ---- 自训练模型 ----
