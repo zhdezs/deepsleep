@@ -33,7 +33,7 @@ internal static partial class Program
         string? inline = ArgStr(args, "--token");
         _token = string.IsNullOrWhiteSpace(inline) ? LoadOrCreateToken(args.Contains("--new-token")) : inline!;
 
-        _cliMode = CliWanted(args);
+        _cliMode = CliWanted(args) || DefaultCli(args);
         _kernel = new Kernel();
         if (_cliMode) _kernel.Push += OnCliPush;      // CMD 模式：同一份内核事件流
         try { _kernel.Init(_dataDir); }
@@ -96,6 +96,16 @@ internal static partial class Program
         Environment.Exit(0);
     }
 
+    /// <summary>
+    /// 内核版**默认就进 CMD 对话**（双击打开就能直接发消息），不用再记 --cli。
+    /// 两个例外：
+    ///   · --headless —— 明确说「只跑服务」，交给浏览器用；
+    ///   · stdin 被重定向（被服务/计划任务/脚本拉起，或没有终端）—— 这时读不到输入，
+    ///     进了 CLI 会立刻 EOF 退出，等于把刚起来的服务带走，所以退回纯服务模式。
+    /// </summary>
+    private static bool DefaultCli(string[] args)
+        => !args.Contains("--headless") && !Console.IsInputRedirected;
+
     private static void Banner(string[] args)
     {
         // 用 CoreServer.Port 而不是命令行里的 _port：端口起不来时内核会自动换成别的端口，
@@ -129,7 +139,7 @@ internal static partial class Program
         Console.WriteLine();
         Console.WriteLine("  超远程  --tunnel 内置隧道 ｜ --tunnel-cmd \"自备穿透命令\" ｜ --public 监听所有网卡");
         Console.WriteLine();
-        Console.WriteLine("  退出 Ctrl+C ｜ 换端口 --port 8757 ｜ 换令牌 --new-token ｜ 换数据目录 --data 路径");
+        Console.WriteLine("  退出 Ctrl+C ｜ 只跑服务 --headless ｜ 换端口 --port 8757 ｜ 换令牌 --new-token ｜ 换数据目录 --data 路径");
 #if !WINDOWS
         if (args.Contains("--headless"))
             Console.WriteLine("  只跑服务    内核版不开桌面窗口，用上面的网址在浏览器里打开");
@@ -139,7 +149,7 @@ internal static partial class Program
         if (_cliMode)
         {
             Console.WriteLine();
-            Console.WriteLine("  CMD 模式   直接在这里发消息（--cli 交互 / --say \"一句话\" 发完即退）");
+            Console.WriteLine("  CMD 模式   直接在这里发消息（默认开启；要只跑服务加 --headless / --say 发一句即退）");
         }
         Console.WriteLine();
     }

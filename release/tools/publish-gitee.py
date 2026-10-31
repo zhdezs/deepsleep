@@ -168,8 +168,11 @@ def split_installer(path):
     return parts
 
 
-# 跨平台内核包（Linux / macOS）：单个都不到 100MB，直接整包上传，不用切片
-UNIX_RIDS = ["linux-x64", "linux-arm64", "osx-arm64", "osx-x64"]
+# 跨平台桌面包（Linux）：单个都不到 100MB，直接整包上传，不用切片
+# macOS 桌面版已停产，不再发桌面包，只发 core 内核包（见下）
+UNIX_RIDS = ["linux-x64", "linux-arm64"]
+# 跨平台内核包（macOS / Linux）：DeepSleepCore 无头运行时，安装程序会用到
+CORE_RIDS = ["osx-arm64", "osx-x64", "linux-x64", "linux-arm64"]
 
 
 def planned_assets(version):
@@ -178,13 +181,14 @@ def planned_assets(version):
              os.path.join(ROOT, "release", "deepsleep-core-%s-win-x64.zip" % version)]
     for rid in UNIX_RIDS:
         cands.append(os.path.join(ROOT, "release", "deepsleep-%s-%s.tar.gz" % (version, rid)))
-    # Linux 安装包（debian / redhat）与 macOS 磁盘映像
+    for rid in CORE_RIDS:
+        cands.append(os.path.join(ROOT, "release", "deepsleep-core-%s-%s.tar.gz" % (version, rid)))
+    # Linux 安装包（debian / redhat）与万能安装程序
     cands += [os.path.join(ROOT, "release", "deepsleep_%s_amd64.deb" % version),
               os.path.join(ROOT, "release", "deepsleep_%s_arm64.deb" % version),
               os.path.join(ROOT, "release", "deepsleep-%s-1.x86_64.rpm" % version),
               os.path.join(ROOT, "release", "deepsleep-%s-1.aarch64.rpm" % version),
-              os.path.join(ROOT, "release", "deepsleep-%s-osx-arm64.dmg" % version),
-              os.path.join(ROOT, "release", "deepsleep-%s-osx-x64.dmg" % version)]
+              os.path.join(ROOT, "release", "deepsleep-universal-%s.zip" % version)]
     plan = []
     for p in cands:
         if os.path.isfile(p):

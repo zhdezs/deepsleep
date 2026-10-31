@@ -38,6 +38,8 @@ public static partial class CoreServer
     private static volatile bool _running;
     private static DateTime Started = DateTime.Now;
     private static TcpListener? _listener;
+    /// <summary>当前实际绑定的地址（换绑失败时要能回滚到它）。</summary>
+    private static IPAddress? _boundAddr;
     private static readonly object SseGate = new();
     private static readonly List<Res> SseClients = new();
 
@@ -130,7 +132,11 @@ public static partial class CoreServer
         }
 
         _running = _listener != null;
-        if (_running) Task.Run(AcceptLoop);
+        if (_running)
+        {
+            _boundAddr = o.Bind;
+            Task.Run(AcceptLoop);
+        }
 
         StartTunnel(o.Tunnel, o.TunnelCmd, o.TunnelCfPath);
         return _running;
@@ -146,19 +152,56 @@ public static partial class CoreServer
     /// <summary>
     /// 换绑监听地址。超级连接要在局域网里被对方直连，必须临时监听所有网卡；
     /// 配对结束再换回 127.0.0.1。
+    ///
+    /// ⚠ 两处都是踩过的坑：
+    ///   1) **先停旧监听，再绑新地址**。以前是「先绑新的、成功后再停旧的」，在 Windows 上
+    ///      从 127.0.0.1 换到 0.0.0.0 时经常直接 10048（端口还被自己占着），而调用方又没看
+    ///      返回值 —— 结果超级连接以为已经在全网卡监听了，实际还只听本机：
+    ///      **同机自测能连上，跨机永远找不到设备**。
+    ///   2) 绑失败要**回滚**原地址，宁可退回只听本机，也不能把整个服务弄没。
     /// </summary>
     public static bool Rebind(IPAddress addr)
     {
         var old = _listener;
-        try
+        var prev = _boundAddr ?? IPAddress.Loopback;
+        int port = _port;
+
+        try { old?.Stop(); } catch { }
+        _listener = null;
+        _running = false;
+
+        if (TryListen(addr, port, out var nl))
         {
-            var nl = new TcpListener(addr, _port);
-            nl.Start();
             _listener = nl;
+            _boundAddr = addr;
             _public = !IPAddress.IsLoopback(addr);
             _running = true;
             Task.Run(AcceptLoop);
-            try { old?.Stop(); } catch { }
+            return true;
+        }
+
+        if (TryListen(prev, port, out var back))
+        {
+            _listener = back;
+            _boundAddr = prev;
+            _public = !IPAddress.IsLoopback(prev);
+            _running = true;
+            Task.Run(AcceptLoop);
+        }
+        return false;
+    }
+
+    private static bool TryListen(IPAddress addr, int port, out TcpListener listener)
+    {
+        listener = null!;
+        try
+        {
+            var l = new TcpListener(addr, port);
+            // 刚停掉旧监听就换地址重绑时，Windows 可能还在回收这个端口：开 REUSEADDR 才能马上绑上。
+            // （只在换绑用，Start 的端口扫描仍然靠「绑不上就换端口」，不受影响。）
+            try { l.Server.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true); } catch { }
+            l.Start();
+            listener = l;
             return true;
         }
         catch { return false; }

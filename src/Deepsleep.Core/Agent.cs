@@ -22,6 +22,15 @@ public sealed class AgentMessage
     public string Detail { get; set; } = "";
     /// <summary>可选：本消息附带一张本地图片（生成图片工具的结果）。</summary>
     public string? ImagePath { get; set; }
+    /// <summary>可选：本消息附带一段本地视频（生成视频工具的结果）。</summary>
+    public string? VideoPath { get; set; }
+    /// <summary>
+    /// 可选：这条消息里**给用户看的那句话**。
+    /// 工具调用轮的 Content 是「人话 + 工具 JSON」的原文（模型上下文要这个），
+    /// 界面只该显示剥掉 JSON 后的那部分 —— 否则要么整条被藏掉（用户看不见 AI 说了什么），
+    /// 要么把一串 {"tool":...} 糊在脸上。
+    /// </summary>
+    public string Say { get; set; } = "";
 }
 
 /// <summary>
@@ -34,6 +43,7 @@ public sealed class Agent
     public const string ToolRunCommand = "运行命令";
     public const string ToolPython = "运行Python脚本";
     public const string ToolImage = "生成图片";
+    public const string ToolVideo = "生成视频";
     public const string ToolVision = "看图";
     public const string ToolSearch = "网络搜索";
     public const string ToolResearch = "深度研究";
@@ -76,11 +86,13 @@ public sealed class Agent
     private readonly ApiClient _counterLlm = new();
     private readonly OllamaClient _ollama = new();
     private readonly ImageGenClient _image = new();
+    private readonly VideoGenClient _video = new();
     private readonly VisionClient _vision = new();
     private readonly Engine _counter;
     private readonly Dictionary<int, List<AgentMessage>> _sessions = new();
     private int _counterSid = 900001;
     private string? _lastImagePath;
+    private string? _lastVideoPath;
     private string? _lastToolFull;   // 本次工具输出全文：只给界面卡片用
     /// <summary>chat 模式下这一轮是否允许调用「网络搜索 / 深度研究」（用户消息带搜索/研究意图时开启）。</summary>
     private bool _chatToolMode;
@@ -158,9 +170,19 @@ public sealed class Agent
 
     public void ApplyConfig(AppConfig cfg)
     {
+        // 内置免费 Key（网页版同一把）：用户没填自己的 Key、且地址是智谱时自动接上。
+        // 只在智谱地址上用 —— 绝不能把这把共用 Key 发到别家平台。
+        string freeK = cfg.UseFreeKey ? FreeKey.Value : "";
+        bool chatFree = FreeKey.Applies(cfg.UseFreeKey, cfg.ApiKey, cfg.ApiUrl);
+        bool imgFree = FreeKey.Applies(cfg.UseFreeKey, cfg.ImageApiKey, cfg.ImageApiUrl);
+        bool visFree = FreeKey.Applies(cfg.UseFreeKey, cfg.VisionApiKey, cfg.VisionApiUrl);
+
         _api.Url = cfg.ApiUrl;
-        _api.Model = cfg.ApiModel;
-        _api.ApiKey = cfg.ApiKey;
+        // 用免费 Key 时顺手把「从没改过的默认模型」换成免费矩阵里的那个 ——
+        // 免费额度只覆盖 GLM-4.7-Flash 这一档，仍按老的默认模型发会直接报无权限。
+        _api.Model = chatFree && (string.IsNullOrWhiteSpace(cfg.ApiModel) || cfg.ApiModel == "glm-4-flash-250414")
+            ? FreeKey.ChatModel : cfg.ApiModel;
+        _api.ApiKey = chatFree ? freeK : cfg.ApiKey;
         _api.Format = cfg.ApiFormat;
         _api.Thinking = cfg.ApiThinking;
         _api.ReasoningEffort = cfg.ReasoningEffort;
@@ -169,14 +191,32 @@ public sealed class Agent
         _counterLlm.Model = cfg.CounterModel;
         _ollama.BaseUrl = cfg.OllamaUrl;
         _ollama.Model = cfg.OllamaModel;
-        _image.Url = cfg.ImageApiUrl;
-        _image.ApiKey = cfg.ImageApiKey;
+        // 接口地址可自定义；留空就回到默认（智谱），避免用户清空输入框后一发请求就报地址为空
+        _image.Url = string.IsNullOrWhiteSpace(cfg.ImageApiUrl)
+            ? "https://open.bigmodel.cn/api/paas/v4/images/generations" : cfg.ImageApiUrl.Trim();
+        _image.ApiKey = imgFree ? freeK : cfg.ImageApiKey;
         _image.Model = cfg.ImageModel;
         _image.SaveDir = string.IsNullOrWhiteSpace(DataDir)
             ? ""
             : System.IO.Path.Combine(DataDir, "images");
-        _vision.Url = cfg.VisionApiUrl;
-        _vision.ApiKey = cfg.VisionApiKey;
+        // 视频：Key 留空就**复用图像那套**（同属智谱，不用为同一个 Key 填两遍）；
+        // 地址不能跟着图像走（那个是 images/generations），留空只用视频自己的默认地址。
+        _video.Url = string.IsNullOrWhiteSpace(cfg.VideoApiUrl)
+            ? "https://open.bigmodel.cn/api/paas/v4/videos/generations" : cfg.VideoApiUrl.Trim();
+        // 视频 Key 的优先级：自己的视频 Key → 自己的图像 Key（同属智谱时通常通用）→ 空。
+        // ⚠ **绝不用内置免费 Key**：那把只覆盖聊天/看图/画图，视频接口对它一直回 1305
+        //   （访问量过大 = 没额度）。硬塞过去只会让用户等十几秒再收到一句莫名其妙的报错。
+        _video.ApiKey = !string.IsNullOrWhiteSpace(cfg.VideoApiKey) ? cfg.VideoApiKey.Trim()
+                      : !string.IsNullOrWhiteSpace(cfg.ImageApiKey) ? cfg.ImageApiKey.Trim()
+                      : "";
+        _video.PollUrlTemplate = cfg.VideoPollUrl ?? "";
+        _video.Model = string.IsNullOrWhiteSpace(cfg.VideoModel) ? "cogvideox-flash" : cfg.VideoModel;
+        _video.SaveDir = string.IsNullOrWhiteSpace(DataDir)
+            ? ""
+            : System.IO.Path.Combine(DataDir, "videos");
+        _vision.Url = string.IsNullOrWhiteSpace(cfg.VisionApiUrl)
+            ? "https://open.bigmodel.cn/api/paas/v4/chat/completions" : cfg.VisionApiUrl.Trim();
+        _vision.ApiKey = visFree ? freeK : cfg.VisionApiKey;
         _vision.Model = cfg.VisionModel;
     }
 
@@ -558,6 +598,9 @@ public sealed class Agent
                 Content = reply,
                 Meta = isToolCall ? $"调用了工具「{tool}」"
                      : malformedCall ? "工具调用格式修正中…" : "",
+                // 模型在工具调用前写的那句人话（"我先看看这个文件…"）要显示出来 ——
+                // 以前界面把整条带 "调用了工具" 的消息直接丢弃，用户只看得到工具卡片。
+                Say = isToolCall ? ExtractToolProse(reply) : "",
             };
             history.Add(assistantMsg);
             // 格式错的内容要重发一次：把流式已经刷到界面上的原文覆盖掉
@@ -596,17 +639,6 @@ public sealed class Agent
                     MessageAdded?.Invoke(sid, corr);
                     continue;
                 }
-                // 模型说"不会/做不到"且存在相关技能 → 注入技能说明重试
-                string? boost = SuggestSkill(reply, history, injectedSkills) ??
-                                SuggestUnusedSkill(reply, history, injectedSkills);
-                if (boost != null)
-                {
-                    var corr = new AgentMessage { Role = "tool", Meta = "技能提示", Content = boost };
-                    history.Add(corr);
-                    TrimHistory(history);
-                    MessageAdded?.Invoke(sid, corr);
-                    continue;
-                }
                 return reply;
             }
 
@@ -627,6 +659,7 @@ public sealed class Agent
 
 
             _lastImagePath = null;
+            _lastVideoPath = null;
             ToolStarted?.Invoke(sid, tool);
             string result;
             try
@@ -656,6 +689,7 @@ public sealed class Agent
                 Meta = tool,
                 Detail = tool == ToolWriteFile ? WriteFileDetail(args) : (_lastToolFull ?? ""),
                 ImagePath = tool == ToolImage ? _lastImagePath : null,
+                VideoPath = tool == ToolVideo ? _lastVideoPath : null,
             });
             TrimHistory(history);
             MessageAdded?.Invoke(sid, history[^1]);
@@ -687,6 +721,7 @@ public sealed class Agent
         "- 运行命令：参数 {\"命令\":\"要执行的 " + Platform.ShellName + " 命令\"}。在用户电脑上执行命令并返回输出（最长 10 分钟）。\n" +
         "- 运行Python脚本：参数 {\"代码\":\"Python 3 源码\",\"工作目录\":\"可选\"}。自动选择 Python 3 解释器，写入临时脚本并运行，返回输出与报错。\n" +
         "- 生成图片：参数 {\"提示词\":\"详细的画面描述\",\"尺寸\":\"可选 1024x1024 / 768x1344 / 1344x768\"}。调用 CogView-3-Flash 生成图片并保存到本地，返回本地图片路径。用户要求画图/生成图片/配图时使用。\n" +
+        "- 生成视频：参数 {\"提示词\":\"详细的画面描述\",\"尺寸\":\"可选 1920x1080 / 1280x960 / 1024x1024\"}。调用 CogVideoX-Flash 生成一段短视频（异步任务，通常 30~120 秒），保存到本地并返回路径。用户要求生成视频/动画/动态画面时使用。\n" +
         "- 看图：参数 {\"图片路径\":\"本地图片绝对路径\",\"问题\":\"可选，要问的问题\"}。调用 GLM-4.6V-Flash 多模态模型识别/分析图片（描述内容、读图、检查截图、审查生成的图片等）。\n" +
         "- 网络搜索：参数 {\"关键词\":\"搜索词\"}。用内置爬虫直接抓取搜索结果页（Bing → 搜狗 → 360 → DuckDuckGo 依次尝试），返回标题/链接/摘要，无需 API Key；搜索/查价格/查资料/找最新信息时用它。\n" +
         "- 深度研究：参数 {\"主题\":\"研究主题\",\"深度\":1-3}。多轮子查询搜索 + 抓取多个网页正文 + 汇总成一份带来源的 Markdown 研究报告（自动保存到本地，返回文件路径）；用户说「深度研究 / 调研 / 全面了解 / 整理一份报告」时用它。\n" +
@@ -714,7 +749,7 @@ public sealed class Agent
         "8. 写代码 / 做网页 / 做项目时需要图片素材（图标、Logo、横幅、占位图、插图、配图等）时，用「生成图片」工具生成真实图片并引用本地路径，不要跳过、不要用手写 SVG 或纯色占位代替。\n" +
         "9. 工具执行失败、超时或被停止时：如实告知用户发生了什么并询问下一步；严禁调用无关工具、严禁假装任务已完成、严禁用「好的，我明白了」之类的通用话术敷衍。\n" +
         "10. 用户要求搜索、查价格、查资料、找最新信息时，必须用「网络搜索」工具（需要系统调研、写报告时用「深度研究」）；搜到链接后如需原文，用「抓取网页」读取；严禁用 curl / wget / Invoke-WebRequest 等命令行代替（会触发拦截并导致失败）。\n" +
-        "11. 工具选择指南：搜索/查价格/查资料/找最新信息→「网络搜索」；要系统调研/写报告→「深度研究」；阅读搜索结果的具体页面→「抓取网页」；执行命令/系统操作→「运行命令」；写代码跑脚本→「运行Python脚本」或「写入文件」；生成图片→「生成图片」；看图片→「看图」；读写文件→「读取文件/写入文件」；用默认程序打开文件→「打开文件」；任务可以拆成几块互相独立的活→「拆分任务」。\n" +
+        "11. 工具选择指南：搜索/查价格/查资料/找最新信息→「网络搜索」；要系统调研/写报告→「深度研究」；阅读搜索结果的具体页面→「抓取网页」；执行命令/系统操作→「运行命令」；写代码跑脚本→「运行Python脚本」或「写入文件」；生成图片→「生成图片」；生成视频/动画→「生成视频」；看图片→「看图」；读写文件→「读取文件/写入文件」；用默认程序打开文件→「打开文件」；任务可以拆成几块互相独立的活→「拆分任务」。\n" +
         "12. 最终回答必须是纯文本中文，禁止输出任何 JSON、代码块或结构化片段。\n" +
         "13. 用户提到重要事实、偏好、要求（比如称呼、习惯、项目约定、不想要什么）时，用「记住」工具保存；保存后告知用户已记住。\n" +
         "14. 当【已安装技能】里出现与你任务匹配的技能时，必须真正执行技能：按说明调用「运行Python脚本」「写入文件」「运行命令」「生成图片」等工具，把产物（PPT/文档/网页/脚本等）真实生成到磁盘，并在最终回复里给出完整本地路径；严禁只讲解步骤、只描述怎么做、或假装已完成。" +
@@ -725,16 +760,15 @@ public sealed class Agent
     /// 正文放到「完成」的 回答 字段里；由软件解析、执行工具、把结果塞回上下文，再让模型继续干活。
     /// </summary>
     private const string ToolDecisionPrompt =
-        "\n\n【工具决策阶段 · 本轮只准输出 JSON】\n" +
+        "\n\n【工具决策阶段 · 先说一句话，再输出 JSON】\n" +
         "整体流程：用户输入 → 你分析意图 → 需要工具就输出 tool_call → 软件执行工具 → 结果回传给你 → 你继续决策，直到不再需要工具。\n" +
-        "这一轮软件只要你的工具决策，不要正文。你必须只输出一个 JSON 对象：不要 Markdown 代码块、不要解释、不要前后缀文字。\n" +
         "合法输出只有两种：\n" +
-        "① 需要调用工具：{\"tool_call\":{\"name\":\"工具名\",\"arguments\":{...}}}\n" +
+        "① 需要调用工具：**先用一行中文说明你接下来要做什么**（例如「我先读一下这个文件」「我来搜一下最新资料」——这句会**实时显示给用户**，让他知道你在干嘛），然后空一行，再输出工具 JSON：{\"tool_call\":{\"name\":\"工具名\",\"arguments\":{...}}}\n" +
         "② 不需要任何工具 / 已经拿到足够结果：{\"tool_call\":null}\n" +
         "要点：\n" +
+        "· 那句说明要**简短**（一句话以内），详细分析留到最后的「完成」阶段；\n" +
         "· 需要动手的任务（读写文件、跑命令、跑脚本、搜索、抓网页、画图、看图、装技能）必须先走 ①，不许直接说「已完成」；\n" +
         "· 代码、命令、文件内容都放进 arguments 字段，字符串内换行写 \\n、双引号写 \\\"；\n" +
-        "· 这一轮的输出不会显示给用户：软件执行完会把结果塞回上下文，最后再单独让你用自然语言写最终回复；\n" +
         "· 严禁在没收到工具结果前宣称「已运行 / 已完成」。";
 
     /// <summary>阶段三协议：工具结果已回传，这一轮只负责用自然语言写最终回复。</summary>
@@ -777,7 +811,7 @@ public sealed class Agent
         {
             return
                 "你是运行在 Windows 上的 AI 助手（类似 Claude Code/Codex），能用工具干活。\n" +
-                "工具：运行命令/运行Python脚本/生成图片/看图/读取文件/写入文件/打开文件/网络搜索/深度研究/抓取网页/记住(保存长期记忆)/删除记忆。\n" +
+                "工具：运行命令/运行Python脚本/生成图片/生成视频/看图/读取文件/写入文件/打开文件/网络搜索/深度研究/抓取网页/记住(保存长期记忆)/删除记忆。\n" +
                 "工具调用只输出一行 JSON：{\"tool_call\":{\"name\":\"工具名\",\"arguments\":{...}}}；不需要工具时输出 {\"tool_call\":null}。\n" +
                 "这一轮只准输出 JSON 本身，不要写正文；工具结果由软件回传，最后再单独让你写最终回复。\n" +
                 "选工具：搜索/查价格/查资料→网络搜索（禁止 curl 等命令代替）；要系统调研/写报告→深度研究；读搜索结果原文→抓取网页；写代码→Python/写入文件；画图→生成图片；看图→看图。\n" +
@@ -969,19 +1003,17 @@ public sealed class Agent
         bool anyContent = false;
         foreach (var s in Skills)
         {
-            bool kwHit = DescriptionTokens(s.Description).Any(k => user.Contains(k, StringComparison.Ordinal));
-            bool aliasHit = s.Aliases.Any(a => a.Length >= 2 && user.Contains(a, StringComparison.OrdinalIgnoreCase));
-            bool hit = user.Contains(s.Name, StringComparison.OrdinalIgnoreCase) ||
-                       user.Contains("技能", StringComparison.Ordinal) ||
-                       (injected != null && injected.Contains(s.Name)) ||
-                       BigramScore(user, s.Name + " " + s.Description) >= 1 ||
-                       kwHit ||
-                       aliasHit;
+            // ⚠ 只在用户**明确点名**这个技能时才注入完整说明。
+            //   不再做关键词 / 词元 / 别名 / 二字重叠之类的「自动匹配」——那套经常误判，
+            //   用户根本没提也被硬塞一大段技能说明，还动不动触发「补救启用」重试，很烦。
+            bool hit = (injected != null && injected.Contains(s.Name)) ||
+                       (!string.IsNullOrWhiteSpace(user) &&
+                        user.Contains(s.Name, StringComparison.OrdinalIgnoreCase));
             sb.AppendLine($"- {s.Name}：{s.Description}");
             if (hit)
             {
                 injected?.Add(s.Name);
-                SkillUsed?.Invoke(_currentSid, s.Name, "自动匹配");
+                SkillUsed?.Invoke(_currentSid, s.Name, "点名启用");
                 Log($"技能启用：{s.Name}");
                 anyContent = true;
                 sb.AppendLine($"\n【技能「{s.Name}」使用说明】\n{Truncate(s.Content, 4000)}");
@@ -990,79 +1022,9 @@ public sealed class Agent
             }
         }
         if (!anyContent)
-            sb.AppendLine("\n当用户要求使用某个已安装技能时，按对应说明执行；没有匹配技能时忽略本段。");
+            sb.AppendLine("\n当用户明确要求使用某个已安装技能时，按对应说明执行；没有点名时忽略本段。");
         return sb.ToString();
     }
-
-    /// <summary>把技能描述拆成关键词（中文词元/英文单词，长度 ≥2），用于更宽松的自动匹配。</summary>
-    private static IEnumerable<string> DescriptionTokens(string text)
-    {
-        foreach (Match m in Regex.Matches(text, @"[\u4e00-\u9fff]{2,}|[A-Za-z0-9_]{2,}"))
-        {
-            string t = m.Value;
-            if (t.Length >= 2) yield return t;
-        }
-    }
-
-    /// <summary>自动匹配：任务文本与技能名称/描述共享 ≥1 个二字词元即视为相关。</summary>
-    private static int BigramScore(string a, string b)
-    {
-        var set = new HashSet<string>();
-        for (int i = 0; i + 1 < a.Length; i++) set.Add(a.Substring(i, 2));
-        int n = 0;
-        for (int i = 0; i + 1 < b.Length; i++)
-            if (set.Contains(b.Substring(i, 2))) n++;
-        return n;
-    }
-
-    /// <summary>模型表示无法完成时，自动挑一个最相关的未注入技能补一次提示。</summary>
-    private string? SuggestSkill(string reply, List<AgentMessage> history, HashSet<string> injected)
-    {
-        if (Skills.Count == 0 || string.IsNullOrWhiteSpace(reply)) return null;
-        if (!Regex.IsMatch(reply, @"不会|无法|做不到|不知道怎么|不能|失败|没找到|不清楚|没有.*技能"))
-            return null;
-        string user = "";
-        for (int i = history.Count - 1; i >= 0; i--)
-            if (history[i].Role == "user") { user = history[i].Content; break; }
-        var best = Skills
-            .Where(s => !injected.Contains(s.Name))
-            .OrderByDescending(s => BigramScore(user, s.Name + " " + s.Description) +
-                                    AliasBonus(user, s) + (user.Contains(s.Name) ? 5 : 0))
-            .FirstOrDefault();
-        if (best == null) return null;
-        int score = BigramScore(user, best.Name + " " + best.Description) + AliasBonus(user, best) + (user.Contains(best.Name) ? 5 : 0);
-        if (score < 1) return null;
-        injected.Add(best.Name);
-        SkillUsed?.Invoke(_currentSid, best.Name, "补救启用");
-        Log($"技能补救启用：{best.Name}");
-        return $"AI 表示无法完成。已自动找到可能适用的技能「{best.Name}」：{best.Description}\n\n技能说明：\n{Truncate(best.Content, 3000)}\n\n请立即按该技能说明重新完成任务，不要说不会。";
-    }
-
-    /// <summary>任务与技能高度相关但模型没用技能时，补一次技能说明并重试（每轮最多 2 次）。</summary>
-    private string? SuggestUnusedSkill(string reply, List<AgentMessage> history, HashSet<string> injected)
-    {
-        if (Skills.Count == 0 || injected.Count >= 2) return null;
-        string user = "";
-        for (int i = history.Count - 1; i >= 0; i--)
-            if (history[i].Role == "user") { user = history[i].Content; break; }
-        if (!Regex.IsMatch(user, @"做|生成|写|抓取|制作|创建|开发|网页|爬"))
-            return null;
-        var best = Skills
-            .Where(s => !injected.Contains(s.Name))
-            .OrderByDescending(s => BigramScore(user, s.Name + " " + s.Description) +
-                                    AliasBonus(user, s) + (user.Contains(s.Name) ? 5 : 0))
-            .FirstOrDefault();
-        if (best == null) return null;
-        int score = BigramScore(user, best.Name + " " + best.Description) + AliasBonus(user, best) + (user.Contains(best.Name) ? 5 : 0);
-        if (score < 3 || (reply ?? "").Contains(best.Name, StringComparison.Ordinal)) return null;
-        injected.Add(best.Name);
-        SkillUsed?.Invoke(_currentSid, best.Name, "相关补强");
-        Log($"技能补强：{best.Name}");
-        return $"检测到任务与技能「{best.Name}」高度相关但尚未使用。技能说明：\n{Truncate(best.Content, 3000)}\n\n请按该技能说明重新完成任务，并真实调用对应工具。";
-    }
-
-    private static int AliasBonus(string user, SkillInfo s)
-        => s.Aliases.Count(a => a.Length >= 2 && user.Contains(a, StringComparison.OrdinalIgnoreCase)) * 4;
 
     /// <summary>被输出长度上限截断时最多自动续写几次（用户不用自己敲「继续」）。</summary>
     private const int MaxContinuations = 4;
@@ -1549,9 +1511,46 @@ public sealed class Agent
     // 工具调用协议（JSON 解析，兼容各家模型）
     // ------------------------------------------------------------------
 
-    private static bool TryParseToolCall(string reply, out string tool, out JsonElement args)
+    /// <summary>
+    /// 把模型输出里的「工具调用 JSON / DSML 标记」剥掉，剩下的就是**调用工具前它说的那句话**。
+    /// 纯 JSON 的决策轮会得到空字符串（那种本来也没人话可显示）。
+    /// </summary>
+    private static string ExtractToolProse(string reply)
     {
-        tool = "";
+        if (string.IsNullOrWhiteSpace(reply)) return "";
+        string s = reply;
+
+        // ① 找到第一个能解析成工具调用的 {...}，把这一段整体删掉
+        int idx = s.IndexOf('{');
+        while (idx >= 0)
+        {
+            int end = FindJsonEnd(s, idx);
+            if (end > idx && TryParseToolObject(s.Substring(idx, end - idx), out _, out _))
+            {
+                s = (s[..idx] + " " + s[end..]).Trim();
+                break;
+            }
+            idx = s.IndexOf('{', idx + 1);
+        }
+
+        // ② 去掉模型自家标记（DSML / invoke / parameter）
+        s = Regex.Replace(s, "<[^>]*DSML[^>]*>", " ", RegexOptions.IgnoreCase);
+        s = Regex.Replace(s, "</?invoke\\b[^>]*>", " ", RegexOptions.IgnoreCase);
+        s = Regex.Replace(s, "</?parameter\\b[^>]*>", " ", RegexOptions.IgnoreCase);
+        // ③ 去掉残留的代码围栏与多余空白
+        s = Regex.Replace(s, "```[a-zA-Z]*", " ").Replace("```", " ");
+        s = Regex.Replace(s, @"[ \t]{2,}", " ");
+        s = Regex.Replace(s, @"\n{3,}", "\n\n").Trim();
+
+        // 只剩标点 / 空白 → 不算人话
+        if (s.Length == 0) return "";
+        foreach (char c in s)
+            if (!char.IsPunctuation(c) && !char.IsWhiteSpace(c) && !char.IsSymbol(c)) return s;
+        return "";
+    }
+
+    private static bool TryParseToolCall(string reply, out string tool, out JsonElement args)
+    {        tool = "";
         args = default;
 
         // 去掉 ```json ... ``` 围栏（部分模型会把 JSON 包在代码块里）
@@ -1810,6 +1809,8 @@ public sealed class Agent
             // 图片
             "generate_image" or "gen_image" or "text_to_image" or "image_gen" or "draw_image"
                 or "create_image" or "image" or "生成图片" or "画图" or "作图" => ToolImage,
+            "generate_video" or "gen_video" or "text_to_video" or "video_gen" or "create_video"
+                or "make_video" or "video" or "生成视频" or "做视频" or "生成动画" => ToolVideo,
             "see_image" or "view_image" or "image_to_text" or "vision" or "ocr" or "describe_image"
                 or "看图" or "识别图片" or "图片理解" => ToolVision,
 
@@ -1874,6 +1875,7 @@ public sealed class Agent
                 ToolRunCommand => await RunCommandTool(args, sid, ct),
                 ToolPython => await PythonTool(args, sid, ct),
                 ToolImage => await ImageTool(args, sid, ct),
+                ToolVideo => await VideoTool(args, sid, ct),
                 ToolVision => MultimodalMain
                     ? "图片已作为多模态输入直接发送给主模型，请直接描述图片内容，不要再调用「看图」工具。"
                     : await VisionTool(args, sid, ct),
@@ -2191,6 +2193,39 @@ public sealed class Agent
 
         _lastImagePath = path;
         return $"图片已生成并保存到：{path}\n提示词：{prompt}";
+    }
+
+    /// <summary>生成视频：CogVideoX-Flash（异步任务，最长等 10 分钟）。</summary>
+    private async Task<string> VideoTool(JsonElement args, int sid, CancellationToken ct)
+    {
+        string? prompt = GetArg(args, "提示词");
+        if (string.IsNullOrWhiteSpace(prompt))
+            return "参数错误：缺少「提示词」。";
+        string? size = GetArg(args, "尺寸");
+
+        if (RunMode == "work" && ConfirmRequested != null)
+        {
+            bool ok = await ConfirmRequested(sid, $"生成视频（约 1~2 分钟）\n提示词：{Preview(prompt, 200)}");
+            if (!ok)
+                return "用户拒绝生成视频。";
+        }
+
+        if (!_video.Configured)
+            return "视频生成需要你自己的 API Key（内置免费 Key 不含视频额度的）。"
+                 + "去 ⚙ 设置 → 🎬 视频 绑定：可以先用你自己的图像 Key（同属智谱时通用），"
+                 + "也可以填别家兼容地址 + Key。";
+
+        string? path = await _video.GenerateAsync(prompt, size, ct);
+        if (path == null)
+        {
+            if (ct.IsCancellationRequested) return "视频生成已停止。";
+            return "视频生成失败：" + (string.IsNullOrWhiteSpace(_video.LastError)
+                ? "接口返回异常，请检查视频 API 地址/模型名/Key。"
+                : _video.LastError);
+        }
+
+        _lastVideoPath = path;
+        return $"视频已生成并保存到：{path}\n提示词：{prompt}";
     }
 
     /// <summary>看图：调用 GLM-4.6V-Flash 多模态模型识别/分析本地图片。</summary>

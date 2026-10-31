@@ -60,7 +60,16 @@ public static class SuperLink
         }
         CoreServer.AddExtraToken(EphemeralToken);
         _wasPublic = CoreServer.PublicBound;     // 记下原样，Stop 时还原
-        CoreServer.Rebind(IPAddress.Any);        // 要能在局域网里被连到
+        // 要能在局域网里被连到。换绑失败就别嘴硬说「已经在等了」——
+        // 只听 127.0.0.1 时对方根本连不进来，那种失败在用户眼里就是「找不到设备」。
+        bool lanOk = CoreServer.Rebind(IPAddress.Any);
+        if (!lanOk)
+        {
+            lock (Gate)
+            {
+                Message = "⚠ 局域网监听没打开（端口被占用或被防火墙挡住），对方只能走内置隧道，可能慢一些。";
+            }
+        }
         _cts = new CancellationTokenSource();    // 自己管生命周期，别让 5 分钟把已连上的会话掐了
         var ct = _cts.Token;
         try { CoreServer.TunnelReady -= OnTunnelReady; } catch { }
@@ -70,6 +79,21 @@ public static class SuperLink
         {
             try { await Task.Delay(TimeSpan.FromMinutes(5), ct); } catch { return; }
             if (State != "connected") Stop();
+        }, ct);
+        // 20 秒还没人连上来：把最常见的两种外部原因直接说出来。
+        // （配对本身没错，是防火墙 / 设备隔离把 TCP 挡了，光看「等待中」用户无从下手。）
+        _ = Task.Run(async () =>
+        {
+            try { await Task.Delay(TimeSpan.FromSeconds(20), ct); } catch { return; }
+            if (State != "waiting" || PeerName.Length > 0) return;
+            lock (Gate)
+            {
+                Message = "还没等到对方。如果对方一直连不上：① 两台机器是否在同一个局域网"
+                        + "（公共 Wi-Fi / 公司网常开「设备隔离」，同网也互不相通）；"
+                        + "② 本机防火墙要允许 deepsleep 入站（Windows：设置 → 隐私和安全性 → "
+                        + "Windows 安全中心 → 防火墙和网络保护 → 允许应用通过防火墙）。";
+            }
+            Raise();
         }, ct);
         Raise();
     }
@@ -291,34 +315,55 @@ public static class SuperLink
         //    这里等不到 offer 就等于白跑一轮。8 轮 × 600ms 太紧（实测偶发 offer 到得晚），
         //    放宽到 20 轮 × 600ms ≈ 12 秒，代价只是跨网时多等几秒才转隧道。
         Offer? best = null;
+        string hitUrl = "";
+        string hitToken = "";
+        string hitName = "";
         for (int i = 0; i < 20 && best == null && !ct.IsCancellationRequested; i++)
         {
-            Offer? cand;
-            lock (gate) cand = offers.FirstOrDefault(o => o.Lan.Count > 0);
-            if (cand != null)
+            // ⚠ 把所有 offer 的局域网地址**一起去探**，不能只盯第一条。
+            //   订阅用的是 since=5m：5 分钟内的旧消息也会被捞回来，如果死等 FirstOrDefault
+            //   那一条（很可能是上一轮配对留下的失效地址），新 offer 里的有效地址永远轮不到 ——
+            //   用户看到的就是「一直找不到设备，直到超时」。
+            var targets = new List<(string Ep, string Token, string Name)>();
+            lock (gate)
+            {
+                foreach (var o in offers)
+                {
+                    if (o.Token.Length == 0) continue;
+                    foreach (string ep in o.Lan) targets.Add((ep, o.Token, o.Name));
+                }
+            }
+
+            if (targets.Count > 0)
             {
                 // 所有地址一起探，别一个一个等（外网时这些地址全都连不上，串行会白等很久）
-                var probes = cand.Lan.Select(async ep =>
+                var probes = targets.Select(async t =>
                 {
-                    string burl = ep.StartsWith("http") ? ep : "http://" + ep;
+                    string burl = t.Ep.StartsWith("http") ? t.Ep : "http://" + t.Ep;
                     // 跨机探测别用 1.5 秒那么久：不可达的地址多数是「连接被拒 / 立即无路由」，
                     // 会秒回；真正慢的是被防火墙丢包的，那种等 1.5 秒也回不来。
                     // 用 900ms 换更快的轮次，同一个地址下一轮还会再试。
-                    return await PingOk(burl, cand.Token, 900) ? burl : null;
+                    return await PingOk(burl, t.Token, 900)
+                        ? (burl, t.Token, t.Name)
+                        : ((string, string, string)?)null;
                 }).ToArray();
-                string? hit = null;
-                try { hit = (await Task.WhenAll(probes)).FirstOrDefault(x => x != null); } catch { }
-                if (hit != null)
+                (string, string, string)? hit = null;
+                try { hit = (await Task.WhenAll(probes)).FirstOrDefault(x => x.HasValue); } catch { }
+                if (hit.HasValue)
                 {
-                    best = cand;
-                    BaseUrl = hit.TrimEnd('/');
+                    hitUrl = hit.Value.Item1.TrimEnd('/');
+                    hitToken = hit.Value.Item2;
+                    hitName = hit.Value.Item3;
+                    best = new Offer { Token = hitToken, Name = hitName };
+                    BaseUrl = hitUrl;
                     P2P = true;
                     break;
                 }
             }
+
             // 前 2 轮还没见到 offer，顺手催一次 hello：信令偶发丢包时靠它自己恢复，
             // 不然对方以为没人在连，隧道也不会提前热起来。
-            if (i == 2 && cand == null)
+            if (i == 2 && targets.Count == 0)
             {
                 try
                 {
@@ -335,8 +380,8 @@ public static class SuperLink
 
         if (best != null)
         {
-            PeerName = best.Name;
-            RemoteToken = best.Token;
+            PeerName = hitName;
+            RemoteToken = hitToken;
             State = "connected";
             Message = "已直连（点对点，同一网络内），延迟最低。";
             Raise();
@@ -474,7 +519,14 @@ public static class SuperLink
     {
         try
         {
-            using var http = new HttpClient { Timeout = TimeSpan.FromMilliseconds(timeoutMs) };
+            // ⚠ 局域网探测必须**绕开系统代理**。
+            //   国内很多人常开 Clash / v2rayN 之类的系统代理，而 HttpClient 默认就走系统代理，
+            //   于是 http://192.168.x.x:端口 这种直连请求被塞进代理 → 代理当然到不了对方网段，
+            //   探测全部失败。表现极具迷惑性：**同机自测能连上，跨机永远「找不到设备」**。
+            //   公网隧道地址（serveo / cloudflared 的域名）反过来要留着代理 —— 那种走代理才通。
+            var handler = new HttpClientHandler();
+            if (IsPrivateHost(baseUrl)) { handler.UseProxy = false; handler.Proxy = null; }
+            using var http = new HttpClient(handler) { Timeout = TimeSpan.FromMilliseconds(timeoutMs) };
             string url = baseUrl.TrimEnd('/') + "/api/ping?t=" + Uri.EscapeDataString(token);
             string s = await http.GetStringAsync(url);
             // ⚠ 不能只看 "ok":true —— 令牌**错**的时候 /api/ping 也回 ok:true（只是字段少），
@@ -482,6 +534,28 @@ public static class SuperLink
             //   「对令牌」的响应才带 dataDir 这组完整字段，用它当判据才是真的握上手了。
             return s.Contains("\"ok\":true", StringComparison.Ordinal)
                 && s.Contains("\"dataDir\":", StringComparison.Ordinal);
+        }
+        catch { return false; }
+    }
+
+    /// <summary>这个地址是不是局域网 / 本机地址（这类请求不该走系统代理）。</summary>
+    private static bool IsPrivateHost(string url)
+    {
+        try
+        {
+            string s = url.Contains("://", StringComparison.Ordinal) ? url : "http://" + url;
+            if (!Uri.TryCreate(s, UriKind.Absolute, out var u)) return false;
+            // 域名（隧道地址）不算：只有在它是 IP 字面量时才判断网段
+            if (!IPAddress.TryParse(u.Host, out var ip)) return false;
+            if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+                return ip.Equals(IPAddress.IPv6Loopback);
+            byte[] b = ip.GetAddressBytes();
+            if (b.Length != 4) return false;
+            return b[0] == 10                                  // 10.0.0.0/8
+                || (b[0] == 172 && b[1] >= 16 && b[1] <= 31)   // 172.16.0.0/12
+                || (b[0] == 192 && b[1] == 168)                // 192.168.0.0/16
+                || (b[0] == 169 && b[1] == 254)                // 169.254.0.0/16（APIPA）
+                || b[0] == 127;                                // 回环
         }
         catch { return false; }
     }
@@ -536,8 +610,10 @@ public static class SuperLink
             {
                 "VMware", "VirtualBox", "Hyper-V", "vEthernet", "Loopback", "Bluetooth",
                 "WSL", "Docker", "TAP-", "Npcap", "ZeroTier", "Tailscale", "Hamachi",
-                "Realtek 8812AU",   // 虚拟热点
                 "Microsoft Wi-Fi Direct", "虚拟", "蓝牙",
+                // 注意：**别**按芯片型号排除。以前这里写过 "Realtek 8812AU"（当成"虚拟热点"），
+                // 但那是常见的 USB 无线网卡芯片，很多人的主网卡就是它 —— 一排就把唯一的
+                // 局域网地址排掉了，跨机自然找不到设备（同机还因为 127.0.0.1 兜底而显得正常）。
             };
             foreach (string m in marks)
                 if (d.Contains(m, StringComparison.OrdinalIgnoreCase)) return true;

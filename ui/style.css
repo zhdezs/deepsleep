@@ -499,3 +499,40 @@ body.pet #agents { display: none; }
 }
 #rdBar .rd-btn:hover { filter: brightness(.94); }
 #rdFrame { flex: 1; width: 100%; border: 0; background: #111; }
+
+/* ---------------- 设置面板：分标签页 ---------------- */
+.set-tabs {
+  display: flex; gap: 6px; position: sticky; top: 0; z-index: 3;
+  padding: 4px 0 10px; margin: -2px 0 8px;
+  background: var(--panel); backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+}
+.set-tabs button {
+  flex: 1; padding: 7px 8px; border-radius: 9px; font-size: 12.5px;
+  border: 1px solid var(--border); background: var(--hover); color: var(--muted);
+}
+.set-tabs button.on { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 600; }
+.set-pane { display: none; }
+.set-pane.on { display: block; }
+
+/* 生成视频的气泡：和图片一个尺寸策略，点开有原生播放控件 */
+.bubble video {
+  max-width: 100%; max-height: 360px; border-radius: 11px; display: block;
+  margin: 4px 0; background: #000;
+}
+
+/* ---------------- 干活过程折叠卡 ----------------
+   一轮任务办完：工具卡 + 「我来…」说明气泡 收进一张「干活过程 · N 步」折叠卡 */
+.runcard .runsay {
+  color: var(--muted); font-size: 12px; line-height: 1.6;
+  padding: 1px 0 7px; border-left: 2px solid var(--border);
+  margin: 0 0 2px 2px; padding-left: 8px;
+}
+.runcard details.runstep { margin: 2px 0; }
+.runcard details.runstep > summary {
+  cursor: pointer; font-size: 12.5px; padding: 3px 0;
+  color: var(--text); list-style: none;
+}
+.runcard details.runstep > summary::-webkit-details-marker { display: none; }
+.runcard details.runstep > summary::before { content: '▸ '; color: var(--muted); }
+.runcard details.runstep[open] > summary::before { content: '▾ '; }

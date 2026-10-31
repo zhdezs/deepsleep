@@ -154,10 +154,14 @@ public sealed partial class Kernel
 
             bool isUser = m.Role == "user";
             bool isTool = m.Role == "tool";
-            // 「调用了工具「X」」这句不再显示：调了什么、结果如何，下面的工具卡片里写着，说了是重复刷屏
-            if (!isUser && !isTool && m.Meta.StartsWith("调用了工具", StringComparison.Ordinal))
-                return;
-            bool isToolCallNotice = !isUser && !isTool && !string.IsNullOrEmpty(m.Meta);
+            // 「调用了工具「X」」这句本身不再显示（调了什么下面卡片里写着，说了是重复刷屏）；
+            // 但模型**在调用前说的那几句人话**（m.Say）要显示成一个正常 AI 气泡。
+            // 以前这里无条件 return，把整条消息连同那句人话一起丢了 ——
+            // 用户看到的就只有一张工具卡片，不知道 AI 为什么要调它。
+            bool isToolCallSay = !isUser && !isTool &&
+                                 m.Meta.StartsWith("调用了工具", StringComparison.Ordinal);
+            if (isToolCallSay && string.IsNullOrWhiteSpace(m.Say)) return;
+            bool isToolCallNotice = !isUser && !isTool && !string.IsNullOrEmpty(m.Meta) && !isToolCallSay;
             // 工具调用标记（我们的 JSON，或模型自家的 DSML）没解析成功时，界面别把原文刷出来，
             // 只显示一句"已忽略、正在继续"，否则用户会看到一堆莫名其妙的尖括号和参数。
             bool looksLikeToolJson = !isUser && !isTool && !isToolCallNotice &&
@@ -204,6 +208,7 @@ public sealed partial class Kernel
                 Thought = thought,
                 Text = isToolCard ? m.Content
                     : isVisionResult ? visionText
+                    : isToolCallSay ? m.Say
                     : isToolCallNotice ? m.Meta
                     : looksLikeToolJson ? "（AI 的工具调用 JSON 未解析成功，已忽略，正在继续…）"
                     : m.Content,
@@ -212,6 +217,7 @@ public sealed partial class Kernel
                 SelfAvatarText = "你",
                 AvatarColor = "#4A90D9",
                 ImagePath = isVisionResult ? visionImagePath : m.ImagePath,
+                VideoPath = m.VideoPath,
                 SessionId = sid,
                 TimeStr = Now(),
                 ShowTime = ShouldShowTime(),
@@ -324,6 +330,7 @@ public sealed partial class Kernel
         Agent.ToolSearch => "search",
         Agent.ToolResearch => "research",
         Agent.ToolVision => "vision",
+        Agent.ToolVideo => "video",
         Agent.ToolFetch or Agent.ToolReadFile or Agent.ToolOpenFile => "read",
         _ => "other",
     };

@@ -219,6 +219,8 @@ function paintBubble(row, it) {
     else if (it.meta && it.meta !== 'AI' && it.meta !== '你') html += '<div class="who">' + esc(it.meta) + '</div>';
     if (it.thought) html += thinkBox(it.thought, !it.text, thinkOpen);
     if (it.image) html += '<img src="' + esc(it.image) + '" alt="图片">';
+    // 生成的视频：直接用原生播放器（服务端按扩展名给 mp4，data.local 带令牌）
+    if (it.video) html += '<video src="' + esc(it.video) + '" controls preload="metadata"></video>';
     if (it.attName) html += '<div class="who">📎 ' + esc(it.attName) + '　' + esc(it.attSize) + '</div>';
     html += md(it.text);
     b.innerHTML = html;
@@ -382,6 +384,75 @@ function groupNodes(entry) {
   return nodes;
 }
 
+/* ---- 干完之后：把一整轮「干活过程」折成一张卡 ----
+   过程 = 连续的工具卡 + 紧跟在工具卡前面的那句「我来…」说明气泡。
+   干活中（running）不折，实时看着它干；办完（idle）收成
+   「干活过程 · N 步」一张折叠卡，正文答案单独留在下面。 */
+function isProcItemAt(list, i) {
+  const it = list[i];
+  if (!it || it.self || it.sys || it.thinking) return false;
+  if (it.tool) return true;
+  // AI 的说明气泡：后面紧跟一张工具卡才算过程的一部分；
+  // 最终答案气泡后面没有工具卡，会自然留在外面。
+  return i + 1 < list.length && !!list[i + 1].tool;
+}
+
+function runNodes(entry) {
+  const nodes = [];
+  const first = entry.items[0];
+  if (first.showTime) {
+    const tl = document.createElement('div');
+    tl.className = 'timeline'; tl.textContent = first.time;
+    nodes.push(tl);
+  }
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.dataset.gkey = 'run:' + first.id;
+  const av = document.createElement('div');
+  av.className = 'avatar';
+  av.style.background = first.color || '#4A90D9';
+  av.textContent = first.avatar || 'AI';
+  row.appendChild(av);
+  const b = document.createElement('div'); b.className = 'bubble tool'; row.appendChild(b);
+  const acts = document.createElement('div'); acts.className = 'acts';
+  const del = document.createElement('button');
+  del.textContent = '删除'; del.title = '删除这一轮的全部过程记录';
+  del.onclick = () => entry.items.forEach(x => call('deleteMsg', { kind: kind(), item: x.id }));
+  acts.append(del); row.appendChild(acts);
+  row.dataset.gids = entry.items.map(x => x.id).join(' ');
+
+  const det = document.createElement('details');
+  det.className = 'toolcard runcard';
+  const sum = document.createElement('summary');
+  const nm = document.createElement('span'); nm.className = 'tname'; nm.textContent = '干活过程';
+  const tx = document.createElement('span'); tx.className = 'tsum';
+  tx.textContent = entry.items.length + ' 步（点开看每一步）';
+  sum.append(nm, tx);
+  const body = document.createElement('div'); body.className = 'tbody';
+  entry.items.forEach((it, i) => {
+    if (it.tool) {
+      const sub = document.createElement('details');
+      sub.className = 'titem runstep';
+      const h = document.createElement('summary');
+      h.textContent = (i + 1) + '. ' + (it.tool || '工具') +
+        (it.toolSummary ? ' · ' + it.toolSummary : '');
+      const c = document.createElement('div'); c.className = 'titem-b';
+      c.innerHTML = md(it.toolDetail || it.text || '');
+      sub.append(h, c);
+      body.appendChild(sub);
+    } else {
+      const d = document.createElement('div');
+      d.className = 'runsay';
+      d.textContent = it.text;
+      body.appendChild(d);
+    }
+  });
+  det.append(sum, body);
+  b.appendChild(det);
+  nodes.push(row);
+  return nodes;
+}
+
 function captureOpen() {
   const m = {};
   for (const d of document.querySelectorAll('#msgs details.toolcard')) {
@@ -408,8 +479,23 @@ function renderItems(force) {
   const box = $('#msgs');
   const open = captureOpen();
   box.innerHTML = '';
-  for (const e of groupEntries(S.items.filter(x => !isToolCallNotice(x))))
-    for (const n of (e.g ? groupNodes(e) : itemNodes(e.it))) box.appendChild(n);
+  const running = S.state === 'running';
+  // 干活中：原样实时渲染（能看到每一步往外蹦）；
+  // 干完后：连续的过程项（工具卡 + 「我来…」说明气泡）收进一张折叠卡。
+  const list = S.items.filter(x => !isToolCallNotice(x));
+  const entries = [];
+  for (let i = 0; i < list.length; i++) {
+    if (!running && isProcItemAt(list, i)) {
+      const run = { g: true, run: true, items: [] };
+      while (i < list.length && isProcItemAt(list, i)) run.items.push(list[i++]);
+      i--;
+      entries.push(run);
+    } else {
+      entries.push({ it: list[i] });
+    }
+  }
+  for (const e of entries)
+    for (const n of (e.g ? (e.run ? runNodes(e) : groupNodes(e)) : itemNodes(e.it))) box.appendChild(n);
   restoreOpen(open);
   scrollBottom(force === undefined ? true : force);
 }
@@ -1205,7 +1291,31 @@ function openSettings(fresh) {
     { t: '保存', primary: true, fn: () => saveSettings() },
   ]);
 
-  const sect = t => { const d = document.createElement('div'); d.className = 'sect'; d.textContent = t; body.appendChild(d); };
+  // ---- 设置分标签页：模型 / 图像 / 视频 / 其他 ----
+  // 一屏塞几十个输入框太难找，按用途分页；页签状态不持久化，默认回到「模型」。
+  const tabBar = document.createElement('div');
+  tabBar.className = 'set-tabs';
+  const tabNames = ['🧠 模型', '🖼 图像', '🎬 视频', '⚙ 其他'];
+  tabBar.innerHTML = tabNames.map((t, i) =>
+    '<button type="button" data-tab="' + i + '">' + t + '</button>').join('');
+  // 页签条和四个页容器要挂在弹窗 body 上（此时 pane 还没定义，别挂错）
+  body.appendChild(tabBar);
+  const panes = [0, 1, 2, 3].map(() => {
+    const d = document.createElement('div');
+    d.className = 'set-pane';
+    body.appendChild(d);
+    return d;
+  });
+  let pane = panes[0];
+  const switchTab = i => {
+    panes.forEach((p, k) => p.classList.toggle('on', k === i));
+    Array.from(tabBar.children).forEach((b, k) => b.classList.toggle('on', k === i));
+    pane = panes[i];
+  };
+  tabBar.onclick = e => { const b = e.target.closest('button'); if (b) switchTab(+b.dataset.tab); };
+  switchTab(0);
+
+  const sect = t => { const d = document.createElement('div'); d.className = 'sect'; d.textContent = t; pane.appendChild(d); };
 
   // ===== 外部 API：① 选平台 → ② 领 Key 并测试 → ③ 联网选模型 =====
   // 「绑定账号」在各家的技术约束下不可能真做成 OAuth 一键授权（硅基流动等只给控制台建 Key，
@@ -1214,7 +1324,7 @@ function openSettings(fresh) {
   const platWrap = document.createElement('div');
   platWrap.className = 'field';
   platWrap.innerHTML = '<label>平台</label><select id="platform"></select><div class="hint" id="platQuota"></div>';
-  body.appendChild(platWrap);
+  pane.appendChild(platWrap);
 
   const platforms = s.platforms || [];
   const selPlat = $('#platform');
@@ -1286,7 +1396,7 @@ function openSettings(fresh) {
   oauthOut.id = 'oauthResult';
   oauthOut.textContent = s.oauthExplain || '';
   keyRow.appendChild(oauthOut);
-  body.appendChild(keyRow);
+  pane.appendChild(keyRow);
 
   // ---- 一键恢复：这家之前配好过就直接拉回来（Key / 模型 / 协议一起写回）----
   const restoreRow = document.createElement('div');
@@ -1305,7 +1415,7 @@ function openSettings(fresh) {
   rHint.className = 'hint';
   rHint.id = 'profileHint';
   restoreRow.appendChild(rHint);
-  body.appendChild(restoreRow);
+  pane.appendChild(restoreRow);
 
   const profiles = s.apiProfiles || [];
   const profileFor = url => profiles.find(x => x.url === String(url || '').trim()) || null;
@@ -1347,7 +1457,11 @@ function openSettings(fresh) {
   syncOAuthBtn();
 
   sect('② 粘贴 Key 并测试连接');
-  body.appendChild(field('API Key', 'apiKey', s.apiKey, 'password'));
+  pane.appendChild(field('API Key', 'apiKey', s.apiKey, 'password'));
+  // 内置免费 Key：和网页版同一把（智谱免费矩阵）。没填自己的 Key 时自动顶上，
+  // 覆盖聊天 / 看图 / 画图（**视频不含免费额度**，视频必须用自己的 Key）；共用会被限流，所以给了开关。
+  pane.appendChild(ck('没有自己的 Key 时自动使用内置免费 Key（与网页版同一把，共用可能被限流）',
+    'useFreeKey', s.useFreeKey !== false));
   const testRow = document.createElement('div');
   testRow.className = 'field';
   const bTest = document.createElement('button');
@@ -1367,7 +1481,7 @@ function openSettings(fresh) {
   testOut.className = 'hint';
   testOut.id = 'apiTestResult';
   testRow.appendChild(testOut);
-  body.appendChild(testRow);
+  pane.appendChild(testRow);
 
   sect('③ 选模型（联网拉取该平台的最新模型列表，不用背模型名）');
   const fetchRow = document.createElement('div');
@@ -1383,7 +1497,7 @@ function openSettings(fresh) {
   mStatus.className = 'hint';
   mStatus.id = 'apiModelsStatus';
   fetchRow.appendChild(mStatus);
-  body.appendChild(fetchRow);
+  pane.appendChild(fetchRow);
 
   // 拉模型列表：bind 之后自动调，不必手动点。manual=true 表示用户主动点的。
   function fetchModels(manual) {
@@ -1403,9 +1517,9 @@ function openSettings(fresh) {
   pickerWrap.className = 'field';
   pickerWrap.id = 'modelPickerWrap';
   pickerWrap.innerHTML = '<label>从列表里挑一个（🆓 = 确认免费）</label><select id="modelPicker"></select>';
-  body.appendChild(pickerWrap);
+  pane.appendChild(pickerWrap);
 
-  body.appendChild(field('API 模型名', 'apiModel', s.apiModel, 'text',
+  pane.appendChild(field('API 模型名', 'apiModel', s.apiModel, 'text',
     '也可以直接手填。少数平台要填的不是模型 ID（如火山方舟填「接入点 ID」）。'));
   const fmt = document.createElement('div');
   fmt.className = 'field';
@@ -1415,7 +1529,7 @@ function openSettings(fresh) {
     '<option value="gemini">Google Gemini（generateContent 原生接口）</option>' +
     '<option value="responses">OpenAI Responses API（/v1/responses，GPT-5 等新模型）</option>' +
     '</select>';
-  body.appendChild(fmt);
+  pane.appendChild(fmt);
   $('#apiFormat').value = s.apiFormat || 'openai';
   $('#apiFormat').onchange = () => {
     // 只在「自定义平台」下才用格式去猜地址；预设平台有自己的地址，别覆盖掉
@@ -1429,14 +1543,14 @@ function openSettings(fresh) {
     };
     $('#apiUrl').value = map[$('#apiFormat').value] || map.openai;
   };
-  body.appendChild(field('API 地址', 'apiUrl', s.apiUrl, 'text', '选平台时已自动填好；只有「自定义平台」才需要手动改。'));
+  pane.appendChild(field('API 地址', 'apiUrl', s.apiUrl, 'text', '选平台时已自动填好；只有「自定义平台」才需要手动改。'));
 
   sect('⚡ 模型快速预设（离线可用，一步填好地址 + 模型 + 协议）');
   const presetSel = document.createElement('div');
   presetSel.className = 'field';
   presetSel.innerHTML = '<label>预设</label><select id="preset"></select>' +
     '<div class="hint">不想联网时可从这里直接选；选定会覆盖上面的地址 / 模型名 / 协议格式。</div>';
-  body.appendChild(presetSel);
+  pane.appendChild(presetSel);
   const sel = $('#preset');
   sel.innerHTML = '<option value="-1">（不选）</option>' +
     (s.presets || []).map((p, i) => '<option value="' + i + '">' + esc(p.name) + '</option>').join('');
@@ -1463,28 +1577,110 @@ function openSettings(fresh) {
   const hint = document.createElement('div');
   hint.className = 'field';
   hint.innerHTML = '<div class="hint">' + esc(s.freeKeyHint || '') + '</div>';
-  body.appendChild(hint);
+  pane.appendChild(hint);
 
   sect('本地大模型（Ollama）');
-  body.appendChild(field('快模型名', 'ollamaModel', s.ollamaModel, 'text', '简单任务用，例如 qwen2.5:1.5b'));
-  body.appendChild(field('强模型名', 'ollamaModelStrong', s.ollamaModelStrong, 'text', '复杂任务用，例如 qwen3:4b'));
-  body.appendChild(field('服务地址', 'ollamaUrl', s.ollamaUrl));
-  body.appendChild(ck('启用本地 Ollama 模型（不花 API 额度，适合长任务 / 集群）', 'useOllama', s.useOllama));
+  pane.appendChild(field('快模型名', 'ollamaModel', s.ollamaModel, 'text', '简单任务用，例如 qwen2.5:1.5b'));
+  pane.appendChild(field('强模型名', 'ollamaModelStrong', s.ollamaModelStrong, 'text', '复杂任务用，例如 qwen3:4b'));
+  pane.appendChild(field('服务地址', 'ollamaUrl', s.ollamaUrl));
+  pane.appendChild(ck('启用本地 Ollama 模型（不花 API 额度，适合长任务 / 集群）', 'useOllama', s.useOllama));
   const inst = document.createElement('button');
   inst.className = 'btn'; inst.textContent = '⬇️ 一键安装 Ollama + 大模型（qwen3:4b / qwen2.5:1.5b）';
   inst.style.margin = '6px 0 4px';
   inst.onclick = () => { closeModal(); call('installOllama'); };
-  body.appendChild(inst);
+  pane.appendChild(inst);
 
-  sect('图像生成（CogView-3-Flash）');
-  body.appendChild(field('图像 API Key', 'imageApiKey', s.imageApiKey, 'password'));
-  body.appendChild(field('图像模型名', 'imageModel', s.imageModel));
+  pane = panes[1];
+  // ---- 图像 / 识别 / 视频：都能「选平台 → 绑账号」----
+  // 这里不做 OAuth（这几家图片/视频接口都只认 API Key），但把「选平台自动填地址 + 模型」
+  // 和「一键复用主账号 Key」做齐了，体验上和主模型的绑定是一回事。
+  const MEDIA_PRESETS = {
+    image: [
+      { name: '智谱 CogView', url: 'https://open.bigmodel.cn/api/paas/v4/images/generations', model: 'cogview-3-flash' },
+      { name: '硅基流动', url: 'https://api.siliconflow.cn/v1/images/generations', model: 'Kwai-Kolors/Kolors' },
+      { name: 'OpenAI', url: 'https://api.openai.com/v1/images/generations', model: 'gpt-image-1' },
+      { name: '自定义', url: '', model: '' },
+    ],
+    vision: [
+      { name: '智谱 GLM-4.6V', url: 'https://open.bigmodel.cn/api/paas/v4/chat/completions', model: 'glm-4.6v-flash' },
+      { name: '硅基流动', url: 'https://api.siliconflow.cn/v1/chat/completions', model: 'Qwen/Qwen2.5-VL-72B-Instruct' },
+      { name: 'OpenAI', url: 'https://api.openai.com/v1/chat/completions', model: 'gpt-4o-mini' },
+      { name: '自定义', url: '', model: '' },
+    ],
+    video: [
+      { name: '智谱 CogVideoX', url: 'https://open.bigmodel.cn/api/paas/v4/videos/generations', model: 'cogvideox-flash', poll: '' },
+      { name: '自定义', url: '', model: '', poll: '' },
+    ],
+  };
 
-  sect('图像理解（GLM-4.6V-Flash 多模态）');
-  body.appendChild(field('图像理解 API Key', 'visionApiKey', s.visionApiKey, 'password'));
-  body.appendChild(field('图像理解模型名', 'visionModel', s.visionModel));
-  body.appendChild(ck('主模型是多模态（图片直接发给主模型，不再调用「看图」工具）', 'multimodalMain', s.multimodalMain));
+  /** 平台下拉：选中就填好地址 / 模型（地址栏仍可手改，等于「自定义」） */
+  function mediaPlat(kind, curUrl, urlId, modelId, pollId) {
+    const wrap = document.createElement('div');
+    wrap.className = 'field';
+    wrap.innerHTML = '<label>平台 / 账号</label><select></select>' +
+      '<div class="hint">选一家自动填好接口地址和默认模型；「自定义」就自己填地址。Key 是这家的账号凭证。</div>';
+    const sel = wrap.querySelector('select');
+    const list = MEDIA_PRESETS[kind] || [];
+    sel.innerHTML = list.map((p, i) => '<option value="' + i + '">' + esc(p.name) + '</option>').join('');
+    const idx = list.findIndex(p => p.url && p.url.trim() === String(curUrl || '').trim());
+    sel.value = String(idx >= 0 ? idx : Math.max(0, list.length - 1));
+    sel.onchange = () => {
+      const p = list[+sel.value] || {};
+      if (p.url) { const el = document.getElementById(urlId); if (el) el.value = p.url; }
+      if (p.model) { const el = document.getElementById(modelId); if (el) el.value = p.model; }
+      if (pollId && p.poll !== undefined) { const el = document.getElementById(pollId); if (el) el.value = p.poll; }
+    };
+    return wrap;
+  }
 
+  /** 一键复用主账号 Key（同一家平台时不用再抄一遍） */
+  function bindMainKey(keyId) {
+    const b = document.createElement('button');
+    b.className = 'btn';
+    b.type = 'button';
+    b.style.margin = '2px 0 4px';
+    b.textContent = '🔗 用主账号的 Key（省得再填一遍）';
+    b.onclick = () => {
+      const main = document.getElementById('apiKey');
+      const k = main ? main.value.trim() : '';
+      if (!k) return toast('先去「🧠 模型」页把主账号 Key 填好。', 'error');
+      const el = document.getElementById(keyId);
+      if (el) el.value = k;
+      toast('已填入主账号 Key，点「保存」生效。');
+    };
+    return b;
+  }
+
+  sect('图像生成（选平台 → 填 Key 即绑定）');
+  pane.appendChild(mediaPlat('image', s.imageApiUrl, 'imageApiUrl', 'imageModel', null));
+  pane.appendChild(field('接口地址', 'imageApiUrl', s.imageApiUrl, 'text',
+    '任何兼容 images/generations 的地址都行（默认智谱）。'));
+  pane.appendChild(field('账号 API Key', 'imageApiKey', s.imageApiKey, 'password'));
+  pane.appendChild(field('模型名', 'imageModel', s.imageModel));
+  pane.appendChild(bindMainKey('imageApiKey'));
+
+  sect('图像识别（选平台 → 填 Key 即绑定）');
+  pane.appendChild(mediaPlat('vision', s.visionApiUrl, 'visionApiUrl', 'visionModel', null));
+  pane.appendChild(field('接口地址', 'visionApiUrl', s.visionApiUrl, 'text',
+    '任何 OpenAI 兼容的 chat/completions 都行（默认智谱 GLM-4.6V）。'));
+  pane.appendChild(field('账号 API Key', 'visionApiKey', s.visionApiKey, 'password'));
+  pane.appendChild(field('模型名', 'visionModel', s.visionModel));
+  pane.appendChild(bindMainKey('visionApiKey'));
+  pane.appendChild(ck('主模型是多模态（图片直接发给主模型，不再调用「看图」工具）', 'multimodalMain', s.multimodalMain));
+
+  pane = panes[2];
+  sect('视频生成（选平台 → 填 Key 即绑定，完全支持自定义 API）');
+  pane.appendChild(mediaPlat('video', s.videoApiUrl, 'videoApiUrl', 'videoModel', 'videoPollUrl'));
+  pane.appendChild(field('提交地址', 'videoApiUrl', s.videoApiUrl, 'text',
+    'POST 提交任务的地址；直接同步返回视频地址的接口也能用。'));
+  pane.appendChild(field('查询地址（可选，含 {id}）', 'videoPollUrl', s.videoPollUrl, 'text',
+    '留空按智谱协议：把提交地址最后一段换成 async-result/{id}。其它厂商可填 https://…/videos/{id}。'));
+  pane.appendChild(field('账号 API Key', 'videoApiKey', s.videoApiKey, 'password',
+    '视频没有免费额度：内置免费 Key 不能用于视频，必须是你自己的 Key。留空会复用你的图像 Key（同属智谱时通用）。'));
+  pane.appendChild(field('模型名', 'videoModel', s.videoModel));
+  pane.appendChild(bindMainKey('videoApiKey'));
+
+  pane = panes[3];
   sect('工具权限 / 能力开关');
   const modeSel = document.createElement('div');
   modeSel.className = 'field';
@@ -1492,14 +1688,14 @@ function openSettings(fresh) {
     '<option value="chat">chat · 聊天（不改动电脑）</option>' +
     '<option value="work">work · 命令需确认</option>' +
     '<option value="boom">boom · 全自动（命令免确认）</option></select>';
-  body.appendChild(modeSel);
+  pane.appendChild(modeSel);
   $('#setMode').value = s.mode || 'work';
-  body.appendChild(ck('⚡ 极速模式', 'setFast', s.fast));
-  body.appendChild(ck('🌐 网络搜索 / 深度研究', 'setSearch', s.search));
+  pane.appendChild(ck('⚡ 极速模式', 'setFast', s.fast));
+  pane.appendChild(ck('🌐 网络搜索 / 深度研究', 'setSearch', s.search));
 
   sect('OTA 自动更新');
-  body.appendChild(field('更新源（owner/repo 或 update.json 的 URL）', 'updateUrl', s.updateUrl));
-  body.appendChild(ck('启动时自动检查更新', 'autoCheckUpdate', s.autoCheckUpdate));
+  pane.appendChild(field('更新源（owner/repo 或 update.json 的 URL）', 'updateUrl', s.updateUrl));
+  pane.appendChild(ck('启动时自动检查更新', 'autoCheckUpdate', s.autoCheckUpdate));
   const lineBox = document.createElement('div');
   lineBox.className = 'field';
   lineBox.innerHTML = '<label>更新线路（下载走哪边）</label>' +
@@ -1508,14 +1704,14 @@ function openSettings(fresh) {
     '<option value="github">GitHub</option>' +
     '</select>' +
     '<div class="hint">默认走 Gitee：不探速、直接从 Gitee 下（实测快一个数量级），只有 Gitee 连不上或下不动才回退 GitHub；两条线路下完都用官方 SHA256 校验，装的是同一个包。</div>';
-  body.appendChild(lineBox);
+  pane.appendChild(lineBox);
   $('#updateSource').value = s.updateSource === 'github' ? 'github' : 'gitee';
-  body.appendChild(field('录入 GitHub 令牌（多层加密保存，' + (s.tokenSaved ? '已保存' : '未保存') + '）', 'token', '', 'password', '私有仓库或想提高 GitHub API 限额时录入；用 DPAPI 加密存在 data\\github.token，不进配置文件。'));
+  pane.appendChild(field('录入 GitHub 令牌（多层加密保存，' + (s.tokenSaved ? '已保存' : '未保存') + '）', 'token', '', 'password', '私有仓库或想提高 GitHub API 限额时录入；用 DPAPI 加密存在 data\\github.token，不进配置文件。'));
   const tk = document.createElement('button');
   tk.className = 'btn'; tk.textContent = '🔑 加密保存令牌';
   tk.style.margin = '0 0 6px';
   tk.onclick = () => { const v = val('token'); if (v) call('setToken', { token: v }); };
-  body.appendChild(tk);
+  pane.appendChild(tk);
 
   sect('初始提示词（AGENT.md）');
   const mdWrap = document.createElement('div');
@@ -1533,10 +1729,10 @@ function openSettings(fresh) {
   mdHint.className = 'hint';
   mdHint.textContent = '存在 data\\AGENT.md，会插到 AI 助手 / Agent 集群 / 桌宠所有对话的系统提示最前面；HTML 注释里的内容不会发给模型。保存后立即生效。';
   mdWrap.appendChild(mdHint);
-  body.appendChild(mdWrap);
+  pane.appendChild(mdWrap);
 
   sect('桌面桌宠');
-  body.appendChild(ck('显示桌面鲸鱼桌宠（透明窗口、可拖拽；单击弹出聊天浮窗、右键有菜单）', 'petEnabled', s.petEnabled));
+  pane.appendChild(ck('显示桌面鲸鱼桌宠（透明窗口、可拖拽；单击弹出聊天浮窗、右键有菜单）', 'petEnabled', s.petEnabled));
 
   // 超远程提问：桌面客户端自带内核服务（和内核版 deepsleep-core 是同一份实现）
   if (S.host && S.host.desktop) {
@@ -1549,7 +1745,7 @@ function openSettings(fresh) {
       '<div class="hint" style="word-break:break-all;user-select:text">' + esc(link) + '</div>' +
       '<div class="hint">本机服务端口 ' + esc(String(h.corePort || '')) + '，令牌已经带在链接里 —— 等于这台电脑的钥匙，别外传。' +
       (h.tunnelUrl ? '' : '现在这条是局域网地址，只有在同一个网络里能打开。') + '</div>';
-    body.appendChild(box);
+    pane.appendChild(box);
     const row = document.createElement('div');
     row.className = 'field';
     const bTun = document.createElement('button');
@@ -1567,13 +1763,13 @@ function openSettings(fresh) {
     bCopy.textContent = '📋 复制配对链接';
     bCopy.onclick = () => { try { navigator.clipboard.writeText(link); toast('配对链接已复制'); } catch (e) { toast('复制失败，手动选中吧'); } };
     row.appendChild(bCopy);
-    body.appendChild(row);
+    pane.appendChild(row);
     const logBox = document.createElement('div');
     logBox.className = 'hint';
     logBox.id = 'coreLogBox';
     logBox.style.cssText = 'white-space:pre-wrap;max-height:90px;overflow:auto;font-family:ui-monospace,Consolas,monospace';
     logBox.textContent = h.tunnelUrl ? ('公网地址：' + h.tunnelUrl) : '';
-    body.appendChild(logBox);
+    pane.appendChild(logBox);
   }
 }
 
@@ -1586,11 +1782,13 @@ function saveSettings() {
   }
   call('settingsSave', {
     apiUrl: val('apiUrl'), apiModel: val('apiModel'), apiKey: val('apiKey'),
-    apiFormat: val('apiFormat'),
+    apiFormat: val('apiFormat'), useFreeKey: chk('useFreeKey'),
     ollamaModel: val('ollamaModel'), ollamaModelStrong: val('ollamaModelStrong'), ollamaUrl: val('ollamaUrl'),
     useOllama: chk('useOllama'),
-    imageApiKey: val('imageApiKey'), imageModel: val('imageModel'),
-    visionApiKey: val('visionApiKey'), visionModel: val('visionModel'),
+    imageApiUrl: val('imageApiUrl'), imageApiKey: val('imageApiKey'), imageModel: val('imageModel'),
+    visionApiUrl: val('visionApiUrl'), visionApiKey: val('visionApiKey'), visionModel: val('visionModel'),
+    videoApiUrl: val('videoApiUrl'), videoPollUrl: val('videoPollUrl'),
+    videoApiKey: val('videoApiKey'), videoModel: val('videoModel'),
     multimodalMain: chk('multimodalMain'),
     updateUrl: val('updateUrl'), autoCheckUpdate: chk('autoCheckUpdate'), updateSource: val('updateSource'),
     petEnabled: chk('petEnabled'),
@@ -1722,44 +1920,58 @@ function doSend() {
   call('send', { kind: kind(), text, target });
 }
 
+/* 安全绑定：元素可能不存在。
+   ⚠ 网页版（web/core/index.html）没有桌面版顶栏的「🧠 模型」和「🔗 超级连接」两个按钮。
+   以前 wire() 里直接写 $('#btnModel').onclick = …，网页版上 $() 返回 null，
+   赋 onclick 立刻抛 TypeError，于是 wire() 从这一行就中断了 —— 后面的
+   『#btnSend 发送按钮』和『#input 回车发送』绑定全都没执行，表现就是
+   「网页版能连上内核、界面也在，但一条消息都发不出去」。
+   所以凡是可选控件一律走这个函数：缺了就安静跳过，绝不让一处缺失带崩整个初始化。 */
+function bind(id, ev, fn) {
+  const el = document.getElementById(id);
+  if (el) el[ev] = fn;
+  return el;
+}
+
 function wire() {
-  $('#seg').onclick = e => { const b = e.target.closest('button'); if (b) call('tab', { tab: +b.dataset.tab }); };
-  $('#btnTheme').onclick = () => call('setTheme', { theme: document.body.classList.contains('dark') ? 'light' : 'dark' });
-  $('#btnSettings').onclick = () => openSettings();
-  $('#btnModel').onclick = () => openModelPicker();
-  $('#btnLink').onclick = () => openSuperLink();
+  bind('seg', 'onclick', e => { const b = e.target.closest('button'); if (b) call('tab', { tab: +b.dataset.tab }); });
+  bind('btnTheme', 'onclick', () => call('setTheme', { theme: document.body.classList.contains('dark') ? 'light' : 'dark' }));
+  bind('btnSettings', 'onclick', () => openSettings());
+  bind('btnModel', 'onclick', () => openModelPicker());
+  bind('btnLink', 'onclick', () => openSuperLink());
   wireRd();
-  $('#btnNew').onclick = () => call('newConv', { kind: kind() });
-  $('#btnMemory').onclick = () => openMemory();
-  $('#btnSkills').onclick = () => openSkills();
-  $('#btnAttach').onclick = () => call('pickFile', { kind: kind() });
-  $('#btnTpl').onclick = e => {
+  bind('btnNew', 'onclick', () => call('newConv', { kind: kind() }));
+  bind('btnMemory', 'onclick', () => openMemory());
+  bind('btnSkills', 'onclick', () => openSkills());
+  bind('btnAttach', 'onclick', () => call('pickFile', { kind: kind() }));
+  bind('btnTpl', 'onclick', e => {
     menuAt(e.clientX, e.clientY - 10, S.prompts.map(p => ({ text: p.name, fn: () => setInput(p.prompt) })));
-  };
-  $('#btnClusterTpl').onclick = e => {
+  });
+  bind('btnClusterTpl', 'onclick', e => {
     menuAt(e.clientX, e.clientY - 10, S.clusterTemplates.map((t, i) => ({
       text: t.name + '（' + t.members.length + ' 人）',
       fn: () => call('clusterTemplate', { index: i }),
     })));
-  };
-  $('#mode').onchange = e => call('setMode', { mode: e.target.value });
-  $('#tgFast').onchange = e => call('setFast', { on: e.target.checked });
-  $('#tgLocal').onchange = e => call('setLocal', { on: e.target.checked });
-  $('#tgSearch').onchange = e => call('setSearch', { on: e.target.checked });
-  $('#btnSend').onclick = () => doSend();
-  $('#btnRegen').onclick = () => call('regenerate', { kind: kind() });
-  $('#btnClear').onclick = () => confirmBox('清空当前对话？',
-    '清空后当前对话的消息与上下文都会被删掉，其他对话不受影响。', () => call('clear', { kind: kind() }), '清空');
-  $('#btnBottom').onclick = () => scrollBottom(true);
-  $('#msgs').addEventListener('scroll', () => {
+  });
+  bind('mode', 'onchange', e => call('setMode', { mode: e.target.value }));
+  bind('tgFast', 'onchange', e => call('setFast', { on: e.target.checked }));
+  bind('tgLocal', 'onchange', e => call('setLocal', { on: e.target.checked }));
+  bind('tgSearch', 'onchange', e => call('setSearch', { on: e.target.checked }));
+  bind('btnSend', 'onclick', () => doSend());
+  bind('btnRegen', 'onclick', () => call('regenerate', { kind: kind() }));
+  bind('btnClear', 'onclick', () => confirmBox('清空当前对话？',
+    '清空后当前对话的消息与上下文都会被删掉，其他对话不受影响。', () => call('clear', { kind: kind() }), '清空'));
+  bind('btnBottom', 'onclick', () => scrollBottom(true));
+  const msgs = document.getElementById('msgs');
+  if (msgs) msgs.addEventListener('scroll', () => {
     if (selfScroll) { selfScroll = false; paintBottomBtn(); return; }
     stickBottom = nearBottom(40);        // 自己滑回底部附近才恢复自动跟随
     paintBottomBtn();
   });
-  $('#convSearch').oninput = e => call('searchConv', { kind: kind(), q: e.target.value });
-  $('#btnUpdate').onclick = () => onUpdateClick();
-  $('#input').oninput = autosize;
-  $('#input').onkeydown = e => {
+  bind('convSearch', 'oninput', e => call('searchConv', { kind: kind(), q: e.target.value }));
+  bind('btnUpdate', 'onclick', () => onUpdateClick());
+  bind('input', 'oninput', autosize);
+  bind('input', 'onkeydown', e => {
     if (e.isComposing || e.keyCode === 229) return;   // 输入法组词中，回车/Esc 交给输入法
     if (e.key === 'Escape') { e.preventDefault(); call('stop', { kind: kind() }); return; }
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -1767,7 +1979,7 @@ function wire() {
       if (S.state === 'running') return;   // 运行中回车不打断
       doSend();
     }
-  };
+  });
   document.addEventListener('click', e => {
     const a = e.target.closest('a');
     if (a) { e.preventDefault(); call('openUrl', { url: a.href }); return; }

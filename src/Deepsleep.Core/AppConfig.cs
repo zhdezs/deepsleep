@@ -28,6 +28,21 @@ public sealed class AppConfig
     public string VisionApiUrl { get; set; } = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
     public string VisionApiKey { get; set; } = "";
     public string VisionModel { get; set; } = "glm-4.6v-flash";
+    /// <summary>
+    /// 视频生成：默认智谱 CogVideoX-Flash（异步任务：提交拿 id → 轮询 async-result）。
+    /// 地址可改成任何兼容这套「提交 + 轮询」协议的网关；Key 留空时自动复用图像生成的 Key
+    /// （同属智谱，用户不用为同一个 Key 填两遍）。
+    /// </summary>
+    public string VideoApiUrl { get; set; } = "https://open.bigmodel.cn/api/paas/v4/videos/generations";
+    /// <summary>查询地址模板（可选，含 {id}）。留空按智谱协议推导。</summary>
+    public string VideoPollUrl { get; set; } = "";
+    public string VideoApiKey { get; set; } = "";
+    public string VideoModel { get; set; } = "cogvideox-flash";
+    /// <summary>
+    /// 没填自己的 Key 时，自动使用内置免费 Key（和网页版同一把，智谱免费模型矩阵）。
+    /// 共用会被限流，介意的话在设置里关掉。
+    /// </summary>
+    public bool UseFreeKey { get; set; } = true;
     public bool MultimodalMain { get; set; } = false;
     public string CounterApiUrl { get; set; } = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
     public string CounterApiKey { get; set; } = "";
@@ -132,6 +147,13 @@ public sealed class AppConfig
                 if ((v = GetStr(root, "visionApiUrl", "VisionApiUrl")) != null) cfg.VisionApiUrl = v;
                 if ((v = GetStr(root, "visionApiKey", "VisionApiKey")) != null) cfg.VisionApiKey = v;
                 if ((v = GetStr(root, "visionModel", "VisionModel")) != null) cfg.VisionModel = v;
+                if ((v = GetStr(root, "videoApiUrl", "VideoApiUrl")) != null) cfg.VideoApiUrl = v;
+                if ((v = GetStr(root, "videoPollUrl", "VideoPollUrl")) != null) cfg.VideoPollUrl = v;
+                if ((v = GetStr(root, "videoApiKey", "VideoApiKey")) != null) cfg.VideoApiKey = v;
+                if ((v = GetStr(root, "videoModel", "VideoModel")) != null) cfg.VideoModel = v;
+                if (root.TryGetProperty("useFreeKey", out var ufk) &&
+                    (ufk.ValueKind == JsonValueKind.True || ufk.ValueKind == JsonValueKind.False))
+                    cfg.UseFreeKey = ufk.GetBoolean();
                 if ((root.TryGetProperty("multimodalMain", out var mm) || root.TryGetProperty("MultimodalMain", out mm)) &&
                     (mm.ValueKind == JsonValueKind.True || mm.ValueKind == JsonValueKind.False))
                     cfg.MultimodalMain = mm.GetBoolean();

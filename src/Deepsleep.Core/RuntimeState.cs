@@ -11,6 +11,7 @@ public sealed class AgentMsgDto
     public string Content { get; set; } = "";
     public string Meta { get; set; } = "";
     public string? ImagePath { get; set; }
+    public string? VideoPath { get; set; }
 }
 
 public sealed class AgentSessionDto

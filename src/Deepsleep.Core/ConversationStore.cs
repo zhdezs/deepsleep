@@ -31,6 +31,8 @@ public sealed class ChatMessageDto
     public string Thought { get; set; } = "";
     /// <summary>附带的本地图片（生成图片 / 上传的图片）。</summary>
     public string? ImagePath { get; set; }
+    /// <summary>附带的本地视频（生成视频工具的结果）。</summary>
+    public string? VideoPath { get; set; }
     public string AttachmentName { get; set; } = "";
     public string AttachmentSize { get; set; } = "";
     /// <summary>集群成员气泡显示的角色名。</summary>

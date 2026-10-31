@@ -272,6 +272,7 @@ public sealed partial class Kernel
                 AvatarColor = kind switch { 0 => "#4A90D9", 1 => "#B0B0B0", _ => "#7C4DFF" },
                 Thought = m.Thought,
                 ImagePath = m.ImagePath,
+                VideoPath = m.VideoPath,
                 AttachmentName = m.AttachmentName,
                 AttachmentSize = m.AttachmentSize,
                 Speaker = m.Speaker,
@@ -346,6 +347,7 @@ public sealed partial class Kernel
             ToolKind = m.ToolKind,
             Thought = m.Thought,
             ImagePath = m.ImagePath,
+                VideoPath = m.VideoPath,
             AttachmentName = m.AttachmentName,
             AttachmentSize = m.AttachmentSize,
             Speaker = m.Speaker,
@@ -368,6 +370,7 @@ public sealed partial class Kernel
                     Content = Cap(m.Content, 4000),
                     Meta = m.Meta,
                     ImagePath = m.ImagePath,
+                VideoPath = m.VideoPath,
                 }).ToList(),
             });
         }
@@ -409,6 +412,7 @@ public sealed partial class Kernel
                 Content = m.Content,
                 Meta = m.Meta,
                 ImagePath = m.ImagePath,
+                VideoPath = m.VideoPath,
             }));
         foreach (var kv in st.AgentStates)
         {
@@ -623,6 +627,14 @@ AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不�
         _config.ImageModel = Str("imageModel", _config.ImageModel);
         _config.VisionApiKey = Str("visionApiKey", _config.VisionApiKey);
         _config.VisionModel = Str("visionModel", _config.VisionModel);
+        // 图像 / 视频接口地址：留空就回到默认（智谱），填了就按用户给的发
+        _config.ImageApiUrl = Str("imageApiUrl", _config.ImageApiUrl);
+        _config.VisionApiUrl = Str("visionApiUrl", _config.VisionApiUrl);
+        _config.VideoApiUrl = Str("videoApiUrl", _config.VideoApiUrl);
+        _config.VideoPollUrl = Str("videoPollUrl", _config.VideoPollUrl);
+        _config.VideoApiKey = Str("videoApiKey", _config.VideoApiKey);
+        _config.VideoModel = Str("videoModel", _config.VideoModel);
+        if (a.TryGetProperty("useFreeKey", out _)) _config.UseFreeKey = GetBool(a, "useFreeKey");
         if (a.TryGetProperty("multimodalMain", out _)) _config.MultimodalMain = GetBool(a, "multimodalMain");
         if (a.TryGetProperty("useOllama", out _)) _config.UseOllama = GetBool(a, "useOllama");
         _config.UpdateUrl = Str("updateUrl", _config.UpdateUrl);
