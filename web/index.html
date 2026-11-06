@@ -84,7 +84,15 @@ footer{padding:36px 0 54px;color:var(--muted);font-size:12.5px;text-align:center
 code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;background:var(--hover);padding:2px 6px;border-radius:6px;font-size:12.5px}
 table.dl{width:100%;border-collapse:collapse;font-size:13.5px}
 table.dl td,table.dl th{text-align:left;padding:11px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
-table.dl th{color:var(--muted);font-weight:600;font-size:12.5px}</style>
+table.dl th{color:var(--muted);font-weight:600;font-size:12.5px}
+/* 下载源切换：GitHub / Gitee */
+.srcpick{display:flex;gap:10px;margin:14px 0 12px;flex-wrap:wrap}
+.srcpick .src{display:flex;flex-direction:column;gap:2px;padding:10px 16px;border:1px solid var(--line);
+  border-radius:12px;cursor:pointer;background:var(--card,transparent);min-width:170px;transition:.15s}
+.srcpick .src b{font-size:14px}
+.srcpick .src span{font-size:12px;color:var(--muted)}
+.srcpick .src.on{border-color:var(--blue,#007AFF);box-shadow:0 0 0 3px rgba(0,122,255,.12)}
+.srcpick .src.on b{color:var(--blue,#007AFF)}</style>
 </head>
 <body>
 
@@ -253,8 +261,15 @@ table.dl th{color:var(--muted);font-weight:600;font-size:12.5px}</style>
 
 <section id="download"><div class="wrap">
   <h2>下载</h2>
-  <p class="sub">全部走 GitHub Releases，国内可换 <a href="https://gitee.com/zhdezs/deepsleep/releases" target="_blank" rel="noreferrer">Gitee 镜像</a>。客户端支持 OTA：装上以后升级不用再来这页。</p>
-  <div class="card">
+  <p class="sub">两个源内容一致，按网络选：海外用 GitHub（整包），国内用 Gitee（安装包是分片，配合并器）。
+     客户端支持 OTA，装上以后升级不用再来这页。</p>
+
+  <div class="srcpick">
+    <label class="src on" data-src="gh"><b>GitHub</b><span>海外直连 · 整包下载</span></label>
+    <label class="src" data-src="gitee"><b>Gitee</b><span>国内镜像 · 分片下载</span></label>
+  </div>
+
+  <div class="card" id="dlGh">
   <table class="dl">
     <tr><th>文件</th><th>说明</th><th></th></tr>
     <tr><td><code>deepsleep-Setup.exe</code></td><td>安装版（推荐）：自动装到本机、带开始菜单与 OTA 静默升级</td>
@@ -281,8 +296,38 @@ table.dl th{color:var(--muted);font-weight:600;font-size:12.5px}</style>
         <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-core-3.1.2-osx-x64.tar.gz">下载</a></td></tr>
     <tr><td><code>deepsleep-universal-3.1.2.zip</code></td><td>万能安装程序：一个小脚本，按你的系统自动下对应平台的包</td>
         <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-universal-3.1.2.zip">下载</a></td></tr>
-    <tr><td><code>deepsleep-merge-setup.exe</code></td><td>分片合并器：在 Gitee 下载的分片（<code>.part1/.part2</code>）用它拼回整包并校验</td>
-        <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-merge-setup.exe">下载</a></td></tr>
+    <tr><td>网页版</td><td>不用下载，直接用浏览器打开</td>
+        <td><a class="btn gho sm" href="app/">打开网页版</a></td></tr>
+  </table>
+  </div>
+
+  <div class="card" id="dlGitee" hidden>
+  <table class="dl">
+    <tr><th>文件</th><th>说明</th><th></th></tr>
+    <tr><td><code>deepsleep-Setup.exe.part1</code><br><code>deepsleep-Setup.exe.part2</code></td><td>安装版（推荐）：Gitee 单附件上限 100 MB，安装包被切成 2 片。<strong>两片都要下</strong>，和下面的合并器放同一个文件夹，双击合并器即可拼回整包并自动安装</td>
+        <td><a class="btn pri sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.1.2/deepsleep-Setup.exe.part1">下载 part1</a><br><a class="btn pri sm" style="margin-top:6px" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.1.2/deepsleep-Setup.exe.part2">下载 part2</a></td></tr>
+    <tr><td><code>deepsleep-merge-setup.exe</code></td><td>分片合并器（<strong>必下</strong>）：校验 SHA-256、拼回 <code>deepsleep-Setup.exe</code> 后自动启动安装</td>
+        <td><a class="btn pri sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.1.2/deepsleep-merge-setup.exe">下载</a></td></tr>
+    <tr><td><code>deepsleep-3.1.2-win-x64.zip</code></td><td>便携版：解压就能跑，不写注册表</td>
+        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.1.2/deepsleep-3.1.2-win-x64.zip">下载</a></td></tr>
+    <tr><td><code>deepsleep-core-3.1.2-win-x64.zip</code></td><td>内核版（Windows）：解压即用，配合网页端操控本机</td>
+        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.1.2/deepsleep-core-3.1.2-win-x64.zip">下载</a></td></tr>
+    <tr><td><code>deepsleep_3.1.2_amd64.deb</code></td><td>桌面版 · Debian / Ubuntu（x86_64）：<code>sudo apt install ./deepsleep_3.1.2_amd64.deb</code>，装完在应用菜单里搜 deepsleep</td>
+        <td><a class="btn pri sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.1.2/deepsleep_3.1.2_amd64.deb">下载</a></td></tr>
+    <tr><td><code>deepsleep_3.1.2_arm64.deb</code></td><td>桌面版 · Debian / Ubuntu（ARM64）：同上</td>
+        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.1.2/deepsleep_3.1.2_arm64.deb">下载</a></td></tr>
+    <tr><td><code>deepsleep-3.1.2-1.x86_64.rpm</code></td><td>桌面版 · Fedora / RHEL / openSUSE（x86_64）：<code>sudo dnf install ./deepsleep-3.1.2-1.x86_64.rpm</code></td>
+        <td><a class="btn pri sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.1.2/deepsleep-3.1.2-1.x86_64.rpm">下载</a></td></tr>
+    <tr><td><code>deepsleep-3.1.2-1.aarch64.rpm</code></td><td>桌面版 · Fedora / RHEL / openSUSE（aarch64）：同上</td>
+        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.1.2/deepsleep-3.1.2-1.aarch64.rpm">下载</a></td></tr>
+    <tr><td><code>deepsleep-3.1.2-linux-x64.tar.gz</code></td><td>免安装 · Linux x86_64：解压后 <code>./deepsleep.sh</code> 直接开窗口（服务器加 <code>--headless</code> 只跑服务）</td>
+        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.1.2/deepsleep-3.1.2-linux-x64.tar.gz">下载</a></td></tr>
+    <tr><td><code>deepsleep-3.1.2-linux-arm64.tar.gz</code></td><td>免安装 · Linux ARM64（同上）</td>
+        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.1.2/deepsleep-3.1.2-linux-arm64.tar.gz">下载</a></td></tr>
+    <tr><td><code>deepsleep-core-3.1.2-osx-arm64.tar.gz</code></td><td>macOS 内核版（Apple 芯片）：解压后 <code>./deepsleep.sh</code> 开窗口，服务器加 <code>--headless</code></td>
+        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.1.2/deepsleep-core-3.1.2-osx-arm64.tar.gz">下载</a></td></tr>
+    <tr><td><code>deepsleep-core-3.1.2-osx-x64.tar.gz</code></td><td>macOS 内核版（Intel）：同上</td>
+        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.1.2/deepsleep-core-3.1.2-osx-x64.tar.gz">下载</a></td></tr>
     <tr><td>网页版</td><td>不用下载，直接用浏览器打开</td>
         <td><a class="btn gho sm" href="app/">打开网页版</a></td></tr>
   </table>
@@ -324,5 +369,22 @@ table.dl th{color:var(--muted);font-weight:600;font-size:12.5px}</style>
      <a href="app/">网页版</a> · <a href="core/">内核版网页端</a></p>
   <p>本页由 GitHub Pages 托管 · 模型服务由第三方提供，本页不收集任何数据</p>
 </footer>
+<script>
+(function(){
+  var picks = document.querySelectorAll('.srcpick .src');
+  var gh = document.getElementById('dlGh'), gt = document.getElementById('dlGitee');
+  if (!picks.length || !gh || !gt) return;
+  function pick(src){
+    for (var i=0;i<picks.length;i++) picks[i].classList.toggle('on', picks[i].dataset.src === src);
+    gh.hidden = src !== 'gh';
+    gt.hidden = src !== 'gitee';
+    try { localStorage.setItem('ds.dlsrc', src); } catch(e){}
+  }
+  for (var i=0;i<picks.length;i++) picks[i].addEventListener('click', function(){ pick(this.dataset.src); });
+  var saved = 'gh';
+  try { saved = localStorage.getItem('ds.dlsrc') || 'gh'; } catch(e){}
+  pick(saved === 'gitee' ? 'gitee' : 'gh');
+})();
+</script>
 </body>
 </html>
