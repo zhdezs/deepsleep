@@ -1,4 +1,4 @@
-# deepsleep · Windows AI 助手
+﻿# deepsleep · Windows AI 助手
 &zwnj;**本地优先**&zwnj;的 Windows 桌面 AI 助手（WinUI 3），能力对标 Claude Code / Codex：对话、工具调用、技能库、Agent 集群、长期记忆、断点恢复，外加&zwnj;**安装程序**&zwnj;与 &zwnj;**OTA 自动更新**&zwnj;。自带 .NET 运行时，单文件安装包，&zwnj;**不需要管理员权限**&zwnj;。
 
 | | |
@@ -7,7 +7,7 @@
 
 ## ✨ 核心特性亮点
 ### ① 超级连接（6 位配对码 · 点对点直连 · 内置远程桌面）
-桌面版工具栏点 🔗「超级连接」，内核版在 CMD 里输入「打开超级连接」（或 `/superlink`），生成一串 6 位配对码；另一台设备打开 `https://zhdezs.github.io/deepsleep/superlink/?type=配对码`（或在它自己的「超级连接」里输入这 6 位数字）就能连上：同一网络走&zwnj;**点对点局域网直连**&zwnj;（延迟最低），不同网络自动开一条&zwnj;**内置隧道**&zwnj;（手写：直接驱动系统自带的 ssh 建反向隧道，&zwnj;**零下载**&zwnj;；多个免费入口自动择优、连上先自检、断了自动重建）、连上后立刻关掉保持 P2P；连上即可在浏览器里用&zwnj;**内置远程桌面**&zwnj;看画面并用鼠标 / 键盘 / 手机触屏操控。配对码 5 分钟有效、用完即撤，信令只传几 KB 握手消息（默认 ntfy.sh，可用 `DEEPSLEEP_SIGNAL_BASE` 换自建）。
+桌面版工具栏点 🔗「超级连接」，内核版在 CMD 里输入「打开超级连接」（或 `/superlink`），生成一串 6 位配对码；另一台设备打开 `https://deepsleep.liziserver.site/superlink/?type=配对码`（或在它自己的「超级连接」里输入这 6 位数字）就能连上：同一网络走&zwnj;**点对点局域网直连**&zwnj;（延迟最低），不同网络自动开一条&zwnj;**内置隧道**&zwnj;（手写：直接驱动系统自带的 ssh 建反向隧道，&zwnj;**零下载**&zwnj;；多个免费入口自动择优、连上先自检、断了自动重建）、连上后立刻关掉保持 P2P；连上即可在浏览器里用&zwnj;**内置远程桌面**&zwnj;看画面并用鼠标 / 键盘 / 手机触屏操控。配对码 5 分钟有效、用完即撤，信令只传几 KB 握手消息（默认 ntfy.sh，可用 `DEEPSLEEP_SIGNAL_BASE` 换自建）。
 
 ### ② 超远程提问（内网穿透）
 内核加 `--tunnel` 就自动建一条免注册的公网隧道（&zwnj;**手写隧道**&zwnj;：用系统自带的 ssh 反向隧道，serveo.net / localhost.run 自动择优，不用下任何组件），启动后直接打印一条带令牌的&zwnj;**配对链接**&zwnj;，手机存成书签，人在外面也能指挥这台电脑；想用自己的穿透工具就 `--public --tunnel-cmd "frpc …"`（或者 `--tunnel-cf 路径` 用已有的 cloudflared），frp / cpolar / ngrok / ssh -R 都行，内核会从命令输出里自己抓公网地址。

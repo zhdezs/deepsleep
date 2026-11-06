@@ -122,7 +122,7 @@ def source_files():
     注意：AGENTS.md **不进仓库**（只留本地，属于 AI 的开发约定），别加回来。
     """
     out = {}
-    for rel in ("README.md", ".gitignore", "index.html"):
+    for rel in ("README.md", ".gitignore", "index.html", "CNAME"):
         p = os.path.join(ROOT, rel)
         if os.path.isfile(p):
             out[rel] = p
@@ -138,7 +138,7 @@ def source_files():
 
 
 def tracked(rel):
-    return (rel in ("README.md", ".gitignore", "index.html")
+    return (rel in ("README.md", ".gitignore", "index.html", "CNAME")
             or rel.split("/")[0] in ("src", "ui", "installer", "release", "web"))
 
 

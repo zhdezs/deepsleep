@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 
 namespace TrollWrangler.CoreHost;
 
@@ -45,10 +45,10 @@ public static partial class CoreServer
     <button class="btn ghost" id="cp">复制令牌</button>
   </div>
 
-  <h2>在外网（GitHub Pages）上用这台电脑</h2>
+  <h2>在外网（deepsleep.liziserver.site）上用这台电脑</h2>
   <ul>
-    <li>打开 <code>https://zhdezs.github.io/deepsleep/web/core/</code>，把上面的端口和令牌填进去（或直接点下面这条链接）。</li>
-    <li><a href="https://zhdezs.github.io/deepsleep/web/core/#p=%PORT%&t=%TOKEN%">https://zhdezs.github.io/deepsleep/web/core/#p=%PORT%&t=%TOKEN%</a></li>
+    <li>打开 <code>https://deepsleep.liziserver.site/web/core/</code>，把上面的端口和令牌填进去（或直接点下面这条链接）。</li>
+    <li><a href="https://deepsleep.liziserver.site/web/core/#p=%PORT%&t=%TOKEN%">https://deepsleep.liziserver.site/web/core/#p=%PORT%&t=%TOKEN%</a></li>
   </ul>
 
   <h2>能做什么</h2>
@@ -61,7 +61,7 @@ public static partial class CoreServer
   <h2>安全</h2>
   <ul>
     <li>只监听 <code>127.0.0.1</code>，外网机器连不进来；所有接口都要配对令牌。</li>
-    <li>跨域只放行 <code>zhdezs.github.io</code>、本机页面；换令牌：<code>deepsleep-core --new-token</code>。</li>
+    <li>跨域只放行 <code>deepsleep.liziserver.site</code>（旧 github.io 仍兼容）、本机页面；换令牌：<code>deepsleep-core --new-token</code>。</li>
   </ul>
   <div class="warn">令牌等于这台电脑的钥匙：别截图给别人、别贴到公开场合。用完直接关掉这个窗口即可停掉内核。</div>
 </div>

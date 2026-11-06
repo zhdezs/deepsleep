@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Net.Sockets;
 using TrollWrangler.Core;
 
@@ -46,6 +46,9 @@ public static partial class CoreServer
     /// <summary>允许跨域调用的来源（只放行自家网页版，别的一律拒）。</summary>
     private static readonly string[] AllowOrigins =
     {
+        // 官网自定义域名（GitHub Pages）。旧的 github.io 一定留着：
+        // 已经在用的配对链接、书签全指向它，GitHub 会 301 到新域名，但请求的 Origin 仍是旧值。
+        "https://deepsleep.liziserver.site",
         "https://zhdezs.github.io",
         "https://zhdezs.gitee.io",
         "https://gitee.com",

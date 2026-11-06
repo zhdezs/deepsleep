@@ -151,7 +151,7 @@
       '<div class="field"><label>内核地址</label><input id="cpUrl" type="text" placeholder="http://127.0.0.1:8756 或 https://xxx.trycloudflare.com"></div>' +
       '<div class="field"><label>配对令牌</label><input id="cpToken" type="text"></div>' +
       '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">' +
-      '  <a class="btn" style="text-decoration:none;padding:8px 14px" target="_blank" href="https://zhdezs.github.io/deepsleep/#core">还没有 Core？去下载</a>' +
+      '  <a class="btn" style="text-decoration:none;padding:8px 14px" target="_blank" href="https://deepsleep.liziserver.site/#core">还没有 Core？去下载</a>' +
       '  <button class="btn" id="cpCancel">取消</button>' +
       '  <button class="btn primary" id="cpGo">连接</button>' +
       '</div></div>';
