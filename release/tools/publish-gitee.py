@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 r"""deepsleep 发布到 Gitee（zhdezs/deepsleep）：源码同步 + Release 附件
 
 和 GitHub 那套（publish-via-api.py）的差别，以下都是实测结论：
@@ -126,7 +126,7 @@ def source_files():
         p = os.path.join(ROOT, rel)
         if os.path.isfile(p):
             out[rel] = p
-    for top in ("src", "ui", "installer", "release", "web", ".github"):
+    for top in ("src", "ui", "installer", "release", "web", ".github", "tools"):
         for dirpath, dirnames, filenames in os.walk(os.path.join(ROOT, top)):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
             for fn in filenames:
@@ -189,6 +189,8 @@ def planned_assets(version):
               os.path.join(ROOT, "release", "deepsleep-%s-1.x86_64.rpm" % version),
               os.path.join(ROOT, "release", "deepsleep-%s-1.aarch64.rpm" % version),
               os.path.join(ROOT, "release", "deepsleep-universal-%s.zip" % version)]
+    # 分片合并器（Gitee 把 Setup 切成 .part1/.part2 后，用户用它拼回整包并校验）
+    cands += [os.path.join(ROOT, "release", "deepsleep-merge-setup.exe")]
     plan = []
     for p in cands:
         if os.path.isfile(p):
