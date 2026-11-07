@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
@@ -381,7 +381,10 @@ public sealed partial class MainWindow : Window
                 try { sender.PostWebMessageAsJson("{\"ev\":\"uiReady\"}"); } catch { }
                 try { sender.PostWebMessageAsJson(CoreHostInfoJson()); } catch { }
             };
-            core.Navigate($"https://{Kernel.UiHost}/index.html");
+            // 带版本号导航：WebView2 会缓存 app.local 的资源，
+            // 不换 URL 的话改了 ui/app.js 也可能继续跑旧的（排查过好几次"改了没生效"）。
+            string uiStamp = $"{Updater.CurrentVersion}-{System.IO.File.GetLastWriteTimeUtc(System.IO.Path.Combine(AppContext.BaseDirectory, "ui", "app.js")):yyyyMMddHHmm}";
+            core.Navigate($"https://{Kernel.UiHost}/index.html?v={uiStamp}");
             return true;
         }
         catch (Exception ex)

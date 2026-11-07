@@ -1,0 +1,30 @@
+{
+  "id": "deepseek-chan",
+  "name": "DeepSeek 娘",
+  "version": "1.0.0",
+  "author": "deepsleep",
+  "description": "深海蓝紫配色 + 柔光气泡 + 呼吸动效，给 deepsleep 换一身 DeepSeek 风格的皮肤。",
+  "base": "dark",
+  "vars": {
+    "--bg": "#070d1a",
+    "--panel": "rgba(14,22,42,.82)",
+    "--side": "rgba(11,18,34,.78)",
+    "--text": "#e6efff",
+    "--muted": "#7f97bd",
+    "--border": "rgba(110,170,255,.16)",
+    "--bubble": "#132444",
+    "--self": "#3d6dff",
+    "--self-text": "#ffffff",
+    "--input": "#0d1830",
+    "--hover": "rgba(110,170,255,.10)",
+    "--sel": "rgba(110,170,255,.20)",
+    "--card": "#101c36",
+    "--code": "rgba(110,170,255,.10)",
+    "--shadow": "0 18px 50px rgba(0,10,40,.55)",
+    "--chipbg": "rgba(110,170,255,.10)",
+    "--chipon": "rgba(61,109,255,.26)",
+    "--ring": "rgba(61,109,255,.28)",
+    "--radius": "18px"
+  },
+  "css": "theme.css"
+}

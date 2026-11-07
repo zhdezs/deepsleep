@@ -39,6 +39,15 @@ internal static partial class Program
         try { _kernel.Init(_dataDir); }
         catch (Exception ex) { Console.WriteLine("内核初始化失败：" + ex.Message); return 2; }
 
+        // 双击 .dslt / .dslp 时入口会带 --install-ext：装完就退出，不起服务。
+        string? extFile = ArgStr(args, "--install-ext");
+        if (!string.IsNullOrWhiteSpace(extFile))
+        {
+            var (ok, msg, _) = ExtensionStore.Install(_dataDir, extFile!);
+            Console.WriteLine((ok ? "✓ " : "✗ ") + msg);
+            return ok ? 0 : 1;
+        }
+
         bool up = CoreServer.Start(new CoreServerOptions
         {
             Kernel = _kernel,

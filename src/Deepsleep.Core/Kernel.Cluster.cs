@@ -60,7 +60,7 @@ public sealed partial class Kernel
         return GetClusterState(sid) switch
         {
             RunState.Running => running.Length > 0 ? "● " + running : "● 执行中…",
-            RunState.Stopped => "⏸ 已停止（可点恢复）",
+            RunState.Stopped => "⏸ 已停止",
             _ => "",
         };
     }

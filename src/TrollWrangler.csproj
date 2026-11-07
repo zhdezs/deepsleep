@@ -61,6 +61,9 @@
     <Content Include="pet.png" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="pet.raw" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\ui\**" CopyToOutputDirectory="PreserveNewest" Link="ui\%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- 两套主题 CSS（theme-dark.css / theme-light.css）走上面的 ..\ui\** 一起分发 -->
+    <!-- 内置知识库：assets\knowledge\*.md -->
+    <Content Include="..\assets\**" CopyToOutputDirectory="PreserveNewest" Link="assets\%(RecursiveDir)%(Filename)%(Extension)" />
     <Content Include="..\web\**" CopyToOutputDirectory="PreserveNewest" Link="web\%(RecursiveDir)%(Filename)%(Extension)" />
     <Content Include="tools\set-github-token.ps1" CopyToOutputDirectory="PreserveNewest" Link="tools\set-github-token.ps1" />
     <Content Include="tools\publish-github-release.ps1" CopyToOutputDirectory="PreserveNewest" Link="tools\publish-github-release.ps1" />

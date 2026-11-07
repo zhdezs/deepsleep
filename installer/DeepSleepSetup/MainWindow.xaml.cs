@@ -160,6 +160,8 @@ public partial class MainWindow : Window
 
         progress?.Report((97, "正在登记卸载信息…"));
         if (registerUninstall) RegisterUninstallEntry(target);
+        // 装完就把 .dslt / .dslp 绑到本程序：双击扩展包直接安装，不用等第一次启动
+        RegisterFileAssociations(target);
         progress?.Report((100, "安装完成"));
     }
 
@@ -280,6 +282,49 @@ public partial class MainWindow : Window
             if (shell != null) System.Runtime.InteropServices.Marshal.ReleaseComObject(shell);
         }
     }
+
+    /// <summary>
+    /// 把 .dslt（自定义工具包）/ .dslp（皮肤包）默认关联到 deepsleep.exe。
+    /// 写 HKCU，不需要管理员；卸载时由 uninstall.ps1 删掉同样的键。
+    /// 双击 = 用 `--install-ext "%1"` 启动，程序收到后装完包就退出。
+    /// </summary>
+    private static void RegisterFileAssociations(string target)
+    {
+        try
+        {
+            string exe = Path.Combine(target, ExeName);
+            if (!File.Exists(exe)) return;
+            var map = new (string Ext, string Cls, string Desc)[]
+            {
+                (".dslt", "deepsleep.tool", "deepsleep 自定义工具"),
+                (".dslp", "deepsleep.skin", "deepsleep 皮肤"),
+            };
+            foreach (var m in map)
+            {
+                using var extKey = Registry.CurrentUser.CreateSubKey($@"Software\Classes\{m.Ext}", writable: true);
+                extKey?.SetValue("", m.Cls);
+
+                using var clsKey = Registry.CurrentUser.CreateSubKey($@"Software\Classes\{m.Cls}", writable: true);
+                clsKey?.SetValue("", m.Desc);
+
+                using var cmdKey = Registry.CurrentUser.CreateSubKey($@"Software\Classes\{m.Cls}\shell\open\command", writable: true);
+                cmdKey?.SetValue("", $"\"{exe}\" --install-ext \"%1\"");
+
+                using var iconKey = Registry.CurrentUser.CreateSubKey($@"Software\Classes\{m.Cls}\DefaultIcon", writable: true);
+                iconKey?.SetValue("", $"\"{exe}\",0");
+            }
+            try { PInvoke_SHChangeNotify(); } catch { }
+        }
+        catch
+        {
+            // 关联失败不影响安装，程序启动时还会再试一次
+        }
+    }
+
+    [System.Runtime.InteropServices.DllImport("shell32.dll")]
+    private static extern void SHChangeNotify(int eventId, uint flags, IntPtr item1, IntPtr item2);
+
+    private static void PInvoke_SHChangeNotify() => SHChangeNotify(0x08000000, 0x0000, IntPtr.Zero, IntPtr.Zero);
 
     private static void RegisterUninstallEntry(string target)
     {

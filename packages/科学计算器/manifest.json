@@ -1,0 +1,9 @@
+{
+  "id": "sci-calc",
+  "name": "科学计算器",
+  "version": "1.0.0",
+  "author": "deepsleep",
+  "description": "算数学表达式：四则、幂、开方、三角、对数、常量 pi/e。把算式放进“输入”即可。",
+  "entry": "main.py",
+  "runtime": "python"
+}

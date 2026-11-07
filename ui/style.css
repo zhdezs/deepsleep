@@ -536,3 +536,66 @@ body.pet #agents { display: none; }
 .runcard details.runstep > summary::-webkit-details-marker { display: none; }
 .runcard details.runstep > summary::before { content: '▸ '; color: var(--muted); }
 .runcard details.runstep[open] > summary::before { content: '▾ '; }
+
+/* ---------------- 扩展列表（设置 → 🧩 扩展） ---------------- */
+.extrow {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 11px; border: 1px solid var(--border); border-radius: 11px;
+  margin: 7px 0; background: var(--card);
+}
+.extrow.on { border-color: var(--blue); box-shadow: 0 0 0 2px var(--ring); }
+.extrow .extinfo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.extrow .extinfo b { font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+/* 小标签：深色默认 / 浅色默认 / 内置 */
+.extrow .exttag {
+  font-style: normal; font-size: 10.5px; font-weight: 500; line-height: 1.6;
+  padding: 0 6px; border-radius: 99px;
+  color: var(--ring); border: 1px solid currentColor; opacity: .85;
+}
+.extrow .extinfo span { font-size: 12px; color: var(--muted); }
+.extrow .extinfo em { font-size: 11px; color: var(--muted); font-style: normal; opacity: .8; }
+.extrow .ck { margin: 0; }
+
+/* 右下角「可用工具」：一行小字，点开去扩展管理 */
+.compose-foot { display: flex; align-items: center; gap: 8px; }
+.compose-foot .status { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.compose-foot .toolbar {
+  margin-left: auto; flex: 0 0 auto; cursor: pointer;
+  font-size: 11.5px; color: var(--muted); padding: 2px 7px;
+  border: 1px solid var(--border); border-radius: 7px;
+  max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.compose-foot .toolbar:hover { color: var(--text); background: var(--hover); border-color: var(--blue); }
+
+/* ---------------- 干活过程卡：不要内层滚动 ----------------
+   之前 inheritance 用了 .toolcard .tbody 的 max-height:46vh + overflow:auto，
+   等于把整轮步骤关进一个 46vh 的小窗里，滚轮/触控板还会和外层聊天列表打架
+   （嵌套滚动区域），看着就是"步骤滑不动"。
+   这里放开高度，让卡片自然长，滚动只交给聊天列表，一个滚动条。 */
+.toolcard.runcard { overflow: visible; }
+.toolcard.runcard > .tbody {
+  max-height: none;
+  overflow: visible;
+  overscroll-behavior: auto;
+}
+.toolcard.runcard .titem-b { max-height: none; }
+
+/* ---------------- 干活过程折叠：展开后就是原本的对话 ----------------
+   外面只套一层 <details>，里面塞的是标准 .row（头像 + 气泡 + 工具卡），
+   所以展开后的观感和正常干活时完全一致，折叠时才藏起来。 */
+.row.runrow { display: block; position: relative; }
+.runwrap > summary {
+  list-style: none; cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12.5px; color: var(--muted);
+  padding: 5px 10px; border: 1px dashed var(--border); border-radius: 10px;
+  transition: background .12s, border-color .12s;
+}
+.runwrap > summary:hover { background: var(--hover); border-color: var(--blue); }
+.runwrap > summary::-webkit-details-marker { display: none; }
+.runwrap > summary::before { content: '\25B8'; font-size: 10px; transition: transform .15s; }
+.runwrap[open] > summary::before { transform: rotate(90deg); }
+.runwrap > summary .rtitle { font-weight: 600; opacity: .8; }
+.runwrap > .runbody { margin-top: 10px; }
+.runwrap > .runbody > .row:last-child { margin-bottom: 0; }
+.runrow > .acts { position: absolute; right: 0; top: 0; }

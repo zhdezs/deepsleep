@@ -43,6 +43,8 @@ public sealed partial class Kernel
     private readonly Agent _clusterAgent;
     private AppConfig _config = new();
     private string _dataDir = "";
+    /// <summary>Session 数据库：每个会话一个独立文件 + 可查询索引，供 Router / Watchdog 后续使用。</summary>
+    internal SessionStore Sessions { get; private set; } = null!;
     private string _lastTime = "";
     /// <summary>初始提示词（AGENT.md 去注释后的正文）：所有对话共享。</summary>
     private string _agentMd = "";
@@ -119,9 +121,14 @@ public sealed partial class Kernel
     {
         _dataDir = dataDir;
         Directory.CreateDirectory(_dataDir);
+        Sessions = new SessionStore(_dataDir);
         _engine.SetModelDir(_dataDir);
         _config = AppConfig.Load(_dataDir);
         _engine.ApplyConfig(_config);
+        // 亮/暗模式各自一整套固有 CSS 在 ui/theme-dark.css + theme-light.css，
+        // 由前端按主题启停，不经过皮肤系统。这里只清掉旧版本灌进 data\skins 的
+        // 「伪内置皮肤」，免得它们还挂在扩展列表里让人以为要手动点「使用」。
+        try { ExtensionStore.PurgeBuiltins(_dataDir); } catch { }
 
         _agent.DataDir = _dataDir;
         _memory = new MemoryStore(_dataDir);
@@ -144,6 +151,13 @@ public sealed partial class Kernel
 
         _skills = SkillStore.Load(_dataDir);
         _agent.Skills = _skills;
+        // 已启用的 .dslt 自定义工具：启动就灌给 Agent，否则它不知道有这些工具可用
+        RefreshAgentTools();
+        // deepsleep 知识库：内置文档（assets/knowledge/）+ 用户自建（data/knowledge/）。
+        // 只注入一份目录索引，细节由「查知识库」工具按需取回；极速模式完全不用它。
+        var kb = KnowledgeBase.Load(_dataDir);
+        _agent.Knowledge = kb;
+        _clusterAgent.Knowledge = kb;
 
         _clusterAgent.DataDir = _dataDir;
         _clusterAgent.Memory = _memory;
@@ -165,21 +179,6 @@ public sealed partial class Kernel
 
         LoadConversations();
         RestoreRuntimeState();
-
-        _agentCur.Items.Add(new ChatItem
-        {
-            IsSys = true,
-            Text = $"deepsleep v{Updater.CurrentVersion} 已就绪。可以直接提任务，我会在需要时调用工具：运行命令、Python、读写文件、网络搜索、深度研究、看图、生成图片。",
-            TimeStr = Now(),
-            ShowTime = true,
-        });
-        _clusterCur.Items.Add(new ChatItem
-        {
-            IsSys = true,
-            Text = "Agent 集群已就绪：一句话指挥，会自动拆解成多个 Agent 并行执行（命令 / Python / 读写文件 / 生成图片 / 看图 / 网络搜索 / 深度研究，boom 全自动免确认），最后指挥官汇总结果。",
-            TimeStr = Now(),
-            ShowTime = true,
-        });
 
         _ = ProbeLlmAsync();
         _llmTimer = new Timer(_ => _ = ProbeLlmAsync(), null, 30000, 30000);
@@ -299,6 +298,21 @@ public sealed partial class Kernel
             case "skillInstallUrl": await InstallSkillUrlAsync(GetStr(a, "url") ?? "").ConfigureAwait(false); break;
             case "skillInstallFolder": InstallSkillFolder(GetStr(a, "path") ?? ""); break;
             case "skillRemove": RemoveSkill(GetStr(a, "name") ?? ""); break;
+
+            // 扩展：.dslt 自定义工具 / .dslp 皮肤包
+            case "extList": EmitExtensions(); break;
+            case "extInstall": ExtInstall(GetStr(a, "path") ?? ""); break;
+            case "extRemove": ExtRemove(GetStr(a, "skin") ?? GetStr(a, "tool") ?? GetStr(a, "id") ?? ""); break;
+            case "extToolToggle": ExtToolToggle(GetStr(a, "tool") ?? GetStr(a, "id") ?? "", GetBool(a, "on")); break;
+            case "extSkinApply": ExtSkinApply(GetStr(a, "skin") ?? GetStr(a, "id") ?? ""); break;
+            case "extPack": ExtPack(GetStr(a, "dir") ?? "", GetStr(a, "out") ?? ""); break;
+            // 界面切回前台时重新扫盘：别的进程（双击安装扩展包）刚装完的工具能立刻出现
+            case "extRescan": ExtRescan(); break;
+            // 前端日志：界面没有控制台，异常/点击只能靠这条通道落盘
+            case "uiLog": UiLog(GetStr(a, "text") ?? ""); break;
+            // Session 数据库：列表 / 单条详情，供设置页与后续 Router、Watchdog 使用
+            case "sessionList": EmitSessions(GetStr(a, "kind"), GetStr(a, "state")); break;
+            case "sessionGet": EmitSession(GetInt(a, "sid", 0)); break;
 
             case "settingsGet": EmitSettings(); break;
             case "settingsSave": SaveSettings(a); break;
@@ -507,6 +521,11 @@ public sealed partial class Kernel
         ["videoApiKey"] = _config.VideoApiKey,
         ["videoModel"] = _config.VideoModel,
         ["useFreeKey"] = _config.UseFreeKey,
+        // 扩展：皮肤（CSS/变量/壁纸）与已装工具/皮肤清单
+        ["skin"] = SkinPayload(),
+        ["extTools"] = ExtToolsJson(),
+        ["extSkins"] = ExtSkinsJson(),
+        ["activeSkin"] = ExtensionStore.ActiveSkinId(_dataDir),
         ["multimodalMain"] = _config.MultimodalMain,
         ["updateUrl"] = _config.UpdateUrl,
         ["autoCheckUpdate"] = _config.AutoCheckUpdate,

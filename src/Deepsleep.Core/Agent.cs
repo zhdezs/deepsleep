@@ -11,6 +11,8 @@ using System.Threading.Tasks;
 
 namespace TrollWrangler;
 
+using TrollWrangler.CoreHost;
+
 /// <summary>智能体消息（多轮上下文用）。Role：user / assistant / tool。</summary>
 public sealed class AgentMessage
 {
@@ -44,6 +46,9 @@ public sealed class Agent
     public const string ToolPython = "运行Python脚本";
     public const string ToolImage = "生成图片";
     public const string ToolVideo = "生成视频";
+    public const string ToolInstallExt = "安装扩展";
+    public const string ToolMakeExt = "制作扩展";
+    public const string ToolComputer = "操作电脑";
     public const string ToolVision = "看图";
     public const string ToolSearch = "网络搜索";
     public const string ToolResearch = "深度研究";
@@ -60,6 +65,8 @@ public sealed class Agent
     /// 以前这能力只存在于「Agent 集群」标签页里、要用户手动配团队；现在由主助手自己决定拆不拆。
     /// </summary>
     public const string ToolSplit = "拆分任务";
+    /// <summary>查 deepsleep 知识库。极速模式刻意不开放：多一次往返 + 长文本会拖慢响应。</summary>
+    public const string ToolKnowledge = "查知识库";
 
     /// <summary>以理服人回怼引擎系统提示（GLM-4-Flash-250414 生成）。</summary>
     public const string CounterSystemPrompt =
@@ -91,6 +98,14 @@ public sealed class Agent
     private readonly Engine _counter;
     private readonly Dictionary<int, List<AgentMessage>> _sessions = new();
     private int _counterSid = 900001;
+    /// <summary>已启用的 .dslt 自定义工具（由 Kernel 在启动/安装后灌进来）。</summary>
+    private List<CustomTool> _customTools = new();
+    /// <summary>最近一条用户输入：某些提示词片段（如扩展格式规范）要按用户意图决定是否注入。</summary>
+    private string _lastUserInput = "";
+    /// <summary>还能保持几轮「扩展格式规范」注入（用户连续做扩展时不会中途丢上下文）。</summary>
+    private int _extHoldTurns;
+    public void SetCustomTools(List<CustomTool> list) => _customTools = list ?? new();
+
     private string? _lastImagePath;
     private string? _lastVideoPath;
     private string? _lastToolFull;   // 本次工具输出全文：只给界面卡片用
@@ -124,6 +139,12 @@ public sealed class Agent
 
     /// <summary>已安装技能（用户提到技能名时，把对应 SKILL.md 说明注入系统提示词）。</summary>
     public List<SkillInfo> Skills { get; set; } = new();
+
+    /// <summary>
+    /// deepsleep 知识库条目（内置 + 用户自建）。只在**非极速模式的决策阶段**注入目录索引，
+    /// 细节由「查知识库」工具按需取回。极速模式下这份清单完全不进提示词。
+    /// </summary>
+    public List<KnowledgeBase.Entry> Knowledge { get; set; } = new();
 
     /// <summary>长期记忆（跨会话）：内容会注入系统提示词，模型可用「记住/删除记忆」工具维护。</summary>
     public MemoryStore Memory { get; set; } = new("");
@@ -329,6 +350,11 @@ public sealed class Agent
             _sessions[sid] = history;
         }
         history.Add(new AgentMessage { Role = "user", Content = userText });
+        _lastUserInput = userText;              // 给「要不要灌扩展格式规范」判断用
+        // 做扩展往往要连着好几轮（写清单 → 写脚本 → 打包 → 修 bug），
+        // 只在首轮匹配但下一轮说「继续」就没规范了，模型容易把字段写歪。
+        if (WantsExtension(userText)) _extHoldTurns = 6;
+        else if (_extHoldTurns > 0) _extHoldTurns--;
         MessageAdded?.Invoke(sid, history[^1]);
         if (AutoRemember) AutoRememberFromUser(userText);
         string result = await RunLoopAsync(sid, history, ct);
@@ -722,6 +748,9 @@ public sealed class Agent
         "- 运行Python脚本：参数 {\"代码\":\"Python 3 源码\",\"工作目录\":\"可选\"}。自动选择 Python 3 解释器，写入临时脚本并运行，返回输出与报错。\n" +
         "- 生成图片：参数 {\"提示词\":\"详细的画面描述\",\"尺寸\":\"可选 1024x1024 / 768x1344 / 1344x768\"}。调用 CogView-3-Flash 生成图片并保存到本地，返回本地图片路径。用户要求画图/生成图片/配图时使用。\n" +
         "- 生成视频：参数 {\"提示词\":\"详细的画面描述\",\"尺寸\":\"可选 1920x1080 / 1280x960 / 1024x1024\"}。调用 CogVideoX-Flash 生成一段短视频（异步任务，通常 30~120 秒），保存到本地并返回路径。用户要求生成视频/动画/动态画面时使用。\n" +
+        "- 安装扩展：参数 {\"路径\":\"本地 .dslt / .dslp 文件绝对路径\"}。把用户下载的扩展包装进 deepsleep（工具包进 data\\tools，皮肤包进 data\\skins）。\n" +
+        "- 制作扩展：参数 {\"类型\":\"tool 或 skin\",\"目录\":\"放清单和文件的绝对路径\",\"输出\":\"要生成的 .dslt / .dslp 绝对路径\"}。把目录打成可分发的扩展包。\n" +
+        "- 操作电脑：参数 {\"动作\":\"截图|移动|点击|双击|右键|输入|按键|滚动|等待\",\"x\":0.42,\"y\":0.31,\"relative\":true,\"text\":\"要输入的文字\",\"key\":\"enter 或 ctrl+c\",\"amount\":3}。执行完自动截图并读屏，返回界面描述与可点元素坐标，用来看一步走一步（网页点按钮、操作别的软件、填表单）。\n" +
         "- 看图：参数 {\"图片路径\":\"本地图片绝对路径\",\"问题\":\"可选，要问的问题\"}。调用 GLM-4.6V-Flash 多模态模型识别/分析图片（描述内容、读图、检查截图、审查生成的图片等）。\n" +
         "- 网络搜索：参数 {\"关键词\":\"搜索词\"}。用内置爬虫直接抓取搜索结果页（Bing → 搜狗 → 360 → DuckDuckGo 依次尝试），返回标题/链接/摘要，无需 API Key；搜索/查价格/查资料/找最新信息时用它。\n" +
         "- 深度研究：参数 {\"主题\":\"研究主题\",\"深度\":1-3}。多轮子查询搜索 + 抓取多个网页正文 + 汇总成一份带来源的 Markdown 研究报告（自动保存到本地，返回文件路径）；用户说「深度研究 / 调研 / 全面了解 / 整理一份报告」时用它。\n" +
@@ -759,6 +788,41 @@ public sealed class Agent
     /// 工具决策阶段的协议：软件先发这条指令，模型这一轮**只准输出 JSON**，
     /// 正文放到「完成」的 回答 字段里；由软件解析、执行工具、把结果塞回上下文，再让模型继续干活。
     /// </summary>
+    /// <summary>用户是不是要做扩展（工具/皮肤）。命中就把完整格式规范灌进系统提示词。</summary>
+    private static readonly Regex ExtensionIntent = new(
+        // .dslt/.dslp 直呼其名；或者「做一个…工具/皮肤」这类意图（光写"工具"太宽，会误伤"工具调用"）
+        @"\.dslt|\.dslp|扩展包|工具包|自定义(的)?工具|皮肤|主题包|换肤|美化(界面|一下)?|动效|" +
+        @"(做|写|造|加|开发|制作|来个|弄个)[\s\S]{0,20}(工具|插件|皮肤|主题)|skin|theme",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static bool WantsExtension(string? text)
+        => !string.IsNullOrWhiteSpace(text) && ExtensionIntent.IsMatch(text!);
+
+    /// <summary>
+    /// 扩展创作规范。模型不可能凭空知道 .dslt / .dslp 里该写什么，
+    /// 所以用户一提「做个工具 / 换皮肤」，这段就整段灌进去（保持若干轮，避免说「继续」就丢）。
+    /// </summary>
+    private const string ExtensionsPrompt =
+
+        "\n\n【扩展制作规范 · 本软件支持两种扩展，都是 zip 包，根目录放清单】\n" +
+        "A) .dslt 自定义工具（装好后你能直接调用它）\n" +
+        "   manifest.json 必填：id（小写字母/数字/-/_）、name、entry（入口脚本相对路径）、runtime（python|cmd|powershell|node）；\n" +
+        "   可选：version、author、description（description 会展示给用户，也进你的工具清单）。\n" +
+        "   脚本约定：在包目录里运行；输入 = 第 1 个命令行参数，同时也放在环境变量 DEEPSLEEP_TOOL_INPUT；\n" +
+        "   stdout 原样作为结果返回；退出码非 0 视为失败；超时 5 分钟；DEEPSLEEP_DATA 指向 data 目录。\n" +
+        "   示例 manifest.json：{\"id\":\"sci-calc\",\"name\":\"科学计算器\",\"version\":\"1.0.0\",\"author\":\"me\",\"description\":\"算数学表达式\",\"entry\":\"main.py\",\"runtime\":\"python\"}\n" +
+        "B) .dslp 皮肤（只改外观，不执行代码）\n" +
+        "   theme.json：id、name、base（light|dark，只是建议搭配的模式，不会强制切主题）、vars（CSS 变量表）、css（可选，相对路径）、wallpaper（可选）、version、author、description。\n" +
+        "   注意：亮/暗模式各有一套固有 CSS（ui/theme-dark.css 与 theme-light.css），皮肤只是叠加层，不会替换它们；不要写 defaultFor / builtin 字段（已废弃）。\n" +
+        "   可覆盖变量：--bg --panel --side --text --muted --border --bubble --self --self-text --input --hover --sel --card --code --shadow --chipbg --chipon --ring --radius\n" +
+        "   变量必须挂在 body.skin-on 作用域下才能压过主题类；css 会被原样注入页面，动效写 @keyframes 再挂到：.row .bubble .bubble.tool .bubble.thinking .avatar .row.self .composer\n" +
+        "做法（必须按这三步，不要只把内容贴在聊天里）：\n" +
+        "1) 「写入文件」把清单和脚本写到同一个目录（例如 D:\\ds\\my-tool\\manifest.json 与 main.py）\n" +
+        "2) 「制作扩展」{\"类型\":\"tool\",\"目录\":\"D:\\ds\\my-tool\",\"输出\":\"D:\\ds\\my-tool.dslt\"}（皮肤类型写 skin，扩展名 .dslp）\n" +
+        "3) 「安装扩展」{\"路径\":\"D:\\ds\\my-tool.dslt\"}，装完让用户重新开一个对话即可使用\n" +
+        "完成后告诉用户：⚙ 设置 → 🧩 扩展 里能看到并启用；工具装好后你能直接按名字调用。\n" +
+        "安全：工具是本机脚本，别写删除/上传私人文件之类的危险操作；皮肤只能改 CSS。\n";
+
     private const string ToolDecisionPrompt =
         "\n\n【工具决策阶段 · 先说一句话，再输出 JSON】\n" +
         "整体流程：用户输入 → 你分析意图 → 需要工具就输出 tool_call → 软件执行工具 → 结果回传给你 → 你继续决策，直到不再需要工具。\n" +
@@ -795,9 +859,11 @@ public sealed class Agent
         "4. 这一轮只输出 JSON 本身，不要写正文。";
 
     /// <summary>系统提示词 = 初始提示词（AGENT.md，放最前面）+ 各模式自己的提示词。</summary>
-    private string SystemPromptForMode()
+    /// <param name="phase">decision=工具决策阶段 / final=最终回复阶段 / 空=普通对话。
+    /// 极速模式靠它决定要不要带阶段性约束（最终回复阶段绝不能再说「只输出 JSON」）。</param>
+    private string SystemPromptForMode(string phase = "")
     {
-        string prompt = BuildModePrompt();
+        string prompt = BuildModePrompt(phase);
         string custom = (CustomPrompt ?? "").Trim();
         if (custom.Length > 0)
             prompt = "【初始提示词 · AGENT.md（所有对话共享，只能在 ⚙ 设置里修改，优先级最高）】\n" +
@@ -805,43 +871,93 @@ public sealed class Agent
         return prompt;
     }
 
-    private string BuildModePrompt()
+    /// <summary>
+    /// 极速模式只压缩「人设与行为约束」，**不压缩能力**。
+    /// 工具参数、自定义工具清单、扩展规范、长期记忆统一由 <see cref="CommonTail"/> 追加。
+    /// 早期版本在这里提前 return，把参数格式全砍了，模型不知道 arguments 该填什么，
+    /// 干脆输出 {"tool_call":null} 用文字敷衍 —— 表现就是「极速模式不会调用工具」。
+    /// 也不再自己规定输出格式：格式一律交给 ToolDecisionPrompt，避免两条规则打架。
+    /// </summary>
+    private static string FastModePrompt(string phase)
     {
-        if (FastMode && RunMode != "chat")
+        if (phase == "final")
+            return "你是运行在 Windows 上的 AI 助手，用中文回答，简洁、准确、说人话。";
+
+        return
+            "你是运行在 Windows 上的 AI 助手（类似 Claude Code/Codex），用工具把事情真正做完，不要只给建议或复述做法。\n" +
+            "需要动手的任务（读写文件、跑命令/脚本、搜索查资料、抓网页、画图、看图、操作别的软件界面、" +
+            "安装或制作扩展、记住信息）**必须先调用对应工具**，拿到工具结果后才能给最终答复；" +
+            "严禁在没收到工具结果前说「已完成 / 已生成 / 已保存」。\n" +
+            "选工具：搜索/查价格/查最新消息→网络搜索（禁止用 curl 等命令代替）；系统调研/写报告→深度研究；" +
+            "读搜索结果原文→抓取网页；写代码/落盘→写入文件 或 运行Python脚本；画图→生成图片；生成视频→生成视频；" +
+            "看图→看图；点按钮/填表单/操作别的软件→操作电脑；做 .dslt 工具或 .dslp 皮肤→制作扩展 + 安装扩展；" +
+            "用户安装的自定义工具按下面清单直接按名字调用。\n" +
+            "失败/超时/停止时如实说明，禁止假装完成、乱调无关工具或用通用话术敷衍。\n" +
+            "用户提供重要事实/偏好时用「记住」保存，用户要求删除某条记忆时用「删除记忆」。\n" +
+            "极速模式不查阅知识库：关于 deepsleep 自身规格的问题，按当前提示词里已有的信息作答；需要完整规范时提示用户关闭 ⚡ 极速模式。";
+    }
+
+    private string BuildModePrompt(string phase)
+    {
+        string prompt = (FastMode && RunMode != "chat")
+            ? FastModePrompt(phase)
+            : RunMode switch
+            {
+                "chat" => _chatToolMode ? ChatToolSystemPrompt : ChatSystemPrompt,
+                "boom" => SystemPrompt + "\n\n当前是 boom（爆破）模式：你可以直接执行任何命令和文件操作，无需请求用户确认。",
+                _ => SystemPrompt + "\n\n当前是 work（工作）模式：执行「运行命令」前系统会自动请求用户确认，确认结果会以工具结果返回给你；其余工具可直接使用。",
+            };
+        return prompt + CommonTail(phase);
+    }
+
+    /// <summary>极速与普通模式共用的能力清单：工具参数、附加提示词、自定义工具、扩展规范、多模态、长期记忆。</summary>
+    private string CommonTail(string phase)
+    {
+        // 极速模式的最终回复阶段已经不能调工具了，工具清单/扩展规范就不必再占 token；
+        // 附加提示词与长期记忆要留着，否则回答会丢人设、丢事实。普通模式一律保持全量。
+        bool slimFinal = FastMode && phase == "final";
+        var sb = new StringBuilder();
+        if (RunMode != "chat" && !slimFinal)
         {
-            return
-                "你是运行在 Windows 上的 AI 助手（类似 Claude Code/Codex），能用工具干活。\n" +
-                "工具：运行命令/运行Python脚本/生成图片/生成视频/看图/读取文件/写入文件/打开文件/网络搜索/深度研究/抓取网页/记住(保存长期记忆)/删除记忆。\n" +
-                "工具调用只输出一行 JSON：{\"tool_call\":{\"name\":\"工具名\",\"arguments\":{...}}}；不需要工具时输出 {\"tool_call\":null}。\n" +
-                "这一轮只准输出 JSON 本身，不要写正文；工具结果由软件回传，最后再单独让你写最终回复。\n" +
-                "选工具：搜索/查价格/查资料→网络搜索（禁止 curl 等命令代替）；要系统调研/写报告→深度研究；读搜索结果原文→抓取网页；写代码→Python/写入文件；画图→生成图片；看图→看图。\n" +
-                "失败/超时/停止时如实说明，禁止假装完成、乱调无关工具或用通用话术敷衍。\n" +
-                "用户提供重要事实/偏好时用「记住」保存，用户要求删除某条记忆时用「删除记忆」。";
-        }
-        string prompt = RunMode switch
-        {
-            "chat" => _chatToolMode ? ChatToolSystemPrompt : ChatSystemPrompt,
-            "boom" => SystemPrompt + "\n\n当前是 boom（爆破）模式：你可以直接执行任何命令和文件操作，无需请求用户确认。",
-            _ => SystemPrompt + "\n\n当前是 work（工作）模式：执行「运行命令」前系统会自动请求用户确认，确认结果会以工具结果返回给你；其余工具可直接使用。",
-        };
-        if (RunMode != "chat")
-        {
-            prompt += "\n- 网络搜索：参数 {\"关键词\":\"搜索词\"}。由内置爬虫脚本直接抓取搜索结果页（Bing → 搜狗 → 360 → DuckDuckGo 依次尝试），返回标题/链接/摘要，无需 API Key。用户要求搜索、查价格、查资料、找最新信息时优先使用；若工具提示已关闭，请提醒用户打开 🌐 开关，不要用命令行代替。";
-            prompt += "\n- 深度研究：参数 {\"主题\":\"研究主题\",\"深度\":1-3}。多轮子查询搜索 + 抓取多篇网页正文 + 汇总成一份 Markdown 研究报告，自动保存到本地并返回路径；深度越大查得越广（1 快 / 2 标准 / 3 全面）。适合「研究一下 / 调研 / 全面了解 / 整理一份资料」。跑得比较久，开始前可先跟用户说一句预计要花点时间。";
-            prompt += "\n- 抓取网页：参数 {\"网址\":\"https://...\"}。用内置爬虫抓取网页正文（自动去标签、限长 8000 字）。搜索得到链接后需要看原文时使用；若网页抓不到正文，如实说明，不要假装成功。";
-            prompt += "\n- 打开文件：参数 {\"路径\":\"绝对路径\"}。用系统默认程序打开本地文件；" +
-                      "可执行文件/脚本也允许打开（打开就是运行它，work 模式下会先请用户确认）。";
+            sb.Append("\n- 网络搜索：参数 {\"关键词\":\"搜索词\"}。由内置爬虫脚本直接抓取搜索结果页（Bing → 搜狗 → 360 → DuckDuckGo 依次尝试），返回标题/链接/摘要，无需 API Key。用户要求搜索、查价格、查资料、找最新信息时优先使用；若工具提示已关闭，请提醒用户打开 🌐 开关，不要用命令行代替。");
+            sb.Append("\n- 深度研究：参数 {\"主题\":\"研究主题\",\"深度\":1-3}。多轮子查询搜索 + 抓取多篇网页正文 + 汇总成一份 Markdown 研究报告，自动保存到本地并返回路径；深度越大查得越广（1 快 / 2 标准 / 3 全面）。适合「研究一下 / 调研 / 全面了解 / 整理一份资料」。跑得比较久，开始前可先跟用户说一句预计要花点时间。");
+            sb.Append("\n- 抓取网页：参数 {\"网址\":\"https://...\"}。用内置爬虫抓取网页正文（自动去标签、限长 8000 字）。搜索得到链接后需要看原文时使用；若网页抓不到正文，如实说明，不要假装成功。");
+            sb.Append("\n- 打开文件：参数 {\"路径\":\"绝对路径\"}。用系统默认程序打开本地文件；" +
+                      "可执行文件/脚本也允许打开（打开就是运行它，work 模式下会先请用户确认）。");
         }
         if (!string.IsNullOrWhiteSpace(ExtraPrompt))
-            prompt += "\n\n" + ExtraPrompt;
+            sb.Append("\n\n").Append(ExtraPrompt);
+        if (!slimFinal)
+        {
+            // 用户装的 .dslt 自定义工具：模型得知道有这些工具、怎么调，否则永远用不上
+            if (_customTools.Count > 0)
+            {
+                sb.Append("\n\n【自定义工具（用户安装的，和内置工具一样直接调）】\n");
+                foreach (var t in _customTools) sb.AppendLine(t.PromptLine);
+                sb.AppendLine("调用格式：{\"tool_call\":{\"name\":\"工具名\",\"arguments\":{\"输入\":\"要处理的内容\"}}}。" +
+                              "工具在它自己的目录里运行，输入同时会通过环境变量 DEEPSLEEP_TOOL_INPUT 传入。");
+            }
+            // 扩展创作：用户要做工具/皮肤时把格式规范整段灌进去 ——
+            // 模型不可能凭空知道 .dslt 里该写什么，不灌就只能瞎编字段。
+            if (_extHoldTurns > 0)
+                sb.Append(ExtensionsPrompt);
+            else
+                sb.Append("\n\n【扩展】本软件支持 .dslt 自定义工具与 .dslp 皮肤包；用户要做这类东西时，会收到完整格式规范。");
+
+            // 知识库：**极速模式不挂**（多一次往返 + 长章节会拖慢，就不极速了），
+            // 最终回复阶段也不挂（那时已不该再调工具），chat 纯聊天模式不挂。
+            if (!FastMode && phase != "final" && RunMode != "chat" && Knowledge.Count > 0)
+                sb.Append(KnowledgeBase.Index(Knowledge));
+        }
+
         if (MultimodalMain)
-            prompt += "\n\n注意：主模型是多模态模型，用户上传的图片会作为多模态输入直接发给你。看到图片直接描述/分析，严禁调用「看图」工具。";
+            sb.Append("\n\n注意：主模型是多模态模型，用户上传的图片会作为多模态输入直接发给你。看到图片直接描述/分析，严禁调用「看图」工具。");
         string mem = Memory?.AllText() ?? "";
         if (!string.IsNullOrWhiteSpace(mem))
-            prompt += "\n\n【长期记忆】以下是你跨会话保存的关于用户/任务的事实与偏好（序号即「删除记忆」工具的序号）：\n" +
+            sb.Append("\n\n【长期记忆】以下是你跨会话保存的关于用户/任务的事实与偏好（序号即「删除记忆」工具的序号）：\n" +
                       mem +
-                      "\n\n规则：回答与这些记忆相关时直接使用；用户提供了新的重要事实/偏好时调用「记住」保存；用户说某条不再需要时调用「删除记忆」。";
-        return prompt;
+                      "\n\n规则：回答与这些记忆相关时直接使用；用户提供了新的重要事实/偏好时调用「记住」保存；用户说某条不再需要时调用「删除记忆」。");
+        return sb.ToString();
     }
 
     /// <summary>
@@ -866,7 +982,7 @@ public sealed class Agent
         var msgs = MultimodalMain
             ? history.Select(m => (m.Role, MaybeAttachImage(m))).ToList()
             : history.Select(m => (m.Role, m.Content)).ToList();
-        string sys = SystemPromptForMode() + BuildSkillsPrompt(history, injectedSkills) + ToolDecisionPrompt;
+        string sys = SystemPromptForMode("decision") + BuildSkillsPrompt(history, injectedSkills) + ToolDecisionPrompt;
         // 决策这一轮也会被 max_tokens 截断（模型一口气把整个文件内容塞进参数里就会）：
         // 截断后 JSON 只剩半截、工具根本执行不了，所以这里同样自动续写拼回完整调用。
         return await CallOnceAutoContinueAsync(sys, msgs, ct, null, emitReasoning: true);
@@ -894,7 +1010,7 @@ public sealed class Agent
         var msgs = MultimodalMain
             ? history.Select(m => (m.Role, MaybeAttachImage(m))).ToList()
             : history.Select(m => (m.Role, m.Content)).ToList();
-        string sys = SystemPromptForMode() + BuildSkillsPrompt(history, injectedSkills) + FinalAnswerPrompt;
+        string sys = SystemPromptForMode("final") + BuildSkillsPrompt(history, injectedSkills) + FinalAnswerPrompt;
         return await CallOnceAutoContinueAsync(sys, msgs, ct, onDelta, emitReasoning: true);
     }
 
@@ -1693,21 +1809,26 @@ public sealed class Agent
     /// 已经能兜住绝大多数别名，但直接告诉它正确名字，比事后纠正少绕一圈。
     /// </para>
     /// </summary>
-    private static string ToolFormatRule()
-        => "你的工具调用格式错误：只能输出合法 JSON，不要输出解释，不要包在 ``` 代码块里。\n" +
-           "调用工具：{\"tool_call\":{\"name\":\"工具名\",\"arguments\":{...}}}\n" +
-           "不需要工具：{\"tool_call\":null}\n" +
-           "可用工具名（必须原样使用这几个中文名，不要用 write_to_file 等英文名）：" +
-           string.Join("、", ToolNames) + "\n" +
-           "参数键固定为 name + arguments；字符串里的换行写 \\n，双引号写 \\\"。\n" +
-           "如果要写入的文件很长（超过约 3000 字），先写一部分，再继续调用同样的工具追加剩余内容，" +
-           "不要试图一次输出完导致 JSON 被截断。";
+    private string ToolFormatRule()
+    {
+        // 极速模式连「查知识库」这个名字都不报给模型，避免它白跑一次被拦的调用
+        var names = FastMode ? ToolNames.Where(n => n != ToolKnowledge) : ToolNames;
+        return "你的工具调用格式错误：只能输出合法 JSON，不要输出解释，不要包在 ``` 代码块里。\n" +
+               "调用工具：{\"tool_call\":{\"name\":\"工具名\",\"arguments\":{...}}}\n" +
+               "不需要工具：{\"tool_call\":null}\n" +
+               "可用工具名（必须原样使用这几个中文名，不要用 write_to_file 等英文名）：" +
+               string.Join("、", names) + "\n" +
+               "参数键固定为 name + arguments；字符串里的换行写 \\n，双引号写 \\\"。\n" +
+               "如果要写入的文件很长（超过约 3000 字），先写一部分，再继续调用同样的工具追加剩余内容，" +
+               "不要试图一次输出完导致 JSON 被截断。";
+    }
 
     /// <summary>本应用提供的工具名（格式修正提示里报给模型，避免它自己编名字）。</summary>
     public static readonly string[] ToolNames =    {
         ToolRunCommand, ToolPython, ToolWriteFile, ToolReadFile, ToolOpenFile,
-        ToolSearch, ToolResearch, ToolFetch, ToolImage, ToolVision, ToolRemember, ToolForget,
-        ToolSplit,
+        ToolSearch, ToolResearch, ToolFetch, ToolImage, ToolVideo, ToolVision,
+        ToolRemember, ToolForget, ToolInstallExt, ToolMakeExt, ToolComputer,
+        ToolSplit, ToolKnowledge,
     };
 
     /// <summary>
@@ -1809,6 +1930,9 @@ public sealed class Agent
             // 图片
             "generate_image" or "gen_image" or "text_to_image" or "image_gen" or "draw_image"
                 or "create_image" or "image" or "生成图片" or "画图" or "作图" => ToolImage,
+            "computer" or "computer_use" or "mouse" or "keyboard" or "操作电脑" or "控制鼠标" or "控制电脑" => ToolComputer,
+            "install_ext" or "install_extension" or "安装扩展" or "装扩展" => ToolInstallExt,
+            "make_ext" or "pack_ext" or "build_skin" or "制作扩展" or "打包扩展" or "做皮肤" => ToolMakeExt,
             "generate_video" or "gen_video" or "text_to_video" or "video_gen" or "create_video"
                 or "make_video" or "video" or "生成视频" or "做视频" or "生成动画" => ToolVideo,
             "see_image" or "view_image" or "image_to_text" or "vision" or "ocr" or "describe_image"
@@ -1876,6 +2000,10 @@ public sealed class Agent
                 ToolPython => await PythonTool(args, sid, ct),
                 ToolImage => await ImageTool(args, sid, ct),
                 ToolVideo => await VideoTool(args, sid, ct),
+                ToolInstallExt => InstallExtTool(args),
+                ToolMakeExt => MakeExtTool(args),
+                ToolComputer => await ComputerTool(args, sid, ct),
+                ToolKnowledge => KnowledgeTool(args),
                 ToolVision => MultimodalMain
                     ? "图片已作为多模态输入直接发送给主模型，请直接描述图片内容，不要再调用「看图」工具。"
                     : await VisionTool(args, sid, ct),
@@ -1890,13 +2018,222 @@ public sealed class Agent
                 ToolSplit => SplitRunner == null
                     ? "「拆分任务」当前不可用（未接入子智能体执行器）。"
                     : await SplitRunner(args.GetRawText(), ct),
-                _ => $"未知工具：{tool}",
+                _ => await CustomOrDefaultAsync(tool, args, sid, ct),
             };
         }
         catch (Exception ex)
         {
             return $"工具「{tool}」执行失败：{ex.Message}";
         }
+    }
+
+    /// <summary>
+    /// 工具名对不上内置的，就看看是不是 .dslt 自定义工具；都不是才报「未知工具」。
+    /// 自定义工具 = 用户/模型自己打包的脚本（Python / cmd / PowerShell / Node），
+    /// 在包目录里运行，输入通过参数 + 环境变量 DEEPSLEEP_TOOL_INPUT 传入，stdout 就是结果。
+    /// </summary>
+    private async Task<string> CustomOrDefaultAsync(string tool, JsonElement args, int sid, CancellationToken ct)
+    {
+        var t = _customTools.FirstOrDefault(x =>
+            string.Equals(x.Name, tool, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(x.Id, tool, StringComparison.OrdinalIgnoreCase));
+        if (t == null) return $"未知工具：{tool}";
+        return await RunCustomToolAsync(t, args, sid, ct);
+    }
+
+    private async Task<string> RunCustomToolAsync(CustomTool t, JsonElement args, int sid, CancellationToken ct)
+    {
+        string entry = Path.Combine(t.Dir, t.Entry);
+        if (!File.Exists(entry)) return $"自定义工具「{t.Name}」的入口脚本不见了：{entry}";
+
+        string input = GetArg(args, "输入") ?? GetArg(args, "input") ?? GetArg(args, "参数") ?? "";
+
+        if (RunMode != "boom" && ConfirmRequested != null)
+        {
+            bool ok = await ConfirmRequested(sid, $"运行自定义工具「{t.Name}」\n脚本：{t.Entry}" +
+                (input.Length > 0 ? $"\n输入：{Preview(input, 200)}" : ""));
+            if (!ok) return "用户拒绝运行该自定义工具。";
+        }
+
+        string exe;
+        var argv = new List<string>();
+        switch (t.Runtime)
+        {
+            case "cmd":
+                exe = "cmd.exe";
+                argv.Add("/c"); argv.Add(entry);
+                break;
+            case "powershell":
+                exe = "powershell.exe";
+                argv.Add("-NoProfile"); argv.Add("-ExecutionPolicy"); argv.Add("Bypass");
+                argv.Add("-File"); argv.Add(entry);
+                break;
+            case "node":
+                exe = "node";
+                argv.Add(entry);
+                break;
+            default:
+                string? py = await FindPython3Async();
+                if (py == null) return "系统里找不到 Python 3，跑不了这个自定义工具（或者把它改成 cmd 版）。";
+                exe = py;
+                argv.Add(entry);
+                break;
+        }
+        if (input.Length > 0) argv.Add(input);
+
+        try
+        {
+            var psi = new ProcessStartInfo(exe)
+            {
+                WorkingDirectory = t.Dir,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                StandardOutputEncoding = System.Text.Encoding.UTF8,
+                StandardErrorEncoding = System.Text.Encoding.UTF8,
+            };
+            foreach (var s in argv) psi.ArgumentList.Add(s);
+            psi.Environment["DEEPSLEEP_TOOL_INPUT"] = input;
+            psi.Environment["DEEPSLEEP_TOOL_ID"] = t.Id;
+
+            using var proc = Process.Start(psi);
+            if (proc == null) return $"自定义工具「{t.Name}」启动失败。";
+            var outTask = proc.StandardOutput.ReadToEndAsync();
+            var errTask = proc.StandardError.ReadToEndAsync();
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromMinutes(5));
+            await proc.WaitForExitAsync(cts.Token).ConfigureAwait(false);
+            string stdout = await outTask.ConfigureAwait(false) ?? "";
+            string stderr = await errTask.ConfigureAwait(false) ?? "";
+
+            _lastToolFull = stdout.Length > 0 ? stdout : stderr;
+            string res = stdout.Trim();
+            if (proc.ExitCode != 0)
+                return $"自定义工具「{t.Name}」退出码 {proc.ExitCode}。\n{(string.IsNullOrWhiteSpace(res) ? stderr : res)}";
+            return res.Length == 0 ? $"自定义工具「{t.Name}」运行完了，但没有输出。" : res;
+        }
+        catch (OperationCanceledException) { return "自定义工具执行超时（5 分钟）。"; }
+        catch (Exception ex) { return $"自定义工具执行失败：{ex.Message}"; }
+    }
+
+    /// <summary>
+    /// 查 deepsleep 知识库。极速模式直接拒绝：知识库检索会多一次往返并塞回长章节，
+    /// 与「极速」的取舍冲突；用户真要完整规范就提示他关掉 ⚡。
+    /// </summary>
+    private string KnowledgeTool(JsonElement args)
+    {
+        if (FastMode)
+            return "极速模式不查阅知识库（保持响应速度）。当前系统提示词里已经带了工具参数与关键规则，请直接据此作答；" +
+                   "需要 deepsleep 的完整规格/格式规范时，请提示用户关闭 ⚡ 极速模式后再查。";
+        string topic = GetArg(args, "主题") ?? GetArg(args, "topic") ??
+                       GetArg(args, "课题") ?? GetArg(args, "关键词") ?? GetArg(args, "query") ?? "";
+        var kb = KnowledgeBase.Load(DataDir ?? "");
+        if (kb.Count == 0)
+            return "知识库为空：安装目录 assets/knowledge/ 下没找到内置文档。可把 .md / .txt 放进 data/knowledge/ 自建。";
+        Log($"查知识库：主题={topic} 条目={kb.Count}");
+        return KnowledgeBase.Query(kb, topic);
+    }
+
+    /// <summary>安装扩展包（.dslt / .dslp），和界面里点安装走同一套逻辑。</summary>
+    private string InstallExtTool(JsonElement args)
+    {
+        string? path = GetArg(args, "路径") ?? GetArg(args, "path");
+        if (string.IsNullOrWhiteSpace(path)) return "参数错误：缺少「路径」。";
+        if (!File.Exists(path)) return $"文件不存在：{path}";
+        var (_, msg, _) = ExtensionStore.Install(DataDir ?? "", path);
+        return msg;
+    }
+
+    /// <summary>把目录打成扩展包（模型造完文件后调用；手搓的人也能用）。</summary>
+    private string MakeExtTool(JsonElement args)
+    {
+        string? dir = GetArg(args, "目录") ?? GetArg(args, "dir");
+        string? outp = GetArg(args, "输出") ?? GetArg(args, "out");
+        string kind = (GetArg(args, "类型") ?? GetArg(args, "kind") ?? "tool").ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(dir) || string.IsNullOrWhiteSpace(outp))
+            return "参数错误：需要「目录」和「输出」。";
+        if (!Directory.Exists(dir)) return $"目录不存在：{dir}";
+        string low = outp.ToLowerInvariant();
+        if (!low.EndsWith(ExtensionStore.ToolExt) && !low.EndsWith(ExtensionStore.SkinExt))
+            outp += (kind.StartsWith("skin") || kind.StartsWith("皮肤")) ? ExtensionStore.SkinExt : ExtensionStore.ToolExt;
+        var (_, msg) = ExtensionStore.Pack(dir, outp);
+        return msg;
+    }
+
+    /// <summary>
+    /// 「操作电脑」：执行一步鼠标/键盘动作 → 立刻截图 → 用视觉模型读屏 → 把结果交回给主模型决策。
+    /// 这样即使是纯文本的主模型也能"看见"屏幕（每步都有一份文字版的界面状态）。
+    /// 坐标统一用 0~1 相对坐标：截图会被缩放，像素坐标跨分辨率/缩放不可靠。
+    /// </summary>
+    private async Task<string> ComputerTool(JsonElement args, int sid, CancellationToken ct)
+    {
+        string action = (GetArg(args, "动作") ?? GetArg(args, "action") ?? "截图").Trim();
+
+        double Num(string cn, string en)
+        {
+            string? v = GetArg(args, cn) ?? GetArg(args, en);
+            return double.TryParse(v, out double d) ? d : 0;
+        }
+        double x = Num("x", "x"), y = Num("y", "y");
+        bool relative = true;
+        string? relArg = GetArg(args, "relative") ?? GetArg(args, "相对");
+        if (relArg != null && bool.TryParse(relArg, out bool rb)) relative = rb;
+        string text = GetArg(args, "text") ?? GetArg(args, "文字") ?? GetArg(args, "文本") ?? "";
+        string key = GetArg(args, "key") ?? GetArg(args, "按键") ?? "";
+        int amount = (int)Num("amount", "数量");
+
+        // 鼠标键盘是「能替用户点任何东西」的权限，work 模式下必须先问一句
+        if (RunMode != "boom" && ConfirmRequested != null)
+        {
+            string desc = action switch
+            {
+                "输入" => $"输入文字「{(text.Length > 60 ? text[..60] + "…" : text)}」",
+                "按键" => $"按 {key}",
+                "点击" or "双击" or "右键" or "移动" => $"{action} ({x:0.###}, {y:0.###}){(relative ? " 相对" : " 像素")}",
+                "滚动" => $"滚动 {amount} 格",
+                "等待" => $"等待 {amount} 毫秒",
+                _ => "截屏",
+            };
+            bool ok = await ConfirmRequested(sid, "操作你的电脑（鼠标/键盘）：" + desc);
+            if (!ok) return "用户拒绝了这次电脑操作。";
+        }
+
+        var (done, msg) = ComputerUse.Do(action, x, y, relative, text, key, amount);
+        if (!done) return msg;
+
+        // 给界面一点反应时间，再截图（点了按钮立刻截往往是旧画面）
+        try { await Task.Delay(action is "截图" ? 80 : 450, ct).ConfigureAwait(false); } catch { }
+
+        var (path, w, h) = ComputerUse.Shot(DataDir ?? "");
+        if (path.Length == 0)
+            return $"{msg}\n截图失败（可能是当前会话不在交互式桌面上，比如远程/服务会话）。";
+
+        _lastImagePath = path;
+
+        string visual = "";
+        if (_vision.Configured)
+        {
+            const string ask =
+                "这是一张 Windows 屏幕截图。用简短中文回答，不要客套话：\n" +
+                "① 现在是什么程序/界面（标题栏文字也读出来）；\n" +
+                "② 主要可交互元素，每个都给出**相对百分比坐标**（把整张图当作 0~1，x 向右 y 向下），格式：名称(x,y)，最多 6 个；\n" +
+                "③ 有没有弹窗、输入框、报错或加载中状态。";
+            try
+            {
+                string? r = await _vision.AnalyzeAsync(path, ask, ct).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(r)) visual = "\n\n屏幕内容（视觉模型解读）：\n" + r.Trim();
+            }
+            catch { }
+        }
+        else
+        {
+            visual = "\n\n（未配置图像理解 Key，只能给你截图路径，没法读屏；要我看图请到 ⚙ 设置 → 图像理解 填 Key）";
+        }
+
+        return $"{msg}。\n截图：{path}（图上 {w}×{h}，实际屏幕 {RemoteDesktop.ScreenWidth}×{RemoteDesktop.ScreenHeight}）" +
+               visual +
+               "\n\n下一步：需要点击就用 relative=true 传 0~1 的 x/y（视觉模型给的坐标就是这个口径）。";
     }
 
     private string RememberTool(JsonElement args)

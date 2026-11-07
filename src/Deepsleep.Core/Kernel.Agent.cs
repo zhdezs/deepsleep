@@ -34,7 +34,7 @@ public sealed partial class Kernel
     private string AgentBusy(int sid) => GetAgentState(sid) switch
     {
         RunState.Running => "● 思考中…",
-        RunState.Stopped => "⏸ 已停止（可点恢复）",
+        RunState.Stopped => "⏸ 已停止",
         _ => "",
     };
 
@@ -331,7 +331,7 @@ public sealed partial class Kernel
         Agent.ToolResearch => "research",
         Agent.ToolVision => "vision",
         Agent.ToolVideo => "video",
-        Agent.ToolFetch or Agent.ToolReadFile or Agent.ToolOpenFile => "read",
+        Agent.ToolFetch or Agent.ToolReadFile or Agent.ToolOpenFile or Agent.ToolKnowledge => "read",
         _ => "other",
     };
 

@@ -36,6 +36,14 @@ const bridge = (() => {
 })();
 
 function host(obj) { bridge.send(obj); }
+
+/* 界面日志：出错/关键点击都发给内核落盘（data\ui.log）。
+   之前"点了没反应"完全是个黑盒，只能靠这个查。 */
+function uiLog(text) {
+  try { bridge.send({ id: -1, cmd: 'uiLog', text: String(text).slice(0, 500) }); } catch (e) { }
+}
+window.addEventListener('error', e => uiLog('JS错误: ' + (e.message || '') + ' @' + (e.filename || '') + ':' + (e.lineno || '')));
+window.addEventListener('unhandledrejection', e => uiLog('未处理拒绝: ' + (e.reason && (e.reason.message || e.reason))));
 function call(cmd, args) {
   return new Promise(res => {
     const id = ++seq;
@@ -43,10 +51,30 @@ function call(cmd, args) {
     host(Object.assign({ id, cmd }, args || {}));
   });
 }
+
+/* 带错误提示的调用：内核回 {ok:false, err} 时别静默吞掉 ——
+   之前"点了没反应"就是因为失败信息全被吞了，界面和日志都看不出问题。 */
+function callOk(cmd, args, okText) {
+  return call(cmd, args).then(r => {
+    if (r && r.ok === false) { toast('操作失败：' + (r.err || '未知错误'), 'error'); return false; }
+    if (okText) toast(okText);
+    return true;
+  }).catch(e => { toast('操作失败：' + (e && e.message || e), 'error'); return false; });
+}
 bridge.on(m => {
   if (!m) return;
   if (m.ev) handleEvent(m);
   else if (m.id != null) { const r = waiting.get(m.id); if (r) { waiting.delete(m.id); r(m); } }
+});
+
+/* 双击 .dslt / .dslp 是「另起一个进程装完就退」，当前进程不会自己知道。
+   所以切回窗口时重新扫一次盘：新工具立刻出现在右下角工具清单和设置里，不用重启。 */
+let lastRescan = 0;
+window.addEventListener('focus', () => {
+  const now = Date.now();
+  if (now - lastRescan < 2000) return;   // 防止焦点抖动导致连刷
+  lastRescan = now;
+  call('extRescan').catch(() => { });
 });
 
 /* ---------------- 状态 ---------------- */
@@ -398,64 +426,46 @@ function isProcItemAt(list, i) {
 }
 
 function runNodes(entry) {
+  // 展开后必须是「原本的样子」：头像、气泡、工具卡都跟正常干活时一模一样，
+  // 所以这里不复刻样式，直接把 itemNodes / groupNodes 生成的 .row 塞进折叠容器。
   const nodes = [];
   const first = entry.items[0];
-  if (first.showTime) {
-    const tl = document.createElement('div');
-    tl.className = 'timeline'; tl.textContent = first.time;
-    nodes.push(tl);
+  const wrap = document.createElement('div');
+  wrap.className = 'row runrow';
+  wrap.dataset.gkey = 'run:' + first.id;
+  wrap.dataset.gids = entry.items.map(x => x.id).join(' ');
+
+  const det = document.createElement('details');
+  det.className = 'runwrap';
+
+  const sum = document.createElement('summary');
+  const nm = document.createElement('span'); nm.className = 'rtitle'; nm.textContent = '干活过程';
+  const tx = document.createElement('span'); tx.className = 'rsum';
+  tx.textContent = entry.items.length + ' 步 · 点开看';
+  sum.append(nm, tx);
+  det.appendChild(sum);
+
+  const body = document.createElement('div'); body.className = 'runbody';
+  const inner = groupEntries(entry.items);
+  for (const g of inner) {
+    const ns = g.g ? groupNodes(g) : itemNodes(g.it);
+    ns.forEach(n => body.appendChild(n));
   }
-  const row = document.createElement('div');
-  row.className = 'row';
-  row.dataset.gkey = 'run:' + first.id;
-  const av = document.createElement('div');
-  av.className = 'avatar';
-  av.style.background = first.color || '#4A90D9';
-  av.textContent = first.avatar || 'AI';
-  row.appendChild(av);
-  const b = document.createElement('div'); b.className = 'bubble tool'; row.appendChild(b);
+  det.appendChild(body);
+
   const acts = document.createElement('div'); acts.className = 'acts';
   const del = document.createElement('button');
   del.textContent = '删除'; del.title = '删除这一轮的全部过程记录';
   del.onclick = () => entry.items.forEach(x => call('deleteMsg', { kind: kind(), item: x.id }));
-  acts.append(del); row.appendChild(acts);
-  row.dataset.gids = entry.items.map(x => x.id).join(' ');
-
-  const det = document.createElement('details');
-  det.className = 'toolcard runcard';
-  const sum = document.createElement('summary');
-  const nm = document.createElement('span'); nm.className = 'tname'; nm.textContent = '干活过程';
-  const tx = document.createElement('span'); tx.className = 'tsum';
-  tx.textContent = entry.items.length + ' 步（点开看每一步）';
-  sum.append(nm, tx);
-  const body = document.createElement('div'); body.className = 'tbody';
-  entry.items.forEach((it, i) => {
-    if (it.tool) {
-      const sub = document.createElement('details');
-      sub.className = 'titem runstep';
-      const h = document.createElement('summary');
-      h.textContent = (i + 1) + '. ' + (it.tool || '工具') +
-        (it.toolSummary ? ' · ' + it.toolSummary : '');
-      const c = document.createElement('div'); c.className = 'titem-b';
-      c.innerHTML = md(it.toolDetail || it.text || '');
-      sub.append(h, c);
-      body.appendChild(sub);
-    } else {
-      const d = document.createElement('div');
-      d.className = 'runsay';
-      d.textContent = it.text;
-      body.appendChild(d);
-    }
-  });
-  det.append(sum, body);
-  b.appendChild(det);
-  nodes.push(row);
+  acts.append(del);
+  wrap.append(det, acts);
+  nodes.push(wrap);
   return nodes;
 }
 
 function captureOpen() {
   const m = {};
-  for (const d of document.querySelectorAll('#msgs details.toolcard')) {
+  for (const d of document.querySelectorAll('#msgs details.toolcard, #msgs details.runwrap')) {
     const row = d.closest('.row');
     const k = row && (row.dataset.gkey || (row.dataset.id ? 't:' + row.dataset.id : ''));
     if (k) m[k] = d.open;
@@ -464,7 +474,7 @@ function captureOpen() {
 }
 
 function restoreOpen(m) {
-  for (const d of document.querySelectorAll('#msgs details.toolcard')) {
+  for (const d of document.querySelectorAll('#msgs details.toolcard, #msgs details.runwrap')) {
     const row = d.closest('.row');
     const k = row && (row.dataset.gkey || (row.dataset.id ? 't:' + row.dataset.id : ''));
     if (k && k in m) d.open = m[k];
@@ -600,9 +610,14 @@ function setTabUI(t) {
 }
 
 function setTheme(t) {
-  document.body.classList.toggle('dark', t === 'dark');
-  document.body.classList.toggle('light', t !== 'dark');
-  $('#btnTheme').textContent = t === 'dark' ? '☀️' : '🌙';
+  const dark = t === 'dark';
+  document.body.classList.toggle('dark', dark);
+  document.body.classList.toggle('light', !dark);
+  // 亮/暗各有一整套固有 CSS（theme-dark.css / theme-light.css），全局选择器
+  // 不能同时生效，按主题只启用一份；切主题即时生效，不用重载界面。
+  if (typeof window.__setThemeCss === 'function') window.__setThemeCss(dark ? 'dark' : 'light');
+  const b = $('#btnTheme');
+  if (b) b.textContent = dark ? '☀️' : '🌙';
 }
 /* ---------------- Agent 名片（集群） ---------------- */
 let agentCardSid = 0;
@@ -753,7 +768,12 @@ function handleEvent(m) {
     case 'insert': setInput(m.text); break;
     case 'memory': openMemory(m); break;
     case 'skills': S.skills = m.list || []; if (modalName === 'skills') openSkills(m); break;
-    case 'settings': S.settings = m.settings || {}; applySettings(); if (modalName === 'settings') openSettings(m.settings); break;
+    case 'skinChanged':
+      // 皮肤是 #skinStyle 叠加层，EmitSettings 已经即时注入；不需要重载整页
+      // （重载会丢掉正在输入的文字、折叠状态和滚动位置）。
+      toast(m.id ? '皮肤已应用到当前模式' : '已关闭皮肤，恢复当前模式的默认样式');
+      break;
+    case 'settings': S.settings = m.settings || {}; applySettings(); if (modalName === 'settings') openSettings(m.settings, settingsTab); break;
     case 'apiModels': {
       apiModelList = m.ok ? (m.models || []) : null;
       // 没选过模型时内核会默认用列表第一个（列表已是免费优先排序）。
@@ -959,6 +979,12 @@ function ck(label, id, on) {
   d.querySelector('#' + id).checked = !!on;
   return d;
 }
+function hintEl(text) {
+  const d = document.createElement('div');
+  d.className = 'hint';
+  d.textContent = text;
+  return d;
+}
 function val(id) { const e = $('#' + id); return e ? e.value.trim() : ''; }
 function chk(id) { const e = $('#' + id); return !!(e && e.checked); }
 
@@ -1151,6 +1177,67 @@ function updateSl(st) {
 }
 
 /* ---------------- 设置 ---------------- */
+/* 第三方 .dslp 皮肤：叠加在「亮/暗模式固有 CSS」之上的可选层。
+   注意：深浅色由 setTheme() 独占控制，这里绝不再改 body 的 light/dark，
+   否则皮肤一注入就把主题掰回去，两套主题 CSS 会错乱。 */
+function applySkin(sk) {
+  let st = document.getElementById('skinStyle');
+  if (!sk) {
+    if (st) st.textContent = '';
+    document.body.classList.remove('skin-on');
+    return;
+  }
+  if (!st) {
+    st = document.createElement('style');
+    st.id = 'skinStyle';
+    document.head.appendChild(st);
+  }
+  document.body.classList.add('skin-on');
+  const vars = Object.entries(sk.vars || {}).map(([k, v]) => k + ':' + v + ';').join('');
+  // ⚠ 必须挂到 body.skin-on 上：主题变量在 body.light / body.dark（0,1,1），
+  //   直接写 body{--bg:…}（0,0,1）会被压掉；skin-on 同为 (0,1,1) 但本 <style>
+  //   后插入，能覆盖主题默认值 —— 这正是「皮肤叠加层」该有的优先级。
+  const scope = 'body.skin-on';
+  let css = (vars ? scope + '{' + vars + '}' : '') + '\n' + (sk.css || '');
+  if (sk.wallpaper) {
+    css += '\n' + scope + '{background-image:url("' + sk.wallpaper + '");background-size:cover;background-attachment:fixed;}';
+  }
+  st.textContent = css;
+}
+
+/* 右下角「可用工具」：内置 + 用户装的 .dslt 自定义工具。
+   工具集变了（装/删扩展）会重新渲染，点一下直接跳到 设置 → 🧩 扩展。 */
+const BUILTIN_TOOLS = [
+  '运行命令', '运行Python脚本', '操作电脑', '读取文件', '写入文件', '打开文件',
+  '网络搜索', '深度研究', '抓取网页', '看图', '生成图片', '生成视频',
+  '记住', '删除记忆', '安装扩展', '制作扩展', '拆分任务'
+];
+
+function toolBarText() {
+  const ext = ((S.settings && S.settings.extTools) || []).filter(t => t.enabled);
+  const names = ext.map(t => t.name);
+  let txt = '🛠 ' + (BUILTIN_TOOLS.length + names.length) + ' 个工具';
+  if (names.length) txt += ' · 自定义：' + names.join('、');
+  return txt;
+}
+
+function toolBarTitle() {
+  const ext = ((S.settings && S.settings.extTools) || []).filter(t => t.enabled);
+  const lines = ['内置：' + BUILTIN_TOOLS.join('、')];
+  if (ext.length) lines.push('自定义：' + ext.map(t => t.name + '（' + (t.description || '无说明') + '）').join('、'));
+  lines.push('界面版本：' + (window.__uiVersion || '未知'));
+  lines.push('点这里管理扩展（⚙ 设置 → 🧩 扩展）');
+  return lines.join('\n');
+}
+
+function renderToolBar() {
+  const el = $('#toolBar');
+  if (!el) return;
+  el.textContent = toolBarText();
+  el.title = toolBarTitle();
+  el.onclick = () => openSettings(S.settings, 3);
+}
+
 function applySettings() {
   const s = S.settings || {};
   if ($('#mode') && s.mode) $('#mode').value = s.mode;
@@ -1158,6 +1245,8 @@ function applySettings() {
   if ($('#tgLocal')) $('#tgLocal').checked = !!s.local;
   if ($('#tgSearch')) $('#tgSearch').checked = !!s.search;
   if (s.theme) setTheme(s.theme);
+  applySkin(s.skin);    // 皮肤：没启用就传 null，等价于清掉自定义样式
+  renderToolBar();      // 右下角工具清单（含已装的自定义工具）
   renderModelLabel();   // 顶部「🧠 模型」始终显示当前模型
 }
 
@@ -1284,7 +1373,8 @@ function openModelPicker() {
   }
 }
 
-function openSettings(fresh) {
+let settingsTab = 0;   // 设置弹窗记住上次停留的页签
+function openSettings(fresh, tabIdx) {
   const s = fresh || S.settings || {};
   const body = openModal('settings', '⚙ 设置', [
     { t: '取消' },
@@ -1295,12 +1385,12 @@ function openSettings(fresh) {
   // 一屏塞几十个输入框太难找，按用途分页；页签状态不持久化，默认回到「模型」。
   const tabBar = document.createElement('div');
   tabBar.className = 'set-tabs';
-  const tabNames = ['🧠 模型', '🖼 图像', '🎬 视频', '⚙ 其他'];
+  const tabNames = ['🧠 模型', '🖼 图像', '🎬 视频', '🧩 扩展', '⚙ 其他'];
   tabBar.innerHTML = tabNames.map((t, i) =>
     '<button type="button" data-tab="' + i + '">' + t + '</button>').join('');
   // 页签条和四个页容器要挂在弹窗 body 上（此时 pane 还没定义，别挂错）
   body.appendChild(tabBar);
-  const panes = [0, 1, 2, 3].map(() => {
+  const panes = [0, 1, 2, 3, 4].map(() => {
     const d = document.createElement('div');
     d.className = 'set-pane';
     body.appendChild(d);
@@ -1311,8 +1401,12 @@ function openSettings(fresh) {
     panes.forEach((p, k) => p.classList.toggle('on', k === i));
     Array.from(tabBar.children).forEach((b, k) => b.classList.toggle('on', k === i));
     pane = panes[i];
+    settingsTab = i;                 // 记住停留的页签，重建弹窗时不跳回第一页
   };
   tabBar.onclick = e => { const b = e.target.closest('button'); if (b) switchTab(+b.dataset.tab); };
+  // ⚠ 这里千万不能用 switchTab(tabIdx)：它会把写入指针 pane 也改掉，
+  //   而下面整段内容是按 pane = panes[0]/[1]/[2]… 顺序往里塞的 ——
+  //   一旦一开始就指向 panes[3]，模型页会被整个塞进「扩展」页（点扩展却看到绑定平台）。
   switchTab(0);
 
   const sect = t => { const d = document.createElement('div'); d.className = 'sect'; d.textContent = t; pane.appendChild(d); };
@@ -1681,6 +1775,87 @@ function openSettings(fresh) {
   pane.appendChild(bindMainKey('videoApiKey'));
 
   pane = panes[3];
+  sect('自定义工具（.dslt）');
+  pane.appendChild(hintEl('装好的自定义工具会变成 AI 能直接调用的工具。双击 .dslt 文件即可安装，也可以把路径贴到下面点安装。'));
+  const extTools = s.extTools || [];
+  if (!extTools.length) {
+    pane.appendChild(hintEl('还没有安装任何自定义工具。'));
+  } else {
+    extTools.forEach(t => {
+      const row = document.createElement('div');
+      row.className = 'extrow';
+      row.innerHTML = '<div class="extinfo"><b>' + esc(t.name) + '</b><span>' +
+        esc(t.description || '（没有说明）') + '</span><em>' + esc(t.runtime) + ' · ' + esc(t.entry) +
+        (t.version ? ' · v' + esc(t.version) : '') + '</em></div>';
+      const sw = ck('启用', 'extTool_' + t.id, t.enabled);
+      const del = document.createElement('button');
+      del.className = 'btn danger sm';
+      del.textContent = '删除';
+      del.onclick = () => { if (confirm('删除工具「' + t.name + '」？')) call('extRemove', { tool: t.id }); };
+      sw.querySelector('input').onchange = e => call('extToolToggle', { tool: t.id, on: e.target.checked });
+      row.appendChild(sw);
+      row.appendChild(del);
+      pane.appendChild(row);
+    });
+  }
+
+  sect('皮肤（.dslp）');
+  pane.appendChild(hintEl('亮色 / 暗色模式各有一套自带 CSS（右上角 ☀️/🌙 切换时会整套换掉）。这里装的是叠加层：可以改配色、圆角、背景，还能加自定义动效（CSS @keyframes），会盖在当前模式之上。双击 .dslp 安装，然后点「使用」。'));
+  const extSkins = s.extSkins || [];
+  if (!extSkins.length) {
+    pane.appendChild(hintEl('还没有安装皮肤，当前用的就是模式的自带样式。'));
+  } else {
+    if (s.activeSkin) {
+      const off = document.createElement('button');
+      off.className = 'btn sm';
+      off.textContent = '关闭叠加皮肤，恢复当前模式默认';
+      off.onclick = () => call('extSkinApply', { skin: '' });
+      pane.appendChild(off);
+    }
+    extSkins.forEach(sk => {
+      const row = document.createElement('div');
+      row.className = 'extrow' + (s.activeSkin === sk.id ? ' on' : '');
+      row.innerHTML = '<div class="extinfo"><b>' + esc(sk.name) + '</b><span>' +
+        esc(sk.description || '（没有说明）') + '</span><em>建议搭配：' +
+        (esc(sk.baseTheme) === 'light' ? '浅色' : '深色') + '模式' +
+        (sk.version ? ' · v' + esc(sk.version) : '') + '</em></div>';
+      const use = document.createElement('button');
+      use.className = 'btn sm' + (s.activeSkin === sk.id ? '' : ' pri');
+      use.textContent = s.activeSkin === sk.id ? '使用中（再点一次重新应用）' : '使用';
+      // 不要禁用：之前 activeSkin 已经等于它时按钮被禁用，用户点了毫无反应，
+      // 而界面又因为 CSS 优先级问题没变色 —— 看起来就是"这功能坏的"。
+      use.onclick = () => {
+        uiLog('点击皮肤使用: ' + sk.id + ' (当前 activeSkin=' + (s.activeSkin || '空') + ')');
+        toast('正在应用皮肤…');
+        try { call('extSkinApply', { skin: sk.id }); }
+        catch (e) { toast('应用失败：' + e.message, 'error'); }
+      };
+      row.appendChild(use);
+      const del = document.createElement('button');
+      del.className = 'btn danger sm';
+      del.textContent = '删除';
+      del.onclick = () => { if (confirm('删除皮肤「' + sk.name + '」？')) call('extRemove', { skin: sk.id }); };
+      row.appendChild(del);
+      pane.appendChild(row);
+    });
+    pane.appendChild(hintEl('皮肤只叠加、不替换模式自带 CSS；切换 ☀️/🌙 时皮肤会保留，如果配色不搭，关掉皮肤即可。'));
+  }
+
+  sect('安装扩展包');
+  pane.appendChild(field('文件路径（.dslt / .dslp）', 'extPath', '', 'text',
+    '把文件拖进输入框或直接粘贴绝对路径；装好的工具/皮肤在上面列表里管理。'));
+  const instBtn = document.createElement('button');
+  instBtn.className = 'btn pri';
+  instBtn.textContent = '安装这个扩展包';
+  instBtn.onclick = () => {
+    const p = val('extPath');
+    if (!p) return toast('先填扩展包路径', 'error');
+    call('extInstall', { path: p });
+    $('#extPath').value = '';
+  };
+  pane.appendChild(instBtn);
+
+  pane = panes[4];
   sect('工具权限 / 能力开关');
   const modeSel = document.createElement('div');
   modeSel.className = 'field';
@@ -1771,6 +1946,11 @@ function openSettings(fresh) {
     logBox.textContent = h.tunnelUrl ? ('公网地址：' + h.tunnelUrl) : '';
     pane.appendChild(logBox);
   }
+
+  // 所有内容都塞完了，最后再切到请求的页签。
+  // 千万别提前调：switchTab 会改写入指针 pane，早调会把后面的段落写进别的页。
+  const wantTab = (typeof tabIdx === 'number') ? tabIdx : settingsTab;
+  if (wantTab) switchTab(wantTab);
 }
 
 function saveSettings() {

@@ -399,21 +399,33 @@ public sealed partial class Kernel
             if (kv.Value != RunState.Idle)
                 st.ClusterStates[kv.Key] = kv.Value == RunState.Running ? "running" : "stopped";
         RuntimeStore.Save(_dataDir, st);
+        // Session 数据库：旧的 runtime_state 快照会跳过 worker sid（>=500000），这里全部落盘，
+        // Router / Watchdog 之后要靠这些独立文件按 kind、state 查询。
+        try { Sessions.SaveAll(_agent.SnapshotSessions(), sid => sid >= 500000 ? "worker" : "main"); }
+        catch { /* 落盘失败不影响主流程 */ }
     }
 
     private void RestoreRuntimeState()
     {
-        var st = RuntimeStore.Load(_dataDir);
-        if (st == null) return;
-        foreach (var s in st.AgentSessions)
-            _agent.RestoreSession(s.Sid, s.Messages.Select(m => new AgentMessage
-            {
-                Role = m.Role,
-                Content = m.Content,
-                Meta = m.Meta,
-                ImagePath = m.ImagePath,
-                VideoPath = m.VideoPath,
-            }));
+        var st = RuntimeStore.Load(_dataDir) ?? new RuntimeState();
+        // 首次升级：把老的单文件快照拆成独立 session 文件（已有 index.json 就不再覆盖）
+        Sessions.MigrateIfNeeded(st);
+        var restored = Sessions.RestoreAll();
+        if (restored.Count > 0)
+        {
+            foreach (var kv in restored)
+                _agent.RestoreSession(kv.Key, kv.Value);
+        }
+        else
+        {
+            // 兜底：SessionStore 里什么都没有时，仍按老快照恢复，保证老用户不丢上下文
+            foreach (var s in st.AgentSessions)
+                _agent.RestoreSession(s.Sid, s.Messages.Select(m => new AgentMessage
+                {
+                    Role = m.Role, Content = m.Content, Meta = m.Meta,
+                    ImagePath = m.ImagePath, VideoPath = m.VideoPath,
+                }));
+        }
         foreach (var kv in st.AgentStates)
         {
             _agentStates[kv.Key] = RunState.Stopped;
@@ -421,9 +433,8 @@ public sealed partial class Kernel
             {
                 Role = "tool",
                 Meta = "中断标记",
-                Content = "（上次运行被中断，未完成，可点恢复继续）",
+                Content = "（上次运行被中断，未完成）",
             });
-            AddAgentSys(kv.Key, "⏸ 上次运行被中断，可点「恢复」从断点继续。");
         }
         foreach (var r in st.ClusterRuns)
         {
@@ -764,6 +775,8 @@ AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不�
     {
         _config.Theme = theme == "dark" ? "dark" : "light";
         _config.Save();
+        // 两套主题 CSS 是前端按 <link disabled> 即时启停的，跟 activeSkin 无关：
+        // 用户自己装的第三方皮肤继续叠加在当前模式上，不因为切主题被换掉。
         Emit(new { ev = "theme", theme = _config.Theme });
     }
 

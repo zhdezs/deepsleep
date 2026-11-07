@@ -82,11 +82,11 @@ def source_files():
     superlink/ 是 zhdezs.github.io/deepsleep/superlink/?type=配对码 的跳转页（转给 web/superlink/）。
     """
     out = {}
-    for rel in ("README.md", ".gitignore", "index.html", "CNAME"):
+    for rel in ("README.md", ".gitignore", "index.html"):
         p = os.path.join(ROOT, rel)
         if os.path.isfile(p):
             out[rel] = p
-    for top in ("src", "ui", "installer", "release", "web", "superlink", "harmony", ".github", "tools"):
+    for top in ("src", "ui", "installer", "release", "web", "superlink", "harmony", ".github", "tools", "packages", "docs"):
         for dirpath, dirnames, filenames in os.walk(os.path.join(ROOT, top)):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
             for fn in filenames:

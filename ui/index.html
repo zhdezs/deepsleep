@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>deepsleep</title>
-<link rel="stylesheet" href="style.css">
+
 </head>
 <body class="light">
 <div id="app">
@@ -68,6 +68,7 @@
         <div class="compose-foot">
           <span id="busy" class="busy"></span>
           <span id="statusLine" class="status"></span>
+          <span id="toolBar" class="toolbar" title="可用工具"></span>
         </div>
       </div>
     </main>
@@ -91,6 +92,50 @@
   <iframe id="rdFrame" allow="clipboard-read; clipboard-write" referrerpolicy="no-referrer"></iframe>
 </div>
 
-<script src="app.js"></script>
+<script>
+/* 资源带上版本号再加载：WebView2 对 app.local 会走 HTTP 缓存，
+   改了 app.js 却不生效、看着像"功能没做完"，就是缓存吃掉了新文件。
+   版本号由客户端导航时带进来（index.html?v=3.1.3-xxxx）。 */
+(function () {
+  var m = location.search.match(/[?&]v=([^&]*)/);
+  var v = m ? encodeURIComponent(m[1]) : Date.now();
+  window.__uiVersion = v;
+
+  function css(file, id) {
+    var l = document.createElement('link');
+    l.rel = 'stylesheet'; l.id = id;
+    l.href = file + '?v=' + v;
+    document.head.appendChild(l);
+    return l;
+  }
+  css('style.css', 'baseCss');
+  // 亮/暗模式各自一整套 CSS：里面的 body::before、.row、::-webkit-scrollbar 等
+  // 都是全局选择器，两套同时生效会互相打架，所以只启用当前主题那一份。
+  var themeLinks = {
+    dark: css('theme-dark.css', 'themeDarkCss'),
+    light: css('theme-light.css', 'themeLightCss')
+  };
+  // 启动先按本地记忆的主题亮一份，避免内核下发 boot 之前闪一下白底。
+  var remembered = 'dark';
+  try { remembered = localStorage.getItem('ds-theme') || 'dark'; } catch (e) { }
+  window.__setThemeCss = function (t) {
+    var dark = t === 'dark';
+    // media='not all' 是跨浏览器最可靠的「停用整张样式表」方式，
+    // disabled 一并设上双保险（WebView2 两者都认）。
+    themeLinks.dark.media = dark ? 'all' : 'not all';
+    themeLinks.light.media = dark ? 'not all' : 'all';
+    themeLinks.dark.disabled = !dark;
+    themeLinks.light.disabled = dark;
+    try { localStorage.setItem('ds-theme', dark ? 'dark' : 'light'); } catch (e) { }
+  };
+  window.__setThemeCss(remembered);
+  document.body.classList.toggle('dark', remembered === 'dark');
+  document.body.classList.toggle('light', remembered !== 'dark');
+
+  var sc = document.createElement('script');
+  sc.src = 'app.js?v=' + v;
+  document.body.appendChild(sc);
+})();
+</script>
 </body>
 </html>

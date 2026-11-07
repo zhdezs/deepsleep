@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>帮助文档 · deepsleep 3.2.0</title>
+<meta name="description" content="deepsleep 完整帮助文档：所有安装方式（Windows / Linux / macOS / 网页版 / 内核版 / Gitee 分片合并）、模型配置、工具、扩展包、皮肤、知识库、SuperAgent 架构与故障排查。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%230a84ff'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#f5f5f7; --card:#ffffff; --fg:#1d1d1f; --muted:#6e6e73; --line:rgba(0,0,0,.09);
+  --blue:#0a84ff; --blue2:#0071e3; --shadow:0 12px 34px rgba(0,0,0,.10);
+  --hover:rgba(0,0,0,.045); --soft:rgba(10,132,255,.09); --ok:#1a7f5a; --warn:#b45309;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#000000; --card:#1c1c1e; --fg:#f5f5f7; --muted:#98989d; --line:rgba(255,255,255,.12);
+         --shadow:0 14px 40px rgba(0,0,0,.55); --hover:rgba(255,255,255,.07);
+         --soft:rgba(10,132,255,.16); --ok:#4ade9f; --warn:#fbbf24; }
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:70px}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font:15px/1.78 -apple-system,BlinkMacSystemFont,"SF Pro SC","PingFang SC","Segoe UI","Microsoft YaHei",sans-serif;
+  -webkit-font-smoothing:antialiased}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:1120px;margin:0 auto;padding:0 22px}
+nav{position:sticky;top:0;z-index:30;background:rgba(245,245,247,.82);backdrop-filter:saturate(180%) blur(20px);
+  border-bottom:1px solid var(--line)}
+@media (prefers-color-scheme: dark){nav{background:rgba(0,0,0,.76)}}
+nav .wrap{display:flex;align-items:center;gap:16px;height:52px}
+.logo{font-weight:700;font-size:15px;display:flex;align-items:center;gap:7px;color:var(--fg)}
+.logo i{width:9px;height:9px;border-radius:50%;background:linear-gradient(135deg,#0a84ff,#5e5ce6);display:inline-block}
+nav .sp{flex:1}
+nav a.lnk{color:var(--fg);font-size:13px;opacity:.8}
+nav a.lnk:hover{opacity:1;text-decoration:none}
+nav .ver{font-size:11.5px;color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:2px 9px}
+header.page{padding:52px 0 26px;border-bottom:1px solid var(--line)}
+.badge{display:inline-block;padding:4px 11px;border-radius:999px;background:var(--soft);color:var(--blue);
+  font-size:12px;font-weight:600;margin-bottom:14px}
+h1{font-size:36px;line-height:1.2;margin:0 0 10px;letter-spacing:-.6px}
+.lead{font-size:16px;color:var(--muted);max-width:760px;margin:0}
+.layout{display:grid;grid-template-columns:230px 1fr;gap:36px;padding:34px 0 60px}
+@media (max-width:900px){.layout{grid-template-columns:1fr}.toc{position:static!important;max-height:none!important}}
+.toc{position:sticky;top:70px;align-self:start;max-height:calc(100vh - 92px);overflow:auto;
+  border-left:2px solid var(--line);padding-left:14px}
+.toc b{display:block;font-size:12px;color:var(--muted);letter-spacing:.6px;margin-bottom:8px}
+.toc a{display:block;font-size:13px;color:var(--muted);padding:3px 0;line-height:1.5}
+.toc a:hover,.toc a.on{color:var(--blue);text-decoration:none;font-weight:600}
+.toc a.sub{padding-left:12px;font-size:12.5px;opacity:.85}
+main{min-width:0}
+section{margin:0 0 46px;scroll-margin-top:70px}
+h2{font-size:25px;margin:0 0 6px;letter-spacing:-.4px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+h3{font-size:17px;margin:26px 0 8px}
+h4{font-size:14.5px;margin:18px 0 6px;color:var(--fg)}
+p{margin:9px 0}
+.sub{color:var(--muted);font-size:14px;margin:0 0 18px}
+ul,ol{margin:8px 0;padding-left:22px}
+li{margin:5px 0}
+code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;background:var(--hover);
+  padding:2px 6px;border-radius:6px;font-size:12.5px}
+pre{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;
+  overflow:auto;font-size:12.5px;line-height:1.65;margin:12px 0}
+pre code{background:none;padding:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;
+  box-shadow:var(--shadow);margin:14px 0}
+.card h3,.card h4{margin-top:0}
+.grid{display:grid;gap:14px;grid-template-columns:repeat(2,1fr)}
+.grid.g3{grid-template-columns:repeat(3,1fr)}
+@media (max-width:760px){.grid,.grid.g3{grid-template-columns:1fr}}
+table{width:100%;border-collapse:collapse;font-size:13.5px;margin:12px 0}
+th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-size:12.5px;font-weight:600}
+td code{white-space:nowrap}
+.note,.warn,.ok{border-left:3px solid var(--blue);background:var(--soft);padding:10px 14px;
+  border-radius:0 10px 10px 0;font-size:13.5px;margin:12px 0}
+.warn{border-color:var(--warn);background:color-mix(in srgb,var(--warn) 10%,transparent)}
+.ok{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 10%,transparent)}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 15px;border-radius:10px;font-size:13.5px;
+  font-weight:600;border:1px solid transparent;text-decoration:none!important;margin:3px 6px 3px 0}
+.btn.pri{background:var(--blue);color:#fff}
+.btn.pri:hover{background:var(--blue2)}
+.btn.gho{background:var(--card);color:var(--fg);border-color:var(--line)}
+.btn.gho:hover{background:var(--hover)}
+.step{display:flex;gap:12px;align-items:flex-start;margin:12px 0}
+.step b.n{flex:0 0 24px;height:24px;border-radius:50%;background:var(--blue);color:#fff;font-size:12px;
+  display:flex;align-items:center;justify-content:center;margin-top:2px}
+.step div{font-size:14px}
+.kbd{display:inline-block;border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;
+  padding:1px 6px;font-size:12px;background:var(--card)}
+.tag{display:inline-block;font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;
+  background:var(--soft);color:var(--blue);margin-right:5px}
+.tag.gray{background:var(--hover);color:var(--muted)}
+.flow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:16px 0;font-size:13px}
+.flow .box{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 13px;box-shadow:var(--shadow)}
+.flow .arw{color:var(--muted)}
+.phase{display:flex;gap:12px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--line)}
+.phase:last-child{border-bottom:none}
+.phase .num{flex:0 0 30px;height:30px;border-radius:9px;background:var(--soft);color:var(--blue);
+  display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+.phase .txt{flex:1}
+.phase .txt b{font-size:14px}
+.phase .txt span{display:block;color:var(--muted);font-size:13px}
+.phase .st{font-size:11.5px;white-space:nowrap;padding-top:5px}
+.st.done{color:var(--ok);font-weight:600}
+.st.plan{color:var(--muted)}
+footer{padding:30px 0 50px;color:var(--muted);font-size:12.5px;text-align:center;border-top:1px solid var(--line)}
+.search{width:100%;padding:8px 12px;border-radius:9px;border:1px solid var(--line);
+  background:var(--card);color:var(--fg);font-size:13px;margin-bottom:10px}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+
+<nav><div class="wrap">
+  <a class="logo" href="../"><i></i>deepsleep</a>
+  <span class="ver">v3.2.0</span>
+  <span class="sp"></span>
+  <a class="lnk" href="../#download">下载</a>
+  <a class="lnk" href="../#shots">界面</a>
+  <a class="lnk" href="../#superagent">架构</a>
+  <a class="lnk" href="../">← 返回首页</a>
+</div></nav>
+
+<header class="page"><div class="wrap">
+  <div class="badge">完整帮助 · 3.2.0</div>
+  <h1>deepsleep 帮助文档</h1>
+  <p class="lead">从下载安装到配置模型、从第一次对话到自己做工具与皮肤——这一页覆盖所有使用方式。
+     左边是目录，右上角 <span class="kbd">Ctrl</span> + <span class="kbd">F</span> 可以直接搜关键词。</p>
+  <a class="btn pri" href="../#download">⬇ 去下载</a>
+  <a class="btn gho" href="../app/">💬 先试网页版</a>
+  <a class="btn gho" href="https://github.com/zhdezs/deepsleep" target="_blank" rel="noreferrer">GitHub 源码</a>
+</div></header>
+
+<div class="wrap layout">
+<aside class="toc">
+  <b>目录</b>
+  <input class="search" id="q" placeholder="筛选目录…" autocomplete="off">
+  <div id="tocLinks">
+    <a href="#start">0 · 五分钟上手</a>
+    <a href="#choose">1 · 选哪种形态</a>
+    <a href="#install-win">2 · 安装 · Windows</a>
+    <a href="#install-gitee" class="sub">Gitee 分片 + 合并器</a>
+    <a href="#install-linux" class="sub">Linux / macOS</a>
+    <a href="#install-core" class="sub">内核版 · 网页控电脑</a>
+    <a href="#install-web" class="sub">网页版（零安装）</a>
+    <a href="#ota" class="sub">升级 / 卸载</a>
+    <a href="#model">3 · 配置模型</a>
+    <a href="#ui">4 · 界面导览</a>
+    <a href="#modes">5 · 工作模式与极速模式</a>
+    <a href="#tools">6 · 内置工具清单</a>
+    <a href="#ext">7 · 扩展包 .dslt / .dslp</a>
+    <a href="#theme">8 · 主题与皮肤</a>
+    <a href="#kb">9 · 知识库</a>
+    <a href="#memory">10 · 记忆 / 技能 / 拆分任务</a>
+    <a href="#remote">11 · 超级连接与超远程提问</a>
+    <a href="#arch">12 · SuperAgent 架构</a>
+    <a href="#data">13 · 数据位置与隐私</a>
+    <a href="#cli">14 · 命令行参数</a>
+    <a href="#faq">15 · 故障排查</a>
+  </div>
+</aside>
+
+<main>
+
+<!-- 0 -->
+<section id="start">
+  <h2>0 · 五分钟上手</h2>
+  <p class="sub">最快路径：Windows 用户下安装版 → 双击装好 → 直接开聊（不用先配 Key）。</p>
+  <div class="step"><b class="n">1</b><div><b>下载</b>：到<a href="../#download">下载页</a>，海外选 GitHub 的 <code>deepsleep-Setup.exe</code>；
+    国内选 Gitee，下两个 <code>.part</code> 分片 + <code>deepsleep-merge-setup.exe</code> 合并器。</div></div>
+  <div class="step"><b class="n">2</b><div><b>安装</b>：双击 Setup（Gitee 用户先双击合并器，它会自动拼好并启动安装）。
+    安装程序会顺手把 <code>.dslt</code> / <code>.dslp</code> 关联到 deepsleep，以后双击扩展包就自动装。</div></div>
+  <div class="step"><b class="n">3</b><div><b>开聊</b>：首次启动内置一把免费 Key，直接输入「帮我看看这个文件夹里有什么」就能用。
+    想用更快的模型，去 ⚙ 设置 → 模型 填自己的 API Key。</div></div>
+  <div class="step"><b class="n">4</b><div><b>让它动手</b>：默认是 <code>work</code> 模式，跑命令前会先弹确认；
+    想全自动就把模式换成 <code>boom</code>。纯聊天用 <code>chat</code>。</div></div>
+  <div class="ok">✅ 不用注册、不用登录、不用配环境。会话、记忆、Key 全存在你自己电脑上。</div>
+  <div class="warn">⚠️ 第一次运行 Windows 可能提示「Windows 已保护你的电脑」：点「更多信息」→「仍要运行」即可（未做代码签名）。</div>
+</section>
+
+<!-- 1 -->
+<section id="choose">
+  <h2>1 · 选哪种形态</h2>
+  <p class="sub">同一份内核，四种外壳。按你的场景挑一个。</p>
+  <table>
+    <tr><th>形态</th><th>适合谁</th><th>能动手（文件 / 命令 / 搜索）</th><th>安装</th></tr>
+    <tr><td><b>桌面客户端</b><br><span class="tag">推荐</span></td><td>日常主力，Windows / Linux 桌面</td><td>✅ 全部</td><td>安装版或便携版</td></tr>
+    <tr><td><b>网页版</b></td><td>只想聊天、看图、画图；公共电脑</td><td>❌ 纯前端</td><td>零安装，浏览器打开</td></tr>
+    <tr><td><b>内核版 + 网页</b></td><td>不想装完整客户端 / 手机遥控本机 / 服务器</td><td>✅ 全部</td><td>解压即用</td></tr>
+    <tr><td><b>万能安装程序</b></td><td>给不懂命令行的朋友装 Linux / macOS</td><td>✅ 全部</td><td>一个小脚本自动判断平台</td></tr>
+  </table>
+  <div class="note">桌面客户端<b>自带内核服务</b>：设置里点一下「超远程提问」，手机在外网也能连上来操控这台电脑，和内核版是同一份实现，不缺功能。</div>
+</section>
+
+<!-- 2 -->
+<section id="install-win">
+  <h2>2 · 安装方式（全）</h2>
+
+  <h3>Windows · 桌面客户端</h3>
+  <table>
+    <tr><th>方式</th><th>文件</th><th>怎么做</th></tr>
+    <tr><td><b>安装版</b>（推荐）</td><td><code>deepsleep-Setup.exe</code></td><td>双击 → 自动装到本机、建开始菜单、写文件关联、支持 OTA 静默升级</td></tr>
+    <tr><td><b>便携版</b></td><td><code>deepsleep-3.2.0-win-x64.zip</code></td><td>解压到任意文件夹 → 双击 <code>deepsleep.exe</code>。不写注册表，可放 U 盘</td></tr>
+    <tr><td><b>网页版</b></td><td>无需文件</td><td>直接打开 <a href="../app/">网页版</a></td></tr>
+    <tr><td><b>内核版</b></td><td><code>deepsleep-core-3.2.0-win-x64.zip</code></td><td>解压 → <code>deepsleep-core.exe</code> → 浏览器打开提示的地址</td></tr>
+  </table>
+  <p>要求 Windows 10 1809 以上 / Windows 11，x64。自包含发布，<b>不需要先装 .NET</b>；WebView2 运行时缺失时安装程序会引导补装。</p>
+
+  <h3 id="install-gitee">Gitee 分片下载 + 合并器（国内用户看这里）</h3>
+  <p class="sub">Gitee 单附件上限 100 MB，安装包被切成两片，<b>三样都要下</b>。</p>
+  <div class="flow">
+    <span class="box">deepsleep-Setup.exe.part1</span><span class="arw">＋</span>
+    <span class="box">deepsleep-Setup.exe.part2</span><span class="arw">＋</span>
+    <span class="box">deepsleep-merge-setup.exe</span><span class="arw">→</span>
+    <span class="box">deepsleep-Setup.exe</span>
+  </div>
+  <div class="step"><b class="n">1</b><div>在<a href="../#download">下载页</a>把「下载源」切到 <b>Gitee</b>，下载 part1、part2 和合并器，<b>放进同一个文件夹</b>。</div></div>
+  <div class="step"><b class="n">2</b><div>双击 <code>deepsleep-merge-setup.exe</code>。它会自动找齐分片、按序拼接、校验 SHA-256，拼好后直接启动安装程序。</div></div>
+  <div class="step"><b class="n">3</b><div>看到 <code>a60f607e…</code> 之类的校验值和「启动安装程序」就说明成功了。合并出来的 <code>deepsleep-Setup.exe</code> 和 GitHub 整包<b>字节一致</b>。</div></div>
+  <div class="warn">⚠️ 分片缺一片、编号不连续、或者被浏览器改了名字（<code>(1)</code> 后缀），合并器会明确报错并拒绝生成一个坏 exe——按提示改回名字再试。</div>
+
+  <h3 id="install-linux">Linux / macOS</h3>
+  <table>
+    <tr><th>系统</th><th>文件 / 命令</th></tr>
+    <tr><td>Ubuntu / Debian x64</td><td><code>sudo apt install ./deepsleep_3.2.0_amd64.deb</code>（ARM64 用 <code>_arm64.deb</code>）</td></tr>
+    <tr><td>Fedora / RHEL / openSUSE</td><td><code>sudo dnf install ./deepsleep-3.2.0-1.x86_64.rpm</code>（ARM64 用 <code>aarch64.rpm</code>）</td></tr>
+    <tr><td>任意 Linux（免安装）</td><td>解压 <code>deepsleep-3.2.0-linux-x64.tar.gz</code> → <code>./deepsleep.sh</code> 直接开原生窗口；服务器加 <code>--headless</code> 只跑服务</td></tr>
+    <tr><td>macOS（Apple / Intel）</td><td>解压 <code>deepsleep-core-3.2.0-osx-arm64.tar.gz</code>（或 <code>-osx-x64</code>）→ <code>./deepsleep.sh</code></td></tr>
+    <tr><td>不确定选哪个</td><td>下 <code>deepsleep-universal-3.2.0.zip</code>，跑里面的脚本自动识别系统并下载对应包</td></tr>
+  </table>
+  <p>Linux 桌面原生窗口需要 <code>libwebkit2gtk-4.1-0</code>。macOS 目前只发行内核版——<code>.dmg</code> 已下线（Apple 芯片上会被 Gatekeeper 判成「已损坏」）。</p>
+
+  <h3 id="install-core">内核版：只装一个 Core，用浏览器控电脑</h3>
+  <div class="step"><b class="n">1</b><div>下载并解压 <code>deepsleep-core-3.2.0-win-x64.zip</code>（Linux / macOS 对应 <code>.tar.gz</code>）。</div></div>
+  <div class="step"><b class="n">2</b><div>Windows 双击 <code>deepsleep-core.exe</code>；Linux / macOS 执行 <code>./deepsleep.sh</code>。默认进入命令行对话。</div></div>
+  <div class="step"><b class="n">3</b><div>用浏览器打开 <code>core/</code> 网页端，填本机地址与配对令牌即可远程操控；同一局域网手机也能连。</div></div>
+  <div class="step"><b class="n">4</b><div>想在<b>外网</b>用，加 <code>--tunnel</code> 开会生成免注册的公网地址 + 带令牌的配对链接，存成手机书签即可。</div></div>
+  <div class="note">内核只监听 <code>127.0.0.1</code> 并要求令牌，外网直连进不来。<b>配对链接就是钥匙</b>，别截图外传。用完关窗口即停。</div>
+
+  <h3 id="install-web">网页版（零安装）</h3>
+  <p>直接打开 <a href="../app/">app/</a>，内置免费 Key，开箱即聊，聊天记录只存浏览器 localStorage。
+     它是纯前端，<b>不能</b>读写文件、跑命令、联网抓取——这些能力需要内核版或桌面客户端。</p>
+
+  <h3 id="ota">升级 / 卸载</h3>
+  <ul>
+    <li><b>升级</b>：客户端自己检查新版本（国内走 Gitee、国外走 GitHub），点一下自动下载安装并重启。也可以在设置里手动「检查更新」。</li>
+    <li><b>卸载</b>：Windows 设置 → 应用 → deepsleep → 卸载；便携版直接删文件夹。卸载会保留 <code>data\</code> 里的会话与记忆，想彻底清掉再手动删。</li>
+    <li><b>降级 / 多版本共存</b>：用便携版解压到不同目录即可，互不干扰。</li>
+  </ul>
+</section>
+
+<!-- 3 -->
+<section id="model">
+  <h2>3 · 配置模型</h2>
+  <p class="sub">开箱自带免费 Key；想更快、更稳或换模型，去 ⚙ 设置 → 「模型」页。</p>
+  <div class="grid">
+    <div class="card"><h4>① 什么都不配（默认）</h4><p>内置免费 Key 自动接入：GLM-4.7-Flash 聊天、GLM-4.6V-Flash 看图、CogView-3-Flash 画图。打开就能用，缺点是有并发限流。</p></div>
+    <div class="card"><h4>② 填自己的 API Key</h4><p>设置 → 模型：选平台（智谱 / 硅基流动 / OpenAI / 自定义），填 <code>API 地址</code>、<code>Key</code>、<code>模型名</code>、<code>协议格式</code>。支持一键联网拉模型列表、先「测试连接」再保存。</p></div>
+    <div class="card"><h4>③ 一键绑定</h4><p>点「一键绑定」走 OAuth 授权页，拿到的 Key 直接落盘，不用手抄。按供应商保存配置档案，之后可以一键切回某一家。</p></div>
+    <div class="card"><h4>④ 本地模型（Ollama）</h4><p>打开「本地模型」开关，填 Ollama 地址与模型名；设置里还能一键引导安装 Ollama。完全离线，不上传任何对话。</p></div>
+  </div>
+  <h3>图像 / 视觉 / 视频是独立配置</h3>
+  <p>⚙ 设置里有「图像」「视频」页：生成图片、看懂图片、生成短视频各自的接口地址、Key、模型名都能单独换，可复用同一把 Key，也能分别指向不同网关。</p>
+  <ul>
+    <li><b>看图</b>：主模型是多模态时图片直接作为输入（模型会自动跳过「看图」工具）；不是多模态才走独立的视觉模型。</li>
+    <li><b>生成视频</b>：不在免费额度内，需要自己的 Key。支持同步返回 / 提交后轮询 / 自定义查询地址模板。</li>
+  </ul>
+  <div class="warn">⚠️ 免费模型会限流（429）。人多了排队，填自己的 Key 或稍等重试即可。</div>
+</section>
+
+<!-- 4 -->
+<section id="ui">
+  <h2>4 · 界面导览</h2>
+  <table>
+    <tr><th>位置</th><th>作用</th></tr>
+    <tr><td>顶栏 <b>🧠 模型</b></td><td>直接切换当前模型，不用进设置</td></tr>
+    <tr><td>顶栏 <b>☀️ / 🌙</b></td><td>切换浅色 / 深色模式，<b>整套 CSS 即时换掉</b>（见第 8 节）</td></tr>
+    <tr><td>顶栏 <b>🔗</b></td><td>超级连接：配对码、远程桌面</td></tr>
+    <tr><td>顶栏 <b>⚙</b></td><td>设置，分 5 页：绑定平台 / 图像与视频 / 智能体 / <b>🧩 扩展</b> / 其他</td></tr>
+    <tr><td>左栏</td><td>会话列表、搜索、新建；底部「🧠 记忆」「🧩 技能」</td></tr>
+    <tr><td>输入区</td><td><span class="kbd">Enter</span> 发送 · <span class="kbd">Shift</span>+<span class="kbd">Enter</span> 换行 · <span class="kbd">Esc</span> 停止；可拖入图片和文件</td></tr>
+    <tr><td>输入区工具开关</td><td>⚡ 极速 / 🌐 联网 / 🖥 本地 / 模式下拉（chat · work · boom）</td></tr>
+    <tr><td>右下角 <b>🛠 N 个工具</b></td><td>列出全部内置 + 已安装的自定义工具，点一下跳到设置 → 扩展</td></tr>
+    <tr><td>「干活过程」卡片</td><td>任务完成后把过程折叠成一张卡；点开就是完整的工具调用与对话，折叠时只是隐藏</td></tr>
+    <tr><td>桌宠</td><td>可拖动的浮窗，不开主窗口也能派活；右键菜单可隐藏</td></tr>
+  </table>
+  <div class="note">快捷键与操作都写在输入框 placeholder 里，不用背。</div>
+</section>
+
+<!-- 5 -->
+<section id="modes">
+  <h2>5 · 工作模式与极速模式</h2>
+  <table>
+    <tr><th>模式</th><th>行为</th><th>适合</th></tr>
+    <tr><td><code>chat</code></td><td>纯聊天，不调用干活工具</td><td>问答、写作、翻译</td></tr>
+    <tr><td><code>work</code>（默认）</td><td>能调全部工具，跑命令 / 写文件前<b>先弹确认</b></td><td>日常，最稳</td></tr>
+    <tr><td><code>boom</code></td><td>全自动，任何命令和文件操作都不问</td><td> trusted 环境、批量任务</td></tr>
+  </table>
+  <h3>⚡ 极速模式</h3>
+  <p>只压缩人设、砍掉冗余推理步骤，<b>依然能调用全部普通工具</b>（运行命令、Python、文件、搜索、深度研究、看图、画图、操作电脑、自定义工具…）。
+     但为了真的「极速」，它<b>不接知识库</b>：不注入目录索引、不列查询工具、误调直接拒绝。</p>
+  <div class="grid">
+    <div class="card"><h4><span class="tag">极速模式</span>有</h4><p>完整工具参数说明、自定义工具清单、长期记忆、扩展创作规范、工具调用能力</p></div>
+    <div class="card"><h4><span class="tag gray">极速模式</span>没有</h4><p>知识库检索、最终回复阶段的 JSON 约束与工具清单（省 token、更快出字）</p></div>
+  </div>
+  <div class="note">需要查软件自身的格式规范、参数细节时用<b>普通模式 + 「查知识库」</b>；要快就开极速。</div>
+</section>
+
+<!-- 6 -->
+<section id="tools">
+  <h2>6 · 内置工具清单</h2>
+  <p class="sub">模型会自己判断该用哪个，你不用手动点。右下角「🛠 N 个工具」可以随时查看全集。</p>
+  <table>
+    <tr><th>类别</th><th>工具</th></tr>
+    <tr><td>动手</td><td>运行命令、运行 Python 脚本、读取文件、写入文件、打开文件、<b>操作电脑</b>（鼠标键盘，每步截图交模型决策）</td></tr>
+    <tr><td>信息</td><td>网络搜索、深度研究（多轮搜索 + 抓正文 + 出报告）、抓取网页、看图</td></tr>
+    <tr><td>创作</td><td>生成图片、生成视频</td></tr>
+    <tr><td>记忆与扩展</td><td>记住、删除记忆、<b>查知识库</b>、安装扩展、制作扩展</td></tr>
+    <tr><td>编排</td><td>拆分任务（主助手自己把大任务拆成多个子 Agent 并行执行，最后汇总）</td></tr>
+  </table>
+  <div class="note"><b>操作电脑</b>：可以点按钮、填表单、操作别的软件。每一步先确认（work 模式），执行后截图交给视觉模型判断窗口标题、可点元素与相对坐标，再决定下一步。失败/超时会如实说明，不会假装完成。</div>
+  <div class="warn">⚠️ 工具是本机能力，不是沙箱。<code>boom</code> 模式下模型可以无确认地跑任何命令，请只在自己的机器上开。</div>
+</section>
+
+<!-- 7 -->
+<section id="ext">
+  <h2>7 · 扩展包 <code>.dslt</code> / <code>.dslp</code></h2>
+  <p class="sub">两种包本质都是 zip：工具包加能力，皮肤包改外观。装过 deepsleep 的电脑，<b>双击即装</b>。</p>
+  <div class="grid">
+    <div class="card"><h4>🧩 <code>.dslt</code> 自定义工具</h4><p>根目录 <code>manifest.json</code> + 入口脚本。指定 <code>python</code> / <code>cmd</code> / <code>powershell</code> / <code>node</code> 运行时，输入通过第 1 个参数或 <code>DEEPSLEEP_TOOL_INPUT</code> 传入，stdout 直接当结果。例：科学计算器、单位换算、批量改名。</p></div>
+    <div class="card"><h4>🎨 <code>.dslp</code> 皮肤包</h4><p>根目录 <code>theme.json</code> + 可选 CSS。改配色变量、圆角、背景，还能写 <code>@keyframes</code> 做自定义动效。皮肤是<b>叠加层</b>，不会替换亮/暗模式自带的 CSS。</p></div>
+  </div>
+  <h3>三种获得方式</h3>
+  <div class="step"><b class="n">1</b><div><b>双击安装</b>（最省事）：安装程序已把两种扩展名关联到 deepsleep。双击 <code>.dslt</code> / <code>.dslp</code> 就自动装；应用正在运行时不会弹第二个窗口，切回窗口会自动重新扫盘。也可右键「打开方式 → deepsleep」。</div></div>
+  <div class="step"><b class="n">2</b><div><b>让 AI 现场做</b>：直接说「给我做一个科学计算器工具」或「把界面换成深海蓝紫风格」。软件会预先灌注完整的扩展格式规范，模型能自己写文件 → 打包 → 安装，一条龙。</div></div>
+  <div class="step"><b class="n">3</b><div><b>手搓</b>：建个文件夹写好清单和脚本，用「制作扩展」工具打包，或手动压成 zip 后改扩展名。完整字段说明见 <a href="https://github.com/zhdezs/deepsleep/blob/main/docs/extensions.md" target="_blank" rel="noreferrer">docs/extensions.md</a>。</div></div>
+  <h3>管理</h3>
+  <p>⚙ 设置 → <b>🧩 扩展</b>：工具可以逐个启用 / 停用 / 删除，皮肤可以「使用」或「关闭叠加皮肤」。
+     也可以直接把 <code>.dslt</code> / <code>.dslp</code> 路径粘到「安装扩展包」输入框里点安装。</p>
+  <div class="note">装好的工具立刻进入模型的工具清单（右下角数量会变）。如果没刷新，切一下窗口焦点即可触发自动重扫。</div>
+</section>
+
+<!-- 8 -->
+<section id="theme">
+  <h2>8 · 主题与皮肤（3.2.0 新）</h2>
+  <p class="sub">亮色和暗色<b>各有一整套不同的 CSS</b>，不是同一套换几个颜色变量。</p>
+  <table>
+    <tr><th>模式</th><th>内置 CSS</th><th>长什么样</th></tr>
+    <tr><td>深色</td><td><code>theme-dark.css</code> · dsh 深眠</td><td>漂移氛围光、星点闪烁、流光用户气泡、工具光条、输入框聚焦光环</td></tr>
+    <tr><td>浅色</td><td><code>theme-light.css</code> · dsh 晨光</td><td>雾白画布、墨绿强调色、柔和玻璃高光、克制的淡入动效</td></tr>
+  </table>
+  <p>点右上角 ☀️ / 🌙 <b>整套启停、即时生效</b>，不用重载；两套都尊重系统的「减少动态效果」设置，上次选择会被记住。</p>
+  <h3>皮肤是叠加层</h3>
+  <ul>
+    <li>装了 <code>.dslp</code> 皮肤后，它盖在当前模式之上；<b>切主题不会把它换掉</b>，皮肤也不会反过来改主题。</li>
+    <li>觉得配色不搭，点「关闭叠加皮肤，恢复当前模式默认」就回到上面两套之一。</li>
+    <li>内置的两套 CSS 不是扩展包，不需要也不能「安装 / 删除」。</li>
+  </ul>
+  <div class="note">想改自带样式？直接编辑 <code>ui/theme-dark.css</code> / <code>ui/theme-light.css</code>；两套都是全局选择器，只启用其中一份，改起来互不干扰。</div>
+</section>
+
+<!-- 9 -->
+<section id="kb">
+  <h2>9 · 知识库（3.2.0 新）</h2>
+  <p>随程序分发 7 章内置文档：<b>总览 · 工具参数手册 · 扩展格式规范 · 文本与输出规范 · 界面与设置 · 发布与排错 · Session 与架构</b>。
+     目的是让模型在回答「deepsleep 自己怎么用 / .dslt 该怎么写」时有据可查，而不是凭空编字段。</p>
+  <ul>
+    <li>普通模式会拿到<b>目录索引</b>，需要时用「查知识库」按主题检索相关章节（不灌全文，避免撑爆上下文）。</li>
+    <li>可以把自己写的 <code>.md</code> 放进 <code>data/knowledge/</code>，支持 front matter 的标题 / 摘要 / 关键词，会自动纳入检索。</li>
+    <li><b>极速模式完全不接知识库</b>：不注入索引、不列工具名、误调直接拒绝——查一轮就不极速了。</li>
+  </ul>
+</section>
+
+<!-- 10 -->
+<section id="memory">
+  <h2>10 · 记忆 / 技能 / 拆分任务</h2>
+  <div class="grid g3">
+    <div class="card"><h4>🧠 长期记忆</h4><p>告诉它「我习惯用 VS Code」「项目在 D:\work」，它会调用「记住」存下来，之后每轮自动带上。说「忘掉第 3 条」就调「删除记忆」。左栏「🧠 记忆」可查看管理。</p></div>
+    <div class="card"><h4>🧩 技能 / 模板</h4><p>把常做的事存成技能与快捷指令，一句话触发整套流程。只有你明确点名技能时才会注入说明，不做关键词硬塞。</p></div>
+    <div class="card"><h4>⚡ 拆分任务</h4><p>大任务由主助手自己拆成多个子 Agent 并行执行（命令 / Python / 文件 / 搜索 / 研究 / 画图），最后汇总结果，不用手动切标签页。</p></div>
+  </div>
+</section>
+
+<!-- 11 -->
+<section id="remote">
+  <h2>11 · 超级连接与超远程提问</h2>
+  <h3>🔗 超级连接（远程桌面）</h3>
+  <p>点顶栏 🔗 拿一串 6 位配对码，两台设备一连：同网段走点对点直连，不同网络自动开临时加密隧道。
+     连上后能在浏览器里看对方画面、动鼠标键盘，手机触屏也行。</p>
+  <h3>📡 超远程提问（内网穿透）</h3>
+  <p>桌面客户端在「设置 → 超远程提问」点一下开隧道；内核版加 <code>--tunnel</code> 一条命令搞定。
+     生成的是免注册公网地址 + 带令牌的配对链接，手机存成书签，人在外面也能指挥家里这台电脑。</p>
+  <div class="warn">⚠️ 配对链接里就带着令牌，<b>等于这台电脑的钥匙</b>：不要截图发给别人、不要贴到公开场合。用完关掉隧道。</div>
+</section>
+
+<!-- 12 -->
+<section id="arch">
+  <h2>12 · SuperAgent 架构 <span class="tag">3.2.0 卖点</span></h2>
+  <p class="sub">deepsleep 正在从「一个会调工具的聊天窗口」升级为一套常驻、可调度、可自愈的多 Agent 系统。</p>
+  <div class="flow">
+    <span class="box">环境事件 Trigger</span><span class="arw">→</span>
+    <span class="box">两级过滤 Fast / Slow</span><span class="arw">→</span>
+    <span class="box">Router（共享上下文）</span><span class="arw">→</span>
+    <span class="box">Worker Sessions（上下文隔离）</span><span class="arw">→</span>
+    <span class="box">Session 数据库持久化</span>
+  </div>
+  <p>旁路还有：订阅直通、多信道交互（IM / GitHub / 邮件）、轻量 daemon 执行环境、Watchdog 外部自愈。
+     核心思路是——<b>把「上下文」和「执行」彻底分开</b>：Router 只管理解与路由，Worker 各干各的互不污染，状态全部落库，卡死了有外部看门狗拉起来。</p>
+
+  <h3>为什么值得现在就用</h3>
+  <div class="grid">
+    <div class="card"><h4>已经在 3.2.0 落地</h4><p>会话不再是一个截到 4000 字的快照文件，而是带 <code>kind</code> / <code>parentSid</code> / <code>state</code> / 时间戳 / 摘要的独立记录；原子写入、旧数据自动迁移、可按状态查询。这是 Router 和 Watchdog 的地基。</p></div>
+    <div class="card"><h4>已经在 3.2.0 落地</h4><p>「拆分任务」已经让主助手自己拆出多个子 Agent 并行干活、最后汇总；会话按 sid 隔离。等于 Worker 的执行雏形先跑起来了。</p></div>
+  </div>
+
+  <h3>分期路线</h3>
+  <div class="card">
+    <div class="phase"><span class="num">1</span><div class="txt"><b>Session 数据库</b><span>data/sessions/&lt;sid&gt;.json + index.json，原子写、迁移、sessionList / sessionGet 查询 API</span></div><span class="st done">✅ 3.2.0 已发布</span></div>
+    <div class="phase"><span class="num">2</span><div class="txt"><b>Router + Worker Session 分层</b><span>抽常驻 Router 持有共享上下文与路由，Worker 上下文隔离；复用「拆分任务」执行器</span></div><span class="st plan">规划中</span></div>
+    <div class="phase"><span class="num">3</span><div class="txt"><b>两级过滤 + Trigger</b><span>Fast Path 直通 Worker、Slow Path 走 Router；Trigger 先做定时 / 文件 / 剪贴板事件</span></div><span class="st plan">规划中</span></div>
+    <div class="phase"><span class="num">4</span><div class="txt"><b>Watchdog</b><span>独立监控卡死 / 超时会话，基于 state 字段标记与自愈</span></div><span class="st plan">规划中</span></div>
+    <div class="phase"><span class="num">5</span><div class="txt"><b>多信道 + daemon</b><span>复用超级连接隧道接 IM / GitHub / 邮件，工具执行抽到轻量 daemon</span></div><span class="st plan">规划中</span></div>
+  </div>
+  <div class="note">这一层对普通用户是<b>无感</b>的：界面和用法不变，但长任务更稳、断点可续、多 Agent 之间不再互相污染上下文。开发者可以看 <code>assets/knowledge/06-Session与架构.md</code>。</div>
+</section>
+
+<!-- 13 -->
+<section id="data">
+  <h2>13 · 数据位置与隐私</h2>
+  <table>
+    <tr><th>内容</th><th>位置</th></tr>
+    <tr><td>会话 / 配置 / 记忆</td><td><code>&lt;安装目录&gt;\data\</code>（便携版在解压目录）</td></tr>
+    <tr><td>会话记录（3.2.0）</td><td><code>data\sessions\&lt;sid&gt;.json</code> + <code>index.json</code></td></tr>
+    <tr><td>已装扩展</td><td><code>data\tools\</code> / <code>data\skins\</code> / <code>extensions.json</code></td></tr>
+    <tr><td>自建知识文档</td><td><code>data\knowledge\</code></td></tr>
+    <tr><td>生成图片 / 研究报告 / 截图</td><td><code>data\images\</code> / <code>data\research\</code> / <code>data\shots\</code></td></tr>
+    <tr><td>排错日志</td><td><code>data\ui.log</code>、<code>ext.log</code>、<code>app-install.log</code>、<code>crash.log</code></td></tr>
+    <tr><td>初始提示词</td><td><code>data\AGENT.md</code>（所有对话共享，只能在设置里改）</td></tr>
+    <tr><td>网页版</td><td>浏览器 localStorage，不落服务器</td></tr>
+  </table>
+  <p>聊天记录<b>不会上传</b>；只有发给模型的那段对话会走 API。软件不收集任何遥测数据。客户端只检查版本时访问 GitHub / Gitee。</p>
+</section>
+
+<!-- 14 -->
+<section id="cli">
+  <h2>14 · 命令行参数（内核版 / 高级）</h2>
+  <table>
+    <tr><th>参数</th><th>作用</th></tr>
+    <tr><td><code>--headless</code></td><td>只跑内核服务，不开窗口（服务器 / SSH 场景）</td></tr>
+    <tr><td><code>--tunnel</code></td><td>开内网穿透，生成带令牌的公网配对链接</td></tr>
+    <tr><td><code>--install-ext "&lt;路径&gt;"</code></td><td>安装 .dslt / .dslp 后退出（双击扩展包走的就是这条）</td></tr>
+    <tr><td><code>--port &lt;端口&gt;</code></td><td>指定内核服务监听端口</td></tr>
+  </table>
+  <pre><code># Linux / macOS 服务器：只跑服务，手机用浏览器连
+./deepsleep.sh --headless --tunnel
+
+# 命令行直接装一个扩展包
+deepsleep-core.exe --install-ext "D:\work\科学计算器.dslt"</code></pre>
+</section>
+
+<!-- 15 -->
+<section id="faq">
+  <h2>15 · 故障排查</h2>
+  <table>
+    <tr><th>现象</th><th>怎么办</th></tr>
+    <tr><td>按钮点了没反应 / 界面没变化</td><td>先按 <span class="kbd">Ctrl</span>+<span class="kbd">R</span> 重载界面（WebView2 偶尔吃缓存）；再看 <code>data\ui.log</code>。发版后如果设置页内容错位，多半是跑着旧 DLL，重新装一次即可。</td></tr>
+    <tr><td>双击 <code>.dslt</code> 没装进去</td><td>右键 →「打开方式」→ 选 deepsleep 并设为默认；或在设置 → 扩展里粘路径手动装。日志看 <code>data\app-install.log</code>。</td></tr>
+    <tr><td>Gitee 合并器报「分片缺失 / 编号不连续」</td><td>确认 part1、part2、合并器在同一个文件夹，且文件名没有 <code>(1)</code> 之类的下载后缀。</td></tr>
+    <tr><td>429 / 限流</td><td>免费模型并发限制，稍等重试或填自己的 Key。</td></tr>
+    <tr><td>生成视频失败</td><td>视频不在免费额度里，需要自己的 Key；检查「设置 → 视频」里的接口地址、模型名、轮询方式。</td></tr>
+    <tr><td>模型不调用工具 / 只会聊天</td><td>确认模式不是 <code>chat</code>；极速模式也能调工具。模型本身太弱时换成支持 function calling 的。</td></tr>
+    <tr><td>「操作电脑」截图是空的</td><td>需要真实交互桌面会话；远程 / 服务会话里没有可截图的桌面（屏幕宽度为 0）。</td></tr>
+    <tr><td>皮肤点了没生效</td><td>3.2.0 起皮肤是叠加层，不会再重载整页。看 <code>data\ext.log</code> 确认命令到了内核；内置的两套主题 CSS 不需要「使用」。</td></tr>
+    <tr><td>Linux 打不开窗口</td><td>装 <code>libwebkit2gtk-4.1-0</code>；纯服务器加 <code>--headless</code> 用浏览器连。</td></tr>
+    <tr><td>macOS 提示「已损坏」</td><td>只从 <code>.dmg</code> 安装会遇到（已下线）。改用 <code>deepsleep-core-*-osx-*.tar.gz</code> 内核版。</td></tr>
+  </table>
+  <div class="card">
+    <h4>还没解决？</h4>
+    <p>带上下面的信息去 <a href="https://github.com/zhdezs/deepsleep/issues" target="_blank" rel="noreferrer">GitHub Issues</a> 提一下：
+       版本号、操作系统、复现步骤，以及 <code>data\ui.log</code> / <code>ext.log</code> / <code>crash.log</code> 的最后几十行。
+       Gitee 用户也可以在 <a href="https://gitee.com/zhdezs/deepsleep/issues" target="_blank" rel="noreferrer">Gitee Issues</a> 反馈。</p>
+  </div>
+</section>
+
+</main>
+</div>
+
+<footer>
+  <p>deepsleep 3.2.0 · <a href="../">返回首页</a> ·
+     <a href="../#download">下载</a> ·
+     <a href="https://github.com/zhdezs/deepsleep" target="_blank" rel="noreferrer">GitHub</a> ·
+     <a href="https://gitee.com/zhdezs/deepsleep" target="_blank" rel="noreferrer">Gitee</a> ·
+     <a href="../app/">网页版</a></p>
+  <p>模型服务由第三方提供 · 本页不收集任何数据</p>
+</footer>
+
+<script>
+(function(){
+  // 目录筛选
+  var q = document.getElementById('q'), links = document.querySelectorAll('#tocLinks a');
+  q.addEventListener('input', function(){
+    var s = q.value.trim().toLowerCase();
+    for (var i=0;i<links.length;i++) links[i].classList.toggle('hidden', !!s && links[i].textContent.toLowerCase().indexOf(s) < 0);
+  });
+  // 滚动时高亮当前章节
+  var secs = document.querySelectorAll('main section');
+  function hi(){
+    var y = window.scrollY + 100, cur = '';
+    for (var i=0;i<secs.length;i++) if (secs[i].offsetTop <= y) cur = secs[i].id;
+    for (var j=0;j<links.length;j++) links[j].classList.toggle('on', links[j].getAttribute('href') === '#'+cur);
+  }
+  window.addEventListener('scroll', hi, {passive:true}); hi();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,98 @@
+/* deepsleep · 浅色模式基础样式 · dsh · 晨光 v1.0.0
+   这是该显示模式的【固有 CSS】，不是可安装皮肤：切换深浅色时整套启停。
+   下方变量块与 ui/style.css 里的 body.dark / body.light 同优先级，因后加载而生效；
+   用户安装的 .dslp 皮肤通过 #skinStyle (body.skin-on) 叠加在这之上。 */
+body.light {
+  --bg: #f4f7f6;
+  --panel: #ffffff;
+  --side: #edf2f0;
+  --text: #202c29;
+  --muted: #697873;
+  --border: #dce5e1;
+  --bubble: #ffffff;
+  --self: linear-gradient(135deg, #167c68 0%, #259b7e 100%);
+  --self-text: #ffffff;
+  --input: #ffffff;
+  --hover: #e7efec;
+  --sel: #d8e9e3;
+  --card: #ffffff;
+  --code: #f0f4f2;
+  --shadow: 0 10px 30px rgba(31, 57, 48, 0.10);
+  --chipbg: #e8efec;
+  --chipon: #167c68;
+  --ring: #258f78;
+  --radius: 12px;
+}
+
+/* ↓ 以下为原始皮肤包内的 CSS，选择器保持原样 */
+/* dsh light: restrained motion and clear surfaces */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(760px 480px at 8% 0%, rgba(49, 154, 123, 0.075), transparent 65%),
+    radial-gradient(680px 420px at 96% 100%, rgba(232, 160, 105, 0.07), transparent 65%);
+}
+
+@keyframes morning-rise {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.row { animation: morning-rise 220ms ease both; }
+
+.bubble {
+  border: 1px solid rgba(45, 83, 69, 0.08);
+  box-shadow: 0 2px 8px rgba(31, 57, 48, 0.045);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+.bubble:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(31, 57, 48, 0.10);
+}
+.row.self .bubble {
+  border: 1px solid rgba(12, 93, 72, 0.16);
+  box-shadow: 0 3px 12px rgba(22, 124, 104, 0.16);
+}
+.bubble.tool {
+  border-left: 3px solid #258f78;
+  background: #f0f6f3;
+}
+@keyframes morning-think {
+  from { background-position: 130% 0; }
+  to { background-position: -90% 0; }
+}
+.bubble.thinking {
+  border: 1px dashed rgba(75, 120, 103, 0.35);
+  background-image: linear-gradient(100deg, transparent 35%, rgba(37, 143, 120, 0.08) 50%, transparent 65%);
+  background-size: 220% 100%;
+  animation: morning-think 3.4s linear infinite;
+}
+.avatar {
+  border: 1px solid rgba(37, 143, 120, 0.22);
+  box-shadow: 0 2px 8px rgba(31, 57, 48, 0.10);
+}
+.composer {
+  transition: box-shadow 180ms ease, border-color 180ms ease;
+}
+.composer:focus-within {
+  border-color: rgba(37, 143, 120, 0.55);
+  box-shadow: 0 0 0 3px rgba(37, 143, 120, 0.12), 0 8px 24px rgba(31, 57, 48, 0.08);
+}
+button { transition: background-color 150ms ease, box-shadow 150ms ease, transform 120ms ease; }
+button:hover { box-shadow: 0 2px 8px rgba(31, 57, 48, 0.10); }
+button:active { transform: scale(0.97); }
+::selection { background: rgba(37, 143, 120, 0.22); color: #173c32; }
+::-webkit-scrollbar { width: 9px; }
+::-webkit-scrollbar-thumb {
+  background: #cbd8d2;
+  border: 2px solid transparent;
+  border-radius: 99px;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover { background-color: #aebfb7; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
