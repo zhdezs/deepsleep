@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>帮助文档 · deepsleep 3.2.0</title>
+<title>帮助文档 · deepsleep 3.2.1</title>
 <meta name="description" content="deepsleep 完整帮助文档：所有安装方式（Windows / Linux / macOS / 网页版 / 内核版 / Gitee 分片合并）、模型配置、工具、扩展包、皮肤、知识库、SuperAgent 架构与故障排查。">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%230a84ff'/%3E%3C/svg%3E">
 <style>
@@ -114,7 +114,7 @@ footer{padding:30px 0 50px;color:var(--muted);font-size:12.5px;text-align:center
 
 <nav><div class="wrap">
   <a class="logo" href="../"><i></i>deepsleep</a>
-  <span class="ver">v3.2.0</span>
+  <span class="ver">v3.2.1</span>
   <span class="sp"></span>
   <a class="lnk" href="../#download">下载</a>
   <a class="lnk" href="../#shots">界面</a>
@@ -123,7 +123,7 @@ footer{padding:30px 0 50px;color:var(--muted);font-size:12.5px;text-align:center
 </div></nav>
 
 <header class="page"><div class="wrap">
-  <div class="badge">完整帮助 · 3.2.0</div>
+  <div class="badge">完整帮助 · 3.2.1</div>
   <h1>deepsleep 帮助文档</h1>
   <p class="lead">从下载安装到配置模型、从第一次对话到自己做工具与皮肤——这一页覆盖所有使用方式。
      左边是目录，右上角 <span class="kbd">Ctrl</span> + <span class="kbd">F</span> 可以直接搜关键词。</p>
@@ -201,9 +201,9 @@ footer{padding:30px 0 50px;color:var(--muted);font-size:12.5px;text-align:center
   <table>
     <tr><th>方式</th><th>文件</th><th>怎么做</th></tr>
     <tr><td><b>安装版</b>（推荐）</td><td><code>deepsleep-Setup.exe</code></td><td>双击 → 自动装到本机、建开始菜单、写文件关联、支持 OTA 静默升级</td></tr>
-    <tr><td><b>便携版</b></td><td><code>deepsleep-3.2.0-win-x64.zip</code></td><td>解压到任意文件夹 → 双击 <code>deepsleep.exe</code>。不写注册表，可放 U 盘</td></tr>
+    <tr><td><b>便携版</b></td><td><code>deepsleep-3.2.1-win-x64.zip</code></td><td>解压到任意文件夹 → 双击 <code>deepsleep.exe</code>。不写注册表，可放 U 盘</td></tr>
     <tr><td><b>网页版</b></td><td>无需文件</td><td>直接打开 <a href="../app/">网页版</a></td></tr>
-    <tr><td><b>内核版</b></td><td><code>deepsleep-core-3.2.0-win-x64.zip</code></td><td>解压 → <code>deepsleep-core.exe</code> → 浏览器打开提示的地址</td></tr>
+    <tr><td><b>内核版</b></td><td><code>deepsleep-core-3.2.1-win-x64.zip</code></td><td>解压 → <code>deepsleep-core.exe</code> → 浏览器打开提示的地址</td></tr>
   </table>
   <p>要求 Windows 10 1809 以上 / Windows 11，x64。自包含发布，<b>不需要先装 .NET</b>；WebView2 运行时缺失时安装程序会引导补装。</p>
 
@@ -223,16 +223,16 @@ footer{padding:30px 0 50px;color:var(--muted);font-size:12.5px;text-align:center
   <h3 id="install-linux">Linux / macOS</h3>
   <table>
     <tr><th>系统</th><th>文件 / 命令</th></tr>
-    <tr><td>Ubuntu / Debian x64</td><td><code>sudo apt install ./deepsleep_3.2.0_amd64.deb</code>（ARM64 用 <code>_arm64.deb</code>）</td></tr>
-    <tr><td>Fedora / RHEL / openSUSE</td><td><code>sudo dnf install ./deepsleep-3.2.0-1.x86_64.rpm</code>（ARM64 用 <code>aarch64.rpm</code>）</td></tr>
-    <tr><td>任意 Linux（免安装）</td><td>解压 <code>deepsleep-3.2.0-linux-x64.tar.gz</code> → <code>./deepsleep.sh</code> 直接开原生窗口；服务器加 <code>--headless</code> 只跑服务</td></tr>
-    <tr><td>macOS（Apple / Intel）</td><td>解压 <code>deepsleep-core-3.2.0-osx-arm64.tar.gz</code>（或 <code>-osx-x64</code>）→ <code>./deepsleep.sh</code></td></tr>
-    <tr><td>不确定选哪个</td><td>下 <code>deepsleep-universal-3.2.0.zip</code>，跑里面的脚本自动识别系统并下载对应包</td></tr>
+    <tr><td>Ubuntu / Debian x64</td><td><code>sudo apt install ./deepsleep_3.2.1_amd64.deb</code>（ARM64 用 <code>_arm64.deb</code>）</td></tr>
+    <tr><td>Fedora / RHEL / openSUSE</td><td><code>sudo dnf install ./deepsleep-3.2.1-1.x86_64.rpm</code>（ARM64 用 <code>aarch64.rpm</code>）</td></tr>
+    <tr><td>任意 Linux（免安装）</td><td>解压 <code>deepsleep-3.2.1-linux-x64.tar.gz</code> → <code>./deepsleep.sh</code> 直接开原生窗口；服务器加 <code>--headless</code> 只跑服务</td></tr>
+    <tr><td>macOS（Apple / Intel）</td><td>解压 <code>deepsleep-core-3.2.1-osx-arm64.tar.gz</code>（或 <code>-osx-x64</code>）→ <code>./deepsleep.sh</code></td></tr>
+    <tr><td>不确定选哪个</td><td>下 <code>deepsleep-universal-3.2.1.zip</code>，跑里面的脚本自动识别系统并下载对应包</td></tr>
   </table>
   <p>Linux 桌面原生窗口需要 <code>libwebkit2gtk-4.1-0</code>。macOS 目前只发行内核版——<code>.dmg</code> 已下线（Apple 芯片上会被 Gatekeeper 判成「已损坏」）。</p>
 
   <h3 id="install-core">内核版：只装一个 Core，用浏览器控电脑</h3>
-  <div class="step"><b class="n">1</b><div>下载并解压 <code>deepsleep-core-3.2.0-win-x64.zip</code>（Linux / macOS 对应 <code>.tar.gz</code>）。</div></div>
+  <div class="step"><b class="n">1</b><div>下载并解压 <code>deepsleep-core-3.2.1-win-x64.zip</code>（Linux / macOS 对应 <code>.tar.gz</code>）。</div></div>
   <div class="step"><b class="n">2</b><div>Windows 双击 <code>deepsleep-core.exe</code>；Linux / macOS 执行 <code>./deepsleep.sh</code>。默认进入命令行对话。</div></div>
   <div class="step"><b class="n">3</b><div>用浏览器打开 <code>core/</code> 网页端，填本机地址与配对令牌即可远程操控；同一局域网手机也能连。</div></div>
   <div class="step"><b class="n">4</b><div>想在<b>外网</b>用，加 <code>--tunnel</code> 开会生成免注册的公网地址 + 带令牌的配对链接，存成手机书签即可。</div></div>
@@ -343,7 +343,7 @@ footer{padding:30px 0 50px;color:var(--muted);font-size:12.5px;text-align:center
 
 <!-- 8 -->
 <section id="theme">
-  <h2>8 · 主题与皮肤（3.2.0 新）</h2>
+  <h2>8 · 主题与皮肤（3.2.1 新）</h2>
   <p class="sub">亮色和暗色<b>各有一整套不同的 CSS</b>，不是同一套换几个颜色变量。</p>
   <table>
     <tr><th>模式</th><th>内置 CSS</th><th>长什么样</th></tr>
@@ -362,7 +362,7 @@ footer{padding:30px 0 50px;color:var(--muted);font-size:12.5px;text-align:center
 
 <!-- 9 -->
 <section id="kb">
-  <h2>9 · 知识库（3.2.0 新）</h2>
+  <h2>9 · 知识库（3.2.1 新）</h2>
   <p>随程序分发 7 章内置文档：<b>总览 · 工具参数手册 · 扩展格式规范 · 文本与输出规范 · 界面与设置 · 发布与排错 · Session 与架构</b>。
      目的是让模型在回答「deepsleep 自己怎么用 / .dslt 该怎么写」时有据可查，而不是凭空编字段。</p>
   <ul>
@@ -396,7 +396,7 @@ footer{padding:30px 0 50px;color:var(--muted);font-size:12.5px;text-align:center
 
 <!-- 12 -->
 <section id="arch">
-  <h2>12 · SuperAgent 架构 <span class="tag">3.2.0 卖点</span></h2>
+  <h2>12 · SuperAgent 架构 <span class="tag">3.2.1 卖点</span></h2>
   <p class="sub">deepsleep 正在从「一个会调工具的聊天窗口」升级为一套常驻、可调度、可自愈的多 Agent 系统。</p>
   <div class="flow">
     <span class="box">环境事件 Trigger</span><span class="arw">→</span>
@@ -410,13 +410,13 @@ footer{padding:30px 0 50px;color:var(--muted);font-size:12.5px;text-align:center
 
   <h3>为什么值得现在就用</h3>
   <div class="grid">
-    <div class="card"><h4>已经在 3.2.0 落地</h4><p>会话不再是一个截到 4000 字的快照文件，而是带 <code>kind</code> / <code>parentSid</code> / <code>state</code> / 时间戳 / 摘要的独立记录；原子写入、旧数据自动迁移、可按状态查询。这是 Router 和 Watchdog 的地基。</p></div>
-    <div class="card"><h4>已经在 3.2.0 落地</h4><p>「拆分任务」已经让主助手自己拆出多个子 Agent 并行干活、最后汇总；会话按 sid 隔离。等于 Worker 的执行雏形先跑起来了。</p></div>
+    <div class="card"><h4>已经在 3.2.1 落地</h4><p>会话不再是一个截到 4000 字的快照文件，而是带 <code>kind</code> / <code>parentSid</code> / <code>state</code> / 时间戳 / 摘要的独立记录；原子写入、旧数据自动迁移、可按状态查询。这是 Router 和 Watchdog 的地基。</p></div>
+    <div class="card"><h4>已经在 3.2.1 落地</h4><p>「拆分任务」已经让主助手自己拆出多个子 Agent 并行干活、最后汇总；会话按 sid 隔离。等于 Worker 的执行雏形先跑起来了。</p></div>
   </div>
 
   <h3>分期路线</h3>
   <div class="card">
-    <div class="phase"><span class="num">1</span><div class="txt"><b>Session 数据库</b><span>data/sessions/&lt;sid&gt;.json + index.json，原子写、迁移、sessionList / sessionGet 查询 API</span></div><span class="st done">✅ 3.2.0 已发布</span></div>
+    <div class="phase"><span class="num">1</span><div class="txt"><b>Session 数据库</b><span>data/sessions/&lt;sid&gt;.json + index.json，原子写、迁移、sessionList / sessionGet 查询 API</span></div><span class="st done">✅ 3.2.1 已发布</span></div>
     <div class="phase"><span class="num">2</span><div class="txt"><b>Router + Worker Session 分层</b><span>抽常驻 Router 持有共享上下文与路由，Worker 上下文隔离；复用「拆分任务」执行器</span></div><span class="st plan">规划中</span></div>
     <div class="phase"><span class="num">3</span><div class="txt"><b>两级过滤 + Trigger</b><span>Fast Path 直通 Worker、Slow Path 走 Router；Trigger 先做定时 / 文件 / 剪贴板事件</span></div><span class="st plan">规划中</span></div>
     <div class="phase"><span class="num">4</span><div class="txt"><b>Watchdog</b><span>独立监控卡死 / 超时会话，基于 state 字段标记与自愈</span></div><span class="st plan">规划中</span></div>
@@ -431,7 +431,7 @@ footer{padding:30px 0 50px;color:var(--muted);font-size:12.5px;text-align:center
   <table>
     <tr><th>内容</th><th>位置</th></tr>
     <tr><td>会话 / 配置 / 记忆</td><td><code>&lt;安装目录&gt;\data\</code>（便携版在解压目录）</td></tr>
-    <tr><td>会话记录（3.2.0）</td><td><code>data\sessions\&lt;sid&gt;.json</code> + <code>index.json</code></td></tr>
+    <tr><td>会话记录（3.2.1）</td><td><code>data\sessions\&lt;sid&gt;.json</code> + <code>index.json</code></td></tr>
     <tr><td>已装扩展</td><td><code>data\tools\</code> / <code>data\skins\</code> / <code>extensions.json</code></td></tr>
     <tr><td>自建知识文档</td><td><code>data\knowledge\</code></td></tr>
     <tr><td>生成图片 / 研究报告 / 截图</td><td><code>data\images\</code> / <code>data\research\</code> / <code>data\shots\</code></td></tr>
@@ -471,7 +471,7 @@ deepsleep-core.exe --install-ext "D:\work\科学计算器.dslt"</code></pre>
     <tr><td>生成视频失败</td><td>视频不在免费额度里，需要自己的 Key；检查「设置 → 视频」里的接口地址、模型名、轮询方式。</td></tr>
     <tr><td>模型不调用工具 / 只会聊天</td><td>确认模式不是 <code>chat</code>；极速模式也能调工具。模型本身太弱时换成支持 function calling 的。</td></tr>
     <tr><td>「操作电脑」截图是空的</td><td>需要真实交互桌面会话；远程 / 服务会话里没有可截图的桌面（屏幕宽度为 0）。</td></tr>
-    <tr><td>皮肤点了没生效</td><td>3.2.0 起皮肤是叠加层，不会再重载整页。看 <code>data\ext.log</code> 确认命令到了内核；内置的两套主题 CSS 不需要「使用」。</td></tr>
+    <tr><td>皮肤点了没生效</td><td>3.2.1 起皮肤是叠加层，不会再重载整页。看 <code>data\ext.log</code> 确认命令到了内核；内置的两套主题 CSS 不需要「使用」。</td></tr>
     <tr><td>Linux 打不开窗口</td><td>装 <code>libwebkit2gtk-4.1-0</code>；纯服务器加 <code>--headless</code> 用浏览器连。</td></tr>
     <tr><td>macOS 提示「已损坏」</td><td>只从 <code>.dmg</code> 安装会遇到（已下线）。改用 <code>deepsleep-core-*-osx-*.tar.gz</code> 内核版。</td></tr>
   </table>
@@ -487,7 +487,7 @@ deepsleep-core.exe --install-ext "D:\work\科学计算器.dslt"</code></pre>
 </div>
 
 <footer>
-  <p>deepsleep 3.2.0 · <a href="../">返回首页</a> ·
+  <p>deepsleep 3.2.1 · <a href="../">返回首页</a> ·
      <a href="../#download">下载</a> ·
      <a href="https://github.com/zhdezs/deepsleep" target="_blank" rel="noreferrer">GitHub</a> ·
      <a href="https://gitee.com/zhdezs/deepsleep" target="_blank" rel="noreferrer">Gitee</a> ·

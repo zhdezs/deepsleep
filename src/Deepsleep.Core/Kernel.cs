@@ -61,6 +61,8 @@ public sealed partial class Kernel
     private string _agentBackendBefore = "auto";
     private bool _llmOnline;
     private UpdateInfo? _pendingUpdate;
+    /// <summary>_pendingUpdate 是按哪条「更新线路」检查到的（Gitee 优先=true）。线路被用户改掉后旧结果作废。</summary>
+    private bool _pendingGiteeRoute = true;
     private bool _updateRunning;
     private CancellationTokenSource? _updateCts;
 

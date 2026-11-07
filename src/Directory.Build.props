@@ -5,8 +5,8 @@
        以前各写各的，内核那份忘了同步导致程序自报版本一直是旧的（升到 2.1.0 还显示 2.0.0）；
        安装器又写死过 3.0.4，载荷已是 3.0.5 时注册表版本号还是错的。 -->
   <PropertyGroup>
-    <Version>3.2.0</Version>
-    <FileVersion>3.2.0.0</FileVersion>
+    <Version>3.2.1</Version>
+    <FileVersion>3.2.1.0</FileVersion>
   </PropertyGroup>
 
 </Project>

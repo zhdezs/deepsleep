@@ -651,7 +651,18 @@ AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不�
         _config.UpdateUrl = Str("updateUrl", _config.UpdateUrl);
         if (a.TryGetProperty("autoCheckUpdate", out _)) _config.AutoCheckUpdate = GetBool(a, "autoCheckUpdate");
         string? src = GetStr(a, "updateSource");
-        if (src != null) _config.UpdateSource = src.Trim().ToLowerInvariant() == "github" ? "github" : "gitee";
+        if (src != null)
+        {
+            string newSrc = src.Trim().ToLowerInvariant() == "github" ? "github" : "gitee";
+            if (!string.Equals(newSrc, _config.UpdateSource, StringComparison.OrdinalIgnoreCase))
+            {
+                _config.UpdateSource = newSrc;
+                // 线路变了：上次按旧线路检查到的更新结果作废（里面带的是旧线路的下载地址），
+                // 不清掉就会出现"设置了 GitHub 却还在从 Gitee 下载"的不服从。
+                _pendingUpdate = null;
+                Emit(new { ev = "update", update = (object?)null });
+            }
+        }
         if (a.TryGetProperty("petEnabled", out _)) _config.PetEnabled = GetBool(a, "petEnabled");
 
         // 保存前先把「旧供应商」的配置收进档案 —— 用户是从它切走的，这份档不能丢

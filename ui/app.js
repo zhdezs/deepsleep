@@ -2000,6 +2000,7 @@ let updateDismissed = false;  // 用户已经把进度窗关掉了：别再被�
 let updatePct = null;         // 最后一次进度（关掉再打开时接着显示）
 let updateMsg = '';
 function showUpdatePill(u) {
+  if (!u) { $('#btnUpdate').classList.add('hidden'); return; }   // 更新线路被切换：旧提醒作废
   $('#btnUpdate').classList.remove('hidden');
   $('#updateText').textContent = updateActive ? '升级中…' : '有新版 v' + u.version;
 }

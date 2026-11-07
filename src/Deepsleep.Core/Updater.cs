@@ -283,27 +283,32 @@ public static async Task<UpdateInfo?> CheckAsync(string manifestUrl, bool giteeF
 
         if (ghNewer)
         {
-            // 同一个版本 → 优先用 Gitee 的地址下载（整包或分片），SHA256 仍用 GitHub 官方 digest。
+            // 同一个版本 → 只有 Gitee 线路才借 Gitee 的地址下载（整包或分片），SHA256 仍用 GitHub 官方 digest。
+            // GitHub 线路（用户在 ⚙ 设置里选了 GitHub）绝不沾 Gitee：设置了不服从就成 bug 了。
             // 注意：Gitee 的 release JSON 里**没有 size**（只有 name + 下载地址），所以大小未知也得认，
             // 完整性最终由 GitHub 官方摘要（以及这边记录的 gh.Size）兜底。
-            bool sameVersion = gt != null && gt.Version == gh!.Version;
-            bool sizeOk = gt != null && (gt.Size == 0 || gh.Size == 0 || gt.Size == gh.Size);
-            if (sameVersion && sizeOk)
+            if (giteeFirst)
             {
-                if (gt!.PartUrls.Count > 0)
+                bool sameVersion = gt != null && gt.Version == gh!.Version;
+                bool sizeOk = gt != null && (gt.Size == 0 || gh.Size == 0 || gt.Size == gh.Size);
+                if (sameVersion && sizeOk)
                 {
-                    gh.PartUrls = gt.PartUrls;
-                    gh.PartSizes = gt.PartSizes;
-                }
-                else
-                {
-                    gh.MirrorUrl = gt.Url;
+                    if (gt!.PartUrls.Count > 0)
+                    {
+                        gh.PartUrls = gt.PartUrls;
+                        gh.PartSizes = gt.PartSizes;
+                    }
+                    else
+                    {
+                        gh.MirrorUrl = gt.Url;
+                    }
                 }
             }
             return gh;
         }
-        // GitHub 上还没有新版本、Gitee 上有（或 GitHub 挂了）→ 用 Gitee 的
-        if (gtNewer) return gt;
+        // GitHub 上还没有新版本、Gitee 上有（或 GitHub 挂了）→ 只有 Gitee 线路才用 Gitee 的；
+        // GitHub 线路宁可报"检查失败"，也不能背着用户从 Gitee 下。
+        if (gtNewer && giteeFirst) return gt;
         if (gh != null || gt != null) return null;   // 两边都读到了，但都不是新版
 
         // 3) 没有 Release 资产 → 退回仓库里的 update.json
@@ -614,12 +619,19 @@ public static string InstallerFileName =>
 /// <summary>这个 Release 资产是不是本机平台可用的安装包。</summary>
 private static bool IsInstallerAsset(string name)
 {
-    if (Platform.IsWindows) return name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
+    string n = Path.GetFileName(name);
+    if (Platform.IsWindows)
+    {
+        // 只认 .exe；合并器（deepsleep-merge-setup.exe）是给 Gitee 分片用户手动拼包用的，
+        // 绝不能被 OTA 当成安装包下载执行 —— 以前只判断 EndsWith(".exe")，它也符合，就会被误选。
+        if (!n.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) return false;
+        return !n.Contains("merge-setup", StringComparison.OrdinalIgnoreCase);
+    }
     if (!name.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase)) return false;
-    string n = name.ToLowerInvariant();
+    string t = name.ToLowerInvariant();
     // 认本机平台 + 架构那一份：linux-x64 / linux-arm64 / osx-arm64 / osx-x64
-    if (!n.Contains(Platform.Rid)) return false;
-    return Platform.IsMacOS || n.Contains("linux");
+    if (!t.Contains(Platform.Rid)) return false;
+    return Platform.IsMacOS || t.Contains("linux");
 }
 
 /// <summary>给候选安装包打分（分越高越优先）。</summary>
@@ -670,8 +682,11 @@ private const int HttpStallSeconds = 45;
 
 /// <summary>下载更新包到临时目录，带进度回调；若清单提供 sha256 则校验。</summary>
 /// <param name="onStatus">给界面看的文字状态（走的哪个源、有没有自动换源）。</param>
+/// <param name="preferGitee">Gitee 优先线路（⚙ 设置里的「更新线路」）。GitHub 线路传 false：
+/// 下载阶段不再尝试 Gitee（哪怕检查结果里带了 Gitee 地址），严格服从用户设置。</param>
 public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double>? progress,
-                                               CancellationToken ct = default, Action<string>? onStatus = null)
+                                               CancellationToken ct = default, Action<string>? onStatus = null,
+                                               bool preferGitee = true)
 {
     string destDir = DownloadDirFor(info);
     Directory.CreateDirectory(destDir);
@@ -687,6 +702,9 @@ public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double
         : (IsGiteeUrl(info.MirrorUrl) ? info.MirrorUrl
            : (IsGiteeUrl(info.Url) ? info.Url : null));   // Linux 上 Gitee 选中的是 tar.gz，整包地址就是 info.Url
     bool giteeOnly = info.GiteeOnly;
+    // 显式填的 Gitee 更新源（GiteeOnly）永远尊重；其余情况看线路设置：
+    // GitHub 线路（preferGitee=false）时就算检查结果里带了 Gitee 地址也不走 —— 服从用户设置。
+    if (!preferGitee && !giteeOnly) giteeUrl = null;
     Exception? giteeError = null;
     if (giteeUrl != null)
     {

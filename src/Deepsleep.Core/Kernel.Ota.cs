@@ -47,6 +47,7 @@ public sealed partial class Kernel
             var info = await Updater.CheckAsync(_config.UpdateUrl, _config.GiteeFirst).ConfigureAwait(false);
             if (info == null) return;
             _pendingUpdate = info;
+            _pendingGiteeRoute = _config.GiteeFirst;   // 记下检查时的线路，执行更新时变了就重新检查
             Emit(new { ev = "update", update = UpdateJson(info) });
         }
         catch { }
@@ -69,6 +70,7 @@ public sealed partial class Kernel
                 return;
             }
             _pendingUpdate = info;
+            _pendingGiteeRoute = _config.GiteeFirst;
             Emit(new { ev = "update", update = UpdateJson(info) });
         }
         catch (Exception ex)
@@ -84,6 +86,13 @@ public sealed partial class Kernel
         UpdateInfo? info = _pendingUpdate;
         try
         {
+            // 检查更新之后用户把「更新线路」改了 → 旧结果里的 Gitee/GitHub 地址已不可信，
+            // 必须按当前线路重新检查，否则就会出现"设置了 GitHub 却还在从 Gitee 下"的不服从。
+            if (info != null && _pendingGiteeRoute != _config.GiteeFirst)
+            {
+                info = null;
+                _pendingUpdate = null;
+            }
             if (info == null)
             {
                 if (string.IsNullOrWhiteSpace(_config.UpdateUrl))
@@ -98,6 +107,7 @@ public sealed partial class Kernel
                     return;
                 }
                 _pendingUpdate = info;
+                _pendingGiteeRoute = _config.GiteeFirst;
                 Emit(new { ev = "update", update = UpdateJson(info) });
             }
         }
@@ -114,7 +124,8 @@ public sealed partial class Kernel
         {
             string status = "正在下载更新包…";
             var progress = new Progress<double>(p => Emit(new { ev = "updateProgress", percent = p, status }));
-            string installer = await Updater.DownloadAsync(info, progress, cts.Token, s => status = s).ConfigureAwait(false);
+            string installer = await Updater.DownloadAsync(info, progress, cts.Token, s => status = s,
+                                                           _config.GiteeFirst).ConfigureAwait(false);
             // 下载刚好结束时用户按了取消：别再往下装
             cts.Token.ThrowIfCancellationRequested();
             Emit(new { ev = "updateStatus", text = "下载完成，正在启动升级程序…", done = false });
