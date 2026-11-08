@@ -118,7 +118,7 @@ body.dark .seg button.on { background: #636366; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .mrow:hover { background: var(--hover); }
-.mrow.cur { background: var(--chipon); }
+.mrow.cur { background: rgba(0,122,255,.13); }
 
 /* ---------------- 聊天区 ---------------- */#chat { flex: 1; display: flex; flex-direction: column; min-width: 0; position: relative; }
 #msgs { flex: 1; padding: 18px 26px 8px; min-height: 0; }
@@ -274,6 +274,7 @@ body.dark .seg button.on { background: #636366; }
 }
 /* ---------------- 输入区 ---------------- */
 #composer {
+  position: relative;   /* 上方三个展开面板以它为定位基准 */
   flex: 0 0 auto; padding: 8px 18px 12px; background: var(--panel);
   backdrop-filter: blur(24px) saturate(180%); border-top: 1px solid var(--border);
 }
@@ -318,8 +319,10 @@ body.dark .seg button.on { background: #636366; }
 /* 上下文用量圆环：外圈进度 + 悬停显示具体 token 数 */
 .ctx-ring {
   width: 28px; height: 28px; padding: 0; border: 0; background: transparent;
-  display: inline-flex; align-items: center; justify-content: center; cursor: default;
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  border-radius: 50%;
 }
+.ctx-ring:hover { background: var(--hover); }
 .ctx-ring svg { width: 22px; height: 22px; transform: rotate(-90deg); }
 .ctx-ring .track { fill: none; stroke: var(--border); stroke-width: 2.6; }
 .ctx-ring .bar {
@@ -372,6 +375,111 @@ body.dark .seg button.on { background: #636366; }
 .plus-menu .menu-item input { display: none; }
 .plus-menu .menu-item:has(input:checked) { color: var(--blue); font-weight: 600; }
 .plus-menu .menu-sep { height: 1px; margin: 5px 6px; background: var(--border); }
+
+/* ---------------- 输入区上方的展开面板（用量 / 技能 / 模型）---------------- */
+/* 三个面板都锚在输入卡片正上方：右下角弹出用量与模型，左下角弹出技能。
+   点面板外面自动收起，宽度随窗口收，不遮住消息。 */
+.popover {
+  position: absolute; right: 12px; bottom: calc(100% + 10px); z-index: 50;
+  width: min(400px, calc(100vw - 40px)); max-height: min(62vh, 520px);
+  display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--border); border-radius: 16px; background: var(--card);
+  box-shadow: 0 18px 48px rgba(0,0,0,.18), 0 2px 8px rgba(0,0,0,.07);
+  animation: popIn .14s ease;
+}
+.popover.hidden { display: none; }
+.skill-pop { right: auto; left: 12px; }
+@keyframes popIn {
+  from { opacity: 0; transform: translateY(6px) scale(.985); }
+  to { opacity: 1; transform: none; }
+}
+.pop-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 11px 13px 7px; font-size: 13px; flex: 0 0 auto;
+}
+.pop-x {
+  border: 0; background: transparent; color: var(--muted); font-size: 12px;
+  padding: 3px 6px; border-radius: 6px; cursor: pointer; line-height: 1;
+}
+.pop-x:hover { background: var(--hover); color: var(--text); }
+.pop-body { padding: 0 13px 12px; overflow: auto; }
+.pop-search {
+  width: 100%; height: 30px; margin-bottom: 8px; padding: 0 10px; border-radius: 9px;
+  border: 1px solid var(--border); background: var(--input); color: var(--text);
+  font-size: 12.5px; outline: none;
+}
+.pop-search:focus { border-color: rgba(0,122,255,.5); }
+.pop-hint { font-size: 11.5px; color: var(--muted); line-height: 1.55; margin-bottom: 6px; }
+.pop-list { display: flex; flex-direction: column; gap: 1px; }
+.pop-list .mrow {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 7px 9px; border-radius: 9px; font-size: 12.5px; cursor: pointer;
+}
+.pop-list .mrow:hover { background: var(--hover); }
+.pop-list .mrow.cur { color: var(--blue); font-weight: 600; background: rgba(0,122,255,.13); }
+.pop-list .mrow .mname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pop-list .mrow .mtag { flex: 0 0 auto; font-size: 11px; color: var(--muted); }
+
+/* 用量面板 */
+.ctx-top { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+.ctx-top b { font-size: 25px; letter-spacing: -.5px; }
+.ctx-top .pct { font-size: 13px; color: var(--muted); }
+.ctx-bar { height: 7px; border-radius: 4px; background: rgba(127,127,127,.22); overflow: hidden; }
+.ctx-bar i {
+  display: block; height: 100%; border-radius: 4px;
+  background: var(--blue); transition: width .3s ease, background-color .3s ease;
+}
+.ctx-bar.warn i { background: #FF9F0A; }
+.ctx-bar.hot i { background: #FF3B30; }
+.ctx-kv { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; padding: 4px 0; }
+.ctx-kv span:first-child { color: var(--muted); }
+.ctx-sec { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.ctx-sec h5 { font-size: 12px; font-weight: 600; margin: 0 0 7px; color: var(--muted); letter-spacing: .2px; }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.preset {
+  height: 27px; padding: 0 9px; border-radius: 14px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--input); color: var(--text); font-size: 11.5px;
+  transition: border-color .15s, color .15s, background-color .15s;
+}
+.preset:hover { border-color: var(--muted); }
+/* 选中态：半透明蓝底 + 蓝字。注意别用 --chipon —— 主题里它是实色深青，
+   蓝字压上去几乎看不见（预览时踩过）。 */
+.preset.on {
+  border-color: rgba(0,122,255,.55); color: var(--blue);
+  background: rgba(0,122,255,.14); font-weight: 600;
+}
+.ctx-custom { display: flex; gap: 6px; margin-top: 8px; }
+.ctx-custom input {
+  flex: 1; min-width: 0; height: 28px; padding: 0 9px; border-radius: 8px;
+  border: 1px solid var(--border); background: var(--input); color: var(--text);
+  font-size: 12.5px; outline: none;
+}
+.ctx-custom input:focus { border-color: rgba(0,122,255,.5); }
+.ctx-custom button {
+  height: 28px; padding: 0 12px; border-radius: 8px; border: 0; cursor: pointer;
+  background: var(--blue); color: #fff; font-size: 12.5px; font-weight: 600;
+}
+
+/* 技能面板：一条技能一行，点开看说明与路径 */
+.sk-row { border-radius: 9px; }
+.sk-row + .sk-row { margin-top: 2px; }
+.sk-head {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 9px;
+  border: 0; border-radius: 9px; background: transparent; color: var(--text);
+  font-size: 12.5px; text-align: left; cursor: pointer;
+}
+.sk-head:hover { background: var(--hover); }
+.sk-head .sk-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sk-head .sk-meta { flex: 0 0 auto; font-size: 11px; color: var(--muted); }
+.sk-head .sk-arw { flex: 0 0 auto; font-size: 10px; color: var(--muted); transition: transform .15s; }
+.sk-row.open .sk-arw { transform: rotate(90deg); }
+.sk-body { display: none; padding: 2px 9px 9px 25px; font-size: 12px; color: var(--muted); line-height: 1.6; }
+.sk-row.open .sk-body { display: block; }
+.sk-body code {
+  display: block; margin-top: 5px; padding: 5px 7px; border-radius: 6px;
+  background: var(--hover); font-size: 11px; word-break: break-all; color: var(--text);
+}
+.sk-empty { padding: 10px 9px; font-size: 12.5px; color: var(--muted); }
 
 .chip {
   display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px;

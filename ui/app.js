@@ -620,6 +620,132 @@ function paintCtxRing(m) {
   const fmt = n => n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n);
   el.title = '上下文用量 ' + p + '%（约 ' + fmt(m.used || 0) + ' / ' + fmt(m.window || 0) + ' tokens，' +
     (m.messages || 0) + ' 条消息）\n' + (m.model || '') + '\n按字符估算，用于判断何时该开新对话。';
+  paintCtxPanel(m);
+}
+
+// ---------------- 输入区上方的三个展开面板 ----------------
+// 用量环 / 模型药丸 / 技能图标都太小，看不清细节；点开成面板看完整信息，
+// 用量面板还能直接改上下文上限（模型名里认不出窗口时特别有用）。
+let ctxData = null;
+
+function closePops(except) {
+  ['ctxPanel', 'skillPanel', 'modelPanel'].forEach(id => {
+    if (id === except) return;
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  });
+}
+function togglePop(id) {
+  const el = document.getElementById(id);
+  if (!el) return false;
+  const willOpen = el.classList.contains('hidden');
+  closePops(willOpen ? id : null);
+  el.classList.toggle('hidden', !willOpen);
+  return willOpen;
+}
+
+function paintCtxPanel(m) {
+  if (m) ctxData = m;
+  const box = document.getElementById('ctxBody');
+  if (!box) return;
+  const d = ctxData;
+  if (!d) { box.innerHTML = '<div class="pop-hint">正在读取上下文用量…</div>'; return; }
+  const used = d.used || 0, win = d.window || 0;
+  const p = Math.max(0, Math.min(100, d.percent || 0));
+  const cls = p >= 85 ? 'hot' : p >= 60 ? 'warn' : '';
+  const ov = d.overrideWindow || 0;
+  const auto = d.autoWindow || 0;
+  const presets = [[0, '跟随模型'], [32000, '32k'], [64000, '64k'], [128000, '128k'], [200000, '200k'], [1000000, '1M']];
+  box.innerHTML =
+    '<div class="ctx-top"><b>' + p + '%</b><span class="pct">已用约 ' + fmtTok(used) + ' / ' + fmtTok(win) + ' tokens</span></div>' +
+    '<div class="ctx-bar ' + cls + '"><i style="width:' + p + '%"></i></div>' +
+    '<div style="margin-top:9px">' +
+      '<div class="ctx-kv"><span>消息条数</span><span>' + (d.messages || 0) + ' 条</span></div>' +
+      '<div class="ctx-kv"><span>当前模型</span><span>' + esc(d.model || '未设置') + '</span></div>' +
+      '<div class="ctx-kv"><span>上限来源</span><span>' + (ov > 0 ? '手动指定 ' + fmtTok(ov) : '跟随模型（推断 ' + fmtTok(auto) + '）') + '</span></div>' +
+    '</div>' +
+    '<div class="ctx-sec"><h5>上下文上限</h5>' +
+      '<div class="presets">' + presets.map(([w, t]) =>
+        '<button class="preset' + (ov === w ? ' on' : '') + '" data-w="' + w + '">' + t + '</button>').join('') + '</div>' +
+      '<div class="ctx-custom"><input id="ctxCustom" type="number" min="4096" step="1000" placeholder="自定义 token 数，例如 256000">' +
+      '<button id="ctxApply">应用</button></div>' +
+      '<div class="pop-hint" style="margin:8px 0 0">改小会让占比立刻变大；名字里带 32k/128k 的模型一般不用动。按字符估算，不是精确 tokenizer。</div>' +
+    '</div>';
+}
+
+function paintSkillPanel() {
+  const box = document.getElementById('skillBody');
+  if (!box) return;
+  const skills = S.skills || [];
+  const prompts = S.prompts || [];
+  let h = '<div class="pop-hint">内置 + 已安装的技能（' + skills.length + ' 个），点一行展开说明与路径。</div>';
+  if (!skills.length) {
+    h += '<div class="sk-empty">还没有技能。左下角「技能」可从 URL 或文件夹安装。</div>';
+  }
+  h += skills.map((s, i) =>
+    '<div class="sk-row" data-i="' + i + '">' +
+      '<button class="sk-head"><span class="sk-arw">▶</span>' +
+        '<span class="sk-name">' + esc(s.name || '') + '</span>' +
+        '<span class="sk-meta">' + (s.files || 0) + ' 文件</span></button>' +
+      '<div class="sk-body">' + esc(s.description || '（没有写说明）') +
+        (s.path ? '<code>' + esc(s.path) + '</code>' : '') + '</div>' +
+    '</div>').join('');
+  if (prompts.length) {
+    h += '<div class="ctx-sec"><h5>快捷指令（点一下填进输入框）</h5>' +
+      prompts.map((p, i) =>
+        '<div class="sk-row"><button class="sk-head" data-prompt="' + i + '">' +
+          '<span class="sk-arw">▶</span><span class="sk-name">' + esc(p.name || '') + '</span>' +
+          '<span class="sk-meta">插入</span></button></div>').join('') + '</div>';
+  }
+  box.innerHTML = h;
+}
+
+function paintModelPanel() {
+  const list = document.getElementById('modelList');
+  const hint = document.getElementById('modelHint');
+  if (!list || !hint) return;
+  const s = S.settings || {};
+  const cur = s.apiModel || '';
+  const kw = ((document.getElementById('modelSearch') || {}).value || '').trim().toLowerCase();
+  const all = apiModelList || [];
+  const hits = kw ? all.filter(m => (m.id + ' ' + (m.label || '')).toLowerCase().includes(kw)) : all;
+  hint.textContent = all.length
+    ? '共 ' + all.length + ' 个模型（🆓 = 确认免费）· 当前 ' + (cur || '未设置') +
+      (ctxData ? ' · 窗口 ' + fmtTok(ctxData.window) : '')
+    : (s.apiKey ? '还没有模型列表，点这里重新拉取。' : '还没绑定 API Key —— 先去 ⚙ 设置里填供应商。');
+  if (!hits.length) {
+    list.innerHTML = '<div class="sk-empty">' + (all.length ? '没有匹配的模型。' : '') + '</div>';
+    return;
+  }
+  list.innerHTML = hits.slice(0, 400).map(m => {
+    const isCur = m.id === cur;
+    const name = (m.label && m.label !== m.id) ? m.label + '　·　' + m.id : m.id;
+    return '<div class="mrow' + (isCur ? ' cur' : '') + '" data-id="' + esc(m.id) + '">' +
+      '<span class="mname">' + (m.free ? '🆓 ' : '') + esc(name) + '</span>' +
+      '<span class="mtag">' + (isCur ? '当前' : '') + '</span></div>';
+  }).join('');
+}
+
+function fmtTok(n) {
+  n = n || 0;
+  if (n >= 1000000) return (n / 1000000).toFixed(n >= 10000000 ? 0 : 1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k';
+  return String(n);
+}
+
+// 列表一直用缓存显示；缓存超过 6 小时（或压根没有）才顺手联网刷一次。
+// 内核会把新结果和缓存比对，真的变了才回 changed=true，界面据此重绘 + 提示。
+function modelCacheStale() {
+  if (!apiModelList || !apiModelList.length) return true;
+  if (!apiModelFetched) return false;             // 不知道时间的旧缓存先用着
+  const t = Date.parse(apiModelFetched);
+  return !t || (Date.now() - t > 6 * 3600 * 1000);
+}
+function maybeRefreshModels() {
+  const s = S.settings || {};
+  if (!s.apiKey) return;                          // 没 Key 联网也拉不回来，直接用缓存
+  if (!modelCacheStale()) return;
+  call('apiModels', { url: s.apiUrl, key: s.apiKey, format: s.apiFormat });
 }
 
 // ---------------- 第 2 期：Router / Worker 会话树 ----------------
@@ -826,6 +952,13 @@ function handleEvent(m) {
       S.version = m.version || ''; S.theme = m.theme;
       S.settings = m.settings || {}; S.prompts = m.prompts || [];
       S.clusterTemplates = m.clusterTemplates || []; S.skills = m.skills || [];
+      // 上次联网拉到的模型列表（内核按 API 地址缓存在 data/models-cache.json）：
+      // 一启动就能显示，不用等网络，也不至于每次开面板都空着转圈。
+      if (m.models && m.models.models && m.models.models.length) {
+        apiModelList = m.models.models;
+        apiModelSource = String((m.settings || {}).apiUrl || '');
+        apiModelFetched = m.models.fetchedUtc || '';
+      }
       S.pet = m.pet !== false; S.update = m.update || null;
       applySettings();
       setTheme(m.theme);
@@ -873,7 +1006,7 @@ function handleEvent(m) {
     case 'toast': toast(m.text, m.level); break;
     case 'insert': setInput(m.text); break;
     case 'memory': openMemory(m); break;
-    case 'skills': S.skills = m.list || []; if (modalName === 'skills') openSkills(m); break;
+    case 'skills': S.skills = m.list || []; if (modalName === 'skills') openSkills(m); paintSkillPanel(); break;
     case 'skinChanged':
       // 皮肤是 #skinStyle 叠加层，EmitSettings 已经即时注入；不需要重载整页
       // （重载会丢掉正在输入的文字、折叠状态和滚动位置）。
@@ -900,6 +1033,14 @@ function handleEvent(m) {
         st.style.color = m.ok ? '' : '#c0392b';
       }
       renderModelPicker();
+      if (m.ok) {
+        apiModelFetched = m.fetchedUtc || new Date().toISOString();
+        // 拉到的列表和上次缓存的不是同一份 → 就地重绘并提示，不用用户再点一次
+        if (m.changed) {
+          paintModelPanel();
+          toast('模型列表已更新：' + m.count + ' 个' + (m.freeCount ? '（' + m.freeCount + ' 个免费）' : ''));
+        }
+      }
       if (m.autoModel) toast('已默认选用第一个模型：' + m.autoModel);
       if (modelPickerRefresh) modelPickerRefresh();   // 对话框里的选择器开着就地刷新
       releaseBtn('btnFetchModels');   // 结果到了就把按钮恢复，别一直停在「正在拉取…」
@@ -941,8 +1082,7 @@ function handleEvent(m) {
     case 'ask': showAsk(m); break;
     case 'askClose': closeAsk(m.askId); break;
     case 'update': S.update = m.update; showUpdatePill(m.update); break;
-    case 'ctxUsage': paintCtxRing(m); break;
-    case 'sessionTree': showSessionTree(m); break;
+    case 'ctxUsage': paintCtxRing(m); break;    case 'sessionTree': showSessionTree(m); break;
     case 'routeDecision': showRouteDecision(m); break;
     case 'updateLatest': S.update = null; $('#btnUpdate').classList.add('hidden'); toast(m.text); break;
     case 'updateProgress': updateProgress(m.percent, m.status); break;
@@ -1363,6 +1503,7 @@ function applySettings() {
 // 上一次「联网获取模型列表」的结果。存在全局是为了弹窗被重建（保存后内核会回推 settings 事件）时不丢。
 let apiModelList = null;
 let apiModelSource = '';   // 这份列表是从哪个地址拉来的，换平台后要作废
+let apiModelFetched = '';  // 上次成功拉取的时间（UTC ISO），用来判断缓存是否过期
 let modelPickerRefresh = null;   // 对话框内的模型选择器开着时，拉到列表就地刷新
 
 // 「正在测试…」这类按钮的统一收尾：内核一有结果就恢复。
@@ -2263,7 +2404,11 @@ function wire() {
   bind('seg', 'onclick', e => { const b = e.target.closest('button'); if (b) call('tab', { tab: +b.dataset.tab }); });
   bind('btnTheme', 'onclick', () => call('setTheme', { theme: document.body.classList.contains('dark') ? 'light' : 'dark' }));
   bind('btnSettings', 'onclick', () => openSettings());
-  bind('btnModel', 'onclick', () => openModelPicker());
+  bind('btnModel', 'onclick', e => {
+    e.stopPropagation();
+    // 面板里是完整的模型列表（带搜索），比原来那个弹窗更轻，也不打断会话
+    if (togglePop('modelPanel')) { paintModelPanel(); maybeRefreshModels(); }
+  });
   bind('btnLink', 'onclick', () => openSuperLink());
   wireRd();
   bind('btnNew', 'onclick', () => call('newConv', { kind: kind() }));
@@ -2271,7 +2416,8 @@ function wire() {
   bind('btnSkills', 'onclick', () => openSkills());
   bind('btnAttach', 'onclick', () => call('pickFile', { kind: kind() }));
   bind('btnTpl', 'onclick', e => {
-    menuAt(e.clientX, e.clientY - 10, S.prompts.map(p => ({ text: p.name, fn: () => setInput(p.prompt) })));
+    e.stopPropagation();
+    if (togglePop('skillPanel')) { paintSkillPanel(); call('skills'); }
   });
   bind('btnClusterTpl', 'onclick', e => {
     menuAt(e.clientX, e.clientY - 10, S.clusterTemplates.map((t, i) => ({
@@ -2284,13 +2430,73 @@ function wire() {
   bind('tgLocal', 'onchange', e => call('setLocal', { on: e.target.checked }));
   bind('tgSearch', 'onchange', e => call('setSearch', { on: e.target.checked }));
   bind('btnSend', 'onclick', () => doSend());
-  // ＋ 菜单：把上传/极速/本地/联网/重生成/清空收进一个浮层，底部工具行只留最常用的几个
+  // ---- 三个展开面板内部的交互 ----
+  const ctxEl = document.getElementById('ctxPanel');
+  if (ctxEl) ctxEl.addEventListener('click', e => {
+    const chip = e.target.closest('.preset');
+    if (chip) { call('setCtxWindow', { window: Number(chip.dataset.w) || 0 }); return; }
+    if (e.target.id === 'ctxApply') {
+      const inp = document.getElementById('ctxCustom');
+      const v = Number((inp && inp.value) || 0);
+      call('setCtxWindow', { window: v > 0 ? Math.round(v) : 0 });
+      if (inp) inp.value = '';
+    }
+  });
+
+  const skEl = document.getElementById('skillPanel');
+  if (skEl) skEl.addEventListener('click', e => {
+    const pr = e.target.closest('[data-prompt]');
+    if (pr) {
+      const p = (S.prompts || [])[Number(pr.dataset.prompt)];
+      if (p) { setInput(p.prompt); closePops(null); const i = $('#input'); if (i) i.focus(); }
+      return;
+    }
+    const head = e.target.closest('.sk-head');
+    if (head) {
+      const row = head.closest('.sk-row');
+      if (row && row.dataset.i != null) row.classList.toggle('open');
+    }
+  });
+
+  const mdEl = document.getElementById('modelPanel');
+  if (mdEl) {
+    mdEl.addEventListener('click', e => {
+      const row = e.target.closest('.mrow');
+      if (!row || !row.dataset.id) return;
+      call('apiSetModel', { model: row.dataset.id });
+      if (S.settings) S.settings.apiModel = row.dataset.id;
+      renderModelLabel();
+      closePops(null);
+      requestCtx();                     // 换模型后窗口可能变了，重算用量环
+      toast('已切换到 ' + row.dataset.id);
+    });
+    const ms = document.getElementById('modelSearch');
+    if (ms) ms.addEventListener('input', paintModelPanel);
+  }
+
+  document.querySelectorAll('[data-close]').forEach(b => {
+    b.addEventListener('click', () => {
+      const el = document.getElementById(b.dataset.close);
+      if (el) el.classList.add('hidden');
+    });
+  });
+  // 点面板外面 / 点消息区 → 全部收起（点面板内部不关）
+  document.addEventListener('click', e => {
+    if (e.target.closest('.popover')) return;
+    if (e.target.closest('#ctxRing') || e.target.closest('#btnModel') || e.target.closest('#btnTpl')) return;
+    closePops(null);
+  });
+
   bind('btnPlus', 'onclick', e => {
     e.stopPropagation();
     const m = $('#plusMenu');
     if (m) m.classList.toggle('hidden');
   });
-  bind('ctxRing', 'onclick', () => call('ctxUsage'));
+  bind('ctxRing', 'onclick', e => {
+    e.stopPropagation();
+    // 环本身只有 22px，看不清；点开成面板看明细，顺便能改上下文上限
+    if (togglePop('ctxPanel')) { paintCtxPanel(); call('ctxUsage'); }
+  });
   document.addEventListener('click', e => {
     const m = $('#plusMenu');
     if (!m || m.classList.contains('hidden')) return;

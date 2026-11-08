@@ -217,6 +217,8 @@ public sealed partial class Kernel
                 members = t.Members.Select(m => new { role = m.Role, task = m.Task }).ToList(),
             }).ToList(),
             ["skills"] = SkillsJson(),
+            // 上次联网拉到的模型列表（按 API 地址缓存）：界面一启动就能显示，不用等网络
+            ["models"] = ModelCacheJson(),
             ["pet"] = _config.PetEnabled,
             ["update"] = _pendingUpdate == null ? null : UpdateJson(_pendingUpdate),
         });
@@ -325,6 +327,8 @@ public sealed partial class Kernel
             case "routeDecide": EmitRouteDecision(GetStr(a, "text")); break;
             // 输入框右侧的上下文用量环
             case "ctxUsage": EmitCtxUsage(); break;
+            // 用量面板里改上下文上限（0 = 跟随模型）
+            case "setCtxWindow": SetCtxWindow(GetInt(a, "window", 0)); break;
 
             case "settingsGet": EmitSettings(); break;
             case "settingsSave": SaveSettings(a); break;

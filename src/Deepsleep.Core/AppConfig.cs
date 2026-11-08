@@ -69,6 +69,12 @@ public sealed class AppConfig
     public bool PetEnabled { get; set; } = true;
     /// <summary>联网搜索 / 深度研究开关（🌐）。默认开启，设置里可关；会持久化到 config.json。</summary>
     public bool WebSearch { get; set; } = true;
+    /// <summary>
+    /// 上下文窗口上限（token）。0 = 跟随模型（从模型名里的 32k/128k 等推断）。
+    /// 名字里认不出窗口的模型（比如 gpt-6.1-sol、自建中转的别名）会被按 128k 保守估，
+    /// 这时用户可以在输入框的用量面板里手动指定，避免用量环显示失真。
+    /// </summary>
+    public int CtxWindowOverride { get; set; } = 0;
     /// <summary>桌宠左上角坐标（拖到哪记到哪）；-1 表示用默认的右下角位置。</summary>
     /// <summary>WebView2 兼容模式：界面渲染进程崩溃过就记住，下次直接用兼容参数启动。</summary>
     public bool WebCompat { get; set; } = false;

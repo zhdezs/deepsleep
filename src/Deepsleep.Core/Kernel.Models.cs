@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -17,6 +19,101 @@ namespace TrollWrangler.Core;
 /// </summary>
 public sealed partial class Kernel
 {
+    // ---------------- 模型列表本地缓存 ----------------
+    // 每次打开模型面板都联网拉一遍太慢、还可能被限流；列表本身又很少一天变几次。
+    // 所以按「API 地址 + 协议」为键把列表存到 data/models-cache.json：
+    // 启动就能显示上次的列表，联网拉到新结果再比对，不一样才覆盖并通知界面刷新。
+    private sealed class ModelCacheFile
+    {
+        public Dictionary<string, ModelCacheEntry> Sources { get; set; } = new();
+    }
+
+    private sealed class ModelCacheEntry
+    {
+        public string FetchedUtc { get; set; } = "";
+        public List<ModelCacheItem> Models { get; set; } = new();
+    }
+
+    private sealed class ModelCacheItem
+    {
+        public string Id { get; set; } = "";
+        public string Label { get; set; } = "";
+        public bool Free { get; set; }
+    }
+
+    private ModelCacheFile? _modelCache;
+
+    private string ModelCachePath => Path.Combine(_dataDir, "models-cache.json");
+
+    private ModelCacheFile ModelCache
+    {
+        get
+        {
+            if (_modelCache != null) return _modelCache;
+            try
+            {
+                if (File.Exists(ModelCachePath))
+                {
+                    _modelCache = JsonSerializer.Deserialize<ModelCacheFile>(File.ReadAllText(ModelCachePath));
+                }
+            }
+            catch { /* 缓存坏了就当没有，联网重拉即可 */ }
+            return _modelCache ??= new ModelCacheFile();
+        }
+    }
+
+    private static string ModelCacheKey(string url, string format)
+        => (url ?? "").Trim().TrimEnd('/').ToLowerInvariant() + "|" + (format ?? "").ToLowerInvariant();
+
+    /// <summary>把刚拉到的列表写进缓存；只留最近 8 个来源，避免文件无限长。</summary>
+    private void SaveModelCache(string url, string format, List<ModelEntry> models)
+    {
+        try
+        {
+            string key = ModelCacheKey(url, format);
+            ModelCache.Sources[key] = new ModelCacheEntry
+            {
+                FetchedUtc = DateTime.UtcNow.ToString("o"),
+                Models = models.Select(m => new ModelCacheItem { Id = m.Id, Label = m.Label, Free = m.Free }).ToList(),
+            };
+            if (ModelCache.Sources.Count > 8)
+            {
+                foreach (string old in ModelCache.Sources
+                             .OrderBy(kv => kv.Value.FetchedUtc, StringComparer.Ordinal)
+                             .Take(ModelCache.Sources.Count - 8)
+                             .Select(kv => kv.Key).ToList())
+                {
+                    ModelCache.Sources.Remove(old);
+                }
+            }
+            Directory.CreateDirectory(_dataDir);
+            File.WriteAllText(ModelCachePath,
+                JsonSerializer.Serialize(ModelCache, new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch { /* 缓存写不进去不该影响「拿到列表」这件正事 */ }
+    }
+
+    /// <summary>模型 id + 免费标记按序比对（顺序无关：不同平台返回顺序会变）。</summary>
+    private static bool SameModelSet(IEnumerable<ModelCacheItem> cached, List<ModelEntry> fresh)
+    {
+        var a = cached.Select(m => m.Id + "|" + (m.Free ? 1 : 0)).OrderBy(x => x, StringComparer.Ordinal).ToList();
+        var b = fresh.Select(m => m.Id + "|" + (m.Free ? 1 : 0)).OrderBy(x => x, StringComparer.Ordinal).ToList();
+        return a.Count == b.Count && a.SequenceEqual(b);
+    }
+
+    /// <summary>启动时下发的缓存列表（当前配置的那个来源）；没有缓存返回 null。</summary>
+    private object? ModelCacheJson()
+    {
+        string key = ModelCacheKey(_config.ApiUrl, _config.ApiFormat);
+        if (!ModelCache.Sources.TryGetValue(key, out var e) || e.Models.Count == 0) return null;
+        return new
+        {
+            source = key,
+            fetchedUtc = e.FetchedUtc,
+            models = e.Models.Select(m => new { id = m.Id, label = m.Label, free = m.Free }).ToList(),
+        };
+    }
+
     private async Task FetchApiModelsAsync(JsonElement a)
     {
         string url = GetStr(a, "url") ?? _config.ApiUrl;
@@ -53,6 +150,21 @@ public sealed partial class Kernel
             }
         }
 
+        // 拉到新列表 → 和本地缓存比一比：模型上下架很频繁，不一样就覆盖缓存并让界面刷新
+        // （界面收到 changed=true 会立刻重绘列表并提示「已更新」，不用用户再点一次）。
+        bool changed = false;
+        string fetchedUtc = "";
+        bool cachedNow = false;
+        if (models.Count > 0)
+        {
+            string ck = ModelCacheKey(url, format);
+            bool had = ModelCache.Sources.TryGetValue(ck, out var prev) && prev != null && prev.Models.Count > 0;
+            changed = had && !SameModelSet(prev!.Models, models);
+            SaveModelCache(url, format, models);
+            cachedNow = true;
+            if (ModelCache.Sources.TryGetValue(ck, out var saved)) fetchedUtc = saved.FetchedUtc;
+        }
+
         Emit(new
         {
             ev = "apiModels",
@@ -62,6 +174,9 @@ public sealed partial class Kernel
             freeCount = models.Count(m => m.Free),
             autoModel,
             autoSelected = persisted,
+            changed,
+            cached = cachedNow,
+            fetchedUtc,
             models = models.Select(m => new { id = m.Id, label = m.Label, free = m.Free }).ToList(),
         });
     }

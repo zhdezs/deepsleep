@@ -81,6 +81,23 @@
             <button id="btnClusterTpl" class="menu-item hidden">👥 <span>分工模板</span></button>
           </div>
         </div>
+        <!-- 三个可展开面板：都锚在输入卡片上方，点外面自动收起 -->
+        <div id="ctxPanel" class="popover ctx-pop hidden">
+          <div class="pop-head"><b>上下文用量</b><button class="pop-x" data-close="ctxPanel" title="关闭">✕</button></div>
+          <div class="pop-body" id="ctxBody"></div>
+        </div>
+        <div id="skillPanel" class="popover skill-pop hidden">
+          <div class="pop-head"><b>技能与指令</b><button class="pop-x" data-close="skillPanel" title="关闭">✕</button></div>
+          <div class="pop-body" id="skillBody"></div>
+        </div>
+        <div id="modelPanel" class="popover model-pop hidden">
+          <div class="pop-head"><b>切换模型</b><button class="pop-x" data-close="modelPanel" title="关闭">✕</button></div>
+          <div class="pop-body">
+            <input id="modelSearch" class="pop-search" type="text" placeholder="搜索模型名（flash / qwen / deepseek）">
+            <div id="modelHint" class="pop-hint"></div>
+            <div id="modelList" class="pop-list"></div>
+          </div>
+        </div>
         <div class="compose-foot">
           <span id="busy" class="busy"></span>
           <span id="statusLine" class="status"></span>

@@ -155,17 +155,35 @@ public sealed partial class Kernel
         }
         // 中文 1 字≈1 token，英文/符号 ≈4 字符 1 token
         long tokens = cjk + (chars - cjk) / 4;
-        int window = ContextWindowFor(_config.UseOllama ? _config.OllamaModel : _config.ApiModel);
+        string model = _config.UseOllama ? _config.OllamaModel : _config.ApiModel;
+        int auto = ContextWindowFor(model);
+        int overrideWin = _config.CtxWindowOverride;
+        int window = overrideWin > 0 ? overrideWin : auto;
         double percent = window > 0 ? Math.Min(100.0, tokens * 100.0 / window) : 0;
         Emit(new
         {
             ev = "ctxUsage",
             used = tokens,
             window,
+            autoWindow = auto,        // 模型推断值，面板里用来对比"手动指定"改了多少
+            overrideWindow = overrideWin,
             percent = Math.Round(percent, 1),
             messages = msgs,
-            model = _config.UseOllama ? _config.OllamaModel : _config.ApiModel,
+            model,
         });
+    }
+
+    /// <summary>
+    /// 手动指定上下文窗口（0 = 恢复跟随模型）。用量环立刻按新上限重算。
+    /// 上限做了钳制：小于 4k 没意义，大于 8M 只可能是手滑。
+    /// </summary>
+    private void SetCtxWindow(int window)
+    {
+        int w = Math.Max(0, Math.Min(8_000_000, window));
+        if (w > 0 && w < 4096) w = 4096;
+        _config.CtxWindowOverride = w;
+        _config.Save();
+        EmitCtxUsage();
     }
 
     /// <summary>模型窗口：看名字里的 32k / 64k / 128k / 200k / 1m；认不出按 128k，本地模型按 32k 保守估。</summary>
