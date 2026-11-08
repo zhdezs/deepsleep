@@ -591,21 +591,127 @@ function renderStatus(st) {
   $('#busy').textContent = st.busy || '';
   $('#statusLine').textContent = st.status || '';
   const b = $('#btnSend');
-  b.textContent = st.sendLabel || '发送';
-  b.className = 'send' + (st.state === 'running' ? ' stop' : st.state === 'stopped' ? ' resume' : '');
+  // 圆按钮放不下文字，用图标表达状态：运行中=■ 停止，已停=▶ 继续，其余=↑ 发送
+  const running = st.state === 'running', stopped = st.state === 'stopped';
+  b.textContent = running ? '■' : stopped ? '▶' : '↑';
+  b.title = st.sendLabel ? st.sendLabel + '（Enter）' : '发送（Enter）';
+  b.className = 'send-circle' + (running ? ' stop' : stopped ? ' resume' : '');
   $('#btnRegen').classList.toggle('off', !st.canRegenerate);
   $('#statusLine').title = st.status || '';
+  requestCtx();   // 每轮状态变化后刷新上下文用量环
 }
 
-function setTabUI(t) {
-  // 集群标签页已撤掉，界面永远停在「AI 助手」；内核里 kind=2 的历史会话仍能正常读取
+// ---------------- 上下文用量环 ----------------
+// 环周长 = 2πr，r=8.5 → 53.4；用 dashoffset 表示"还剩多少没用"。
+const CTX_CIRC = 53.4;
+let ctxTimer = null;
+function requestCtx() {
+  clearTimeout(ctxTimer);
+  ctxTimer = setTimeout(() => call('ctxUsage'), 600);   // 合并高频触发，别把内核问爆
+}
+function paintCtxRing(m) {
+  const el = $('#ctxRing');
+  if (!el || !m) return;
+  const p = Math.max(0, Math.min(100, m.percent || 0));
+  const bar = el.querySelector('.bar');
+  if (bar) bar.style.strokeDashoffset = String(CTX_CIRC * (1 - p / 100));
+  el.classList.toggle('warn', p >= 60 && p < 85);
+  el.classList.toggle('hot', p >= 85);
+  const fmt = n => n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n);
+  el.title = '上下文用量 ' + p + '%（约 ' + fmt(m.used || 0) + ' / ' + fmt(m.window || 0) + ' tokens，' +
+    (m.messages || 0) + ' 条消息）\n' + (m.model || '') + '\n按字符估算，用于判断何时该开新对话。';
+}
+
+// ---------------- 第 2 期：Router / Worker 会话树 ----------------
+function showSessionTree(m) {
+  const body = openModal('sessiontree', '🕸 SuperAgent 架构', [
+    { t: '关闭' },
+    { t: '刷新', fn: () => { call('sessionTree'); return false; } },
+  ]);
+  const st = m.stats || {};
+  const head = document.createElement('div');
+  head.className = 'hint';
+  head.style.marginBottom = '10px';
+  head.textContent = 'Router ' + (st.routerCount || 0) + ' 个 · Worker ' + (st.workerCount || 0) +
+    ' 个（活跃 ' + (st.activeWorkers || 0) + ' / 已停 ' + (st.stoppedWorkers || 0) + '）· 主会话 ' +
+    (st.mainCount || 0) + ' 个。Router 只持有共享摘要，Worker 各自独立上下文，互不串味。';
+  body.appendChild(head);
+
+  const routers = m.routers || [];
+  if (!routers.length) {
+    const e = document.createElement('div');
+    e.className = 'hint';
+    e.textContent = '还没有 Router 记录。在对话里让助手用「拆分任务」跑一次复杂任务，这里就会出现路由层与各路 Worker。';
+    body.appendChild(e);
+    return;
+  }
+  const stateName = s => ({ active: '进行中', idle: '空闲', stopped: '已停', done: '完成' }[s] || s || '');
+  const stateColor = s => s === 'active' ? 'var(--blue)' : s === 'stopped' ? '#FF3B30' : s === 'done' ? '#34C759' : 'var(--muted)';
+  for (const r of routers) {
+    const card = document.createElement('div');
+    card.style.cssText = 'border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:10px';
+    const t = document.createElement('div');
+    t.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600';
+    t.innerHTML = '<span>🧭 Router #' + r.sid + '</span>' +
+      '<span style="font-size:11px;font-weight:500;color:' + stateColor(r.state) + '">' + esc(stateName(r.state)) + '</span>' +
+      '<span style="margin-left:auto;font-size:11px;color:var(--muted);font-weight:400">' + esc(r.title || '') + '</span>';
+    card.appendChild(t);
+    if (r.summary) {
+      const sm = document.createElement('div');
+      sm.className = 'hint';
+      sm.style.margin = '6px 0 8px';
+      sm.textContent = r.summary;
+      card.appendChild(sm);
+    }
+    for (const w of (r.workers || [])) {
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:flex-start;gap:8px;padding:6px 0 6px 14px;border-left:2px solid var(--border);margin-left:2px;font-size:12.5px';
+      row.innerHTML = '<span style="color:var(--muted)">└</span>' +
+        '<span style="min-width:64px;font-weight:600">' + esc(w.role || ('#' + w.sid)) + '</span>' +
+        '<span style="font-size:11px;color:' + stateColor(w.state) + '">' + esc(stateName(w.state)) + '</span>' +
+        '<span style="color:var(--muted);font-size:11.5px;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' +
+        esc(w.summary || '') + '">' + esc(w.summary || '（无产出）') + '</span>' +
+        '<span style="color:var(--muted);font-size:11px">#' + w.sid + '</span>';
+      card.appendChild(row);
+    }
+    body.appendChild(card);
+  }
+}
+
+function showRouteDecision(m) {
+  const body = openModal('routediag', '🧭 路由诊断', [{ t: '关闭' }]);
+  if (m.error) {
+    const e = document.createElement('div');
+    e.className = 'hint';
+    e.textContent = m.error;
+    body.appendChild(e);
+    return;
+  }
+  const head = document.createElement('div');
+  head.style.cssText = 'font-size:13px;font-weight:600;margin-bottom:8px';
+  head.textContent = (m.path === 'slow' ? '慢路径 · 拆分并行' : '快路径 · 单个助手直做') +
+    '（置信度 ' + m.confidence + '，规划 ' + (m.workers || 1) + ' 路）';
+  body.appendChild(head);
+  const ul = document.createElement('div');
+  ul.style.cssText = 'font-size:12.5px;line-height:1.75;color:var(--text)';
+  ul.innerHTML = (m.reasons || []).map(r => '· ' + esc(r)).join('<br>') +
+    ((m.roles || []).length ? '<br><span style="color:var(--muted)">识别到的角色：' + esc(m.roles.join(' / ')) + '</span>' : '');
+  body.appendChild(ul);
+  const src = document.createElement('div');
+  src.className = 'hint';
+  src.style.marginTop = '10px';
+  src.textContent = '规则判定、毫秒级出结果，不额外花一次模型调用。判定只是建议：助手仍可自行决定要不要调「拆分任务」。';
+  body.appendChild(src);
+}
+
+function setTabUI(t) {  // 集群标签页已撤掉，界面永远停在「AI 助手」；内核里 kind=2 的历史会话仍能正常读取
   S.tab = 0;
   document.querySelectorAll('#seg button').forEach(b =>
     b.classList.toggle('on', +b.dataset.tab === S.tab));
   $('#btnClusterTpl').classList.add('hidden');
   renderAgents();
   $('#mode').classList.remove('hidden');
-  $('#input').placeholder = '说点什么…（Enter 发送 / Shift+Enter 换行 / Esc 停止）';
+  $('#input').placeholder = '今天帮你做些什么？@ 添加上下文，/ 调用技能与指令';
   document.querySelector('#composer').dataset.tab = S.tab;
 }
 
@@ -835,6 +941,9 @@ function handleEvent(m) {
     case 'ask': showAsk(m); break;
     case 'askClose': closeAsk(m.askId); break;
     case 'update': S.update = m.update; showUpdatePill(m.update); break;
+    case 'ctxUsage': paintCtxRing(m); break;
+    case 'sessionTree': showSessionTree(m); break;
+    case 'routeDecision': showRouteDecision(m); break;
     case 'updateLatest': S.update = null; $('#btnUpdate').classList.add('hidden'); toast(m.text); break;
     case 'updateProgress': updateProgress(m.percent, m.status); break;
     case 'updateStatus': updateProgress(null, m.text, m.done); break;
@@ -1888,6 +1997,42 @@ function openSettings(fresh, tabIdx) {
   tk.onclick = () => { const v = val('token'); if (v) call('setToken', { token: v }); };
   pane.appendChild(tk);
 
+  // ---- 第 2 期：SuperAgent 架构（Router / Worker 会话）----
+  sect('SuperAgent 架构（第 2 期）');
+  const archBox = document.createElement('div');
+  archBox.className = 'field';
+  archBox.innerHTML = '<label>路由层与 Worker 会话</label>' +
+    '<div class="hint">每次「拆分任务」都会开一个 Router 会话 + 若干上下文隔离的 Worker 会话；' +
+    'Router 只持有共享摘要（目标/权限/约束/产物），Worker 私有历史互不可见。</div>';
+  pane.appendChild(archBox);
+  const archBtn = document.createElement('button');
+  archBtn.className = 'btn';
+  archBtn.textContent = '🕸 查看会话架构';
+  archBtn.style.margin = '0 6px 6px 0';
+  archBtn.onclick = () => call('sessionTree');
+  pane.appendChild(archBtn);
+
+  const diagWrap = document.createElement('div');
+  diagWrap.className = 'field';
+  diagWrap.innerHTML = '<label>路由诊断（贴一段任务，看会不会被拆、拆几路、为什么）</label>';
+  const diagTa = document.createElement('textarea');
+  diagTa.id = 'setRouteText';
+  diagTa.className = 'mdarea';
+  diagTa.rows = 3;
+  diagTa.spellcheck = false;
+  diagTa.placeholder = '例：把官网首页改版：先出配色方案，再改 CSS，同时补一份改版说明文档';
+  diagWrap.appendChild(diagTa);
+  pane.appendChild(diagWrap);
+  const diagBtn = document.createElement('button');
+  diagBtn.className = 'btn';
+  diagBtn.textContent = '🧭 诊断这段任务';
+  diagBtn.style.margin = '0 0 6px';
+  diagBtn.onclick = () => {
+    const t = (document.getElementById('setRouteText') || {}).value || '';
+    call('routeDecide', { text: t });
+  };
+  pane.appendChild(diagBtn);
+
   sect('初始提示词（AGENT.md）');
   const mdWrap = document.createElement('div');
   mdWrap.className = 'field';
@@ -2139,6 +2284,23 @@ function wire() {
   bind('tgLocal', 'onchange', e => call('setLocal', { on: e.target.checked }));
   bind('tgSearch', 'onchange', e => call('setSearch', { on: e.target.checked }));
   bind('btnSend', 'onclick', () => doSend());
+  // ＋ 菜单：把上传/极速/本地/联网/重生成/清空收进一个浮层，底部工具行只留最常用的几个
+  bind('btnPlus', 'onclick', e => {
+    e.stopPropagation();
+    const m = $('#plusMenu');
+    if (m) m.classList.toggle('hidden');
+  });
+  bind('ctxRing', 'onclick', () => call('ctxUsage'));
+  document.addEventListener('click', e => {
+    const m = $('#plusMenu');
+    if (!m || m.classList.contains('hidden')) return;
+    if (!e.target.closest('#plusMenu') && !e.target.closest('#btnPlus')) m.classList.add('hidden');
+  });
+  // 菜单里的操作点完就收起，别挡着输入框
+  ['btnAttach', 'btnTpl', 'btnRegen', 'btnClear'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('click', () => { const m = $('#plusMenu'); if (m) m.classList.add('hidden'); });
+  });
   bind('btnRegen', 'onclick', () => call('regenerate', { kind: kind() }));
   bind('btnClear', 'onclick', () => confirmBox('清空当前对话？',
     '清空后当前对话的消息与上下文都会被删掉，其他对话不受影响。', () => call('clear', { kind: kind() }), '清空'));
@@ -2175,6 +2337,7 @@ function wire() {
 }
 
 wire();
+requestCtx();   // 首屏就把上下文用量环填上，别等第一次状态推送
 
 /* Windows 版由外壳在导航完成后推 {"ev":"uiReady"}；Photino 没有导航回调，
    由界面主动报个到（外壳收到 shellReady 会立刻回 uiReady + hostInfo）。 */

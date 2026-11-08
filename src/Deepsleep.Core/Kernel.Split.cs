@@ -40,8 +40,54 @@ public sealed partial class Kernel
 
         string mode = _agent.RunMode;
 
+        // ---- Router 层（第 2 期）：一次拆分 = 一个 Router 会话 + N 个上下文隔离的 Worker 会话 ----
+        // Router 持有共享上下文（目标/权限/约束/角色/产物/同会话历史结论），Worker 只能看这份简报，
+        // 彼此的私有历史互相不可见 —— 这就是"共享上下文 + 上下文隔离"的落地方式。
+        int parentSid = _agentCurrentSid();
+        var decision = AgentRouter.Decide(
+            string.Join("\n", tasks.Select(t => t.Role + "：" + t.Task)), mode, tasks.Count);
+        var shared = new SharedContext
+        {
+            Goal = Cap(tasks.Count > 1 ? tasks[0].Task : tasks[0].Task, 400),
+            Mode = mode,
+            Roles = tasks.Select(t => t.Role).ToList(),
+            PriorMemory = Sessions.List("router", null, parentSid).FirstOrDefault()?.Summary ?? "",
+        };
+        foreach (string c in new[]
+                 {
+                     mode == "chat" ? "只读：不改文件、不跑会改动电脑的命令" : "产物必须真实落盘并给出完整路径",
+                     "不要反问、不要等确认，直接交付",
+                     tasks.Count > 1 ? "只做自己这一路，别替其它角色做" : "单路执行",
+                 })
+            shared.Constraints.Add(c);
+
+        int routerSid = _nextRouterSid++;
+        UpsertSession(routerSid, "router", parentSid, "路由：" + Cap(tasks[0].Role, 20) + " 等 " + tasks.Count + " 路",
+            "active", shared.ToSummary(), new List<AgentMessage>());
+
+        var workerSids = new int[tasks.Count];
+        for (int i = 0; i < tasks.Count; i++)
+        {
+            workerSids[i] = _nextWorkerSid++;
+            UpsertSession(workerSids[i], "worker", routerSid, tasks[i].Role, "active",
+                "等待执行：" + Cap(tasks[i].Task, 80), new List<AgentMessage>());
+        }
+        Emit(new
+        {
+            ev = "routerPlan",
+            routerSid,
+            parentSid,
+            path = decision.Path == RoutePath.Slow ? "slow" : "fast",
+            confidence = decision.Confidence,
+            reasons = decision.Reasons,
+            workers = tasks.Select((t, i) => (object)new
+            {
+                sid = workerSids[i], role = t.Role, task = Cap(t.Task, 120), state = "active",
+            }).ToList(),
+        });
+
         // 先落一张卡片：用户能看见「拆了几路、每路在干嘛」，而不是干等一大段空白
-        int sid = _agentCurrentSid();
+        int sid = parentSid;
         var started = new List<ChatItem>();
         foreach (var (role, task) in tasks)
         {
@@ -51,7 +97,7 @@ public sealed partial class Kernel
                 CanAccept = false,
                 ToolName = Agent.ToolSplit,
                 ToolSummary = $"{role}：{Cap(task, 60)}",
-                ToolDetail = $"**角色**：{role}\n\n**子任务**：{task}\n\n（子智能体独立执行，完成后在此汇总）",
+                ToolDetail = $"**角色**：{role}\n\n**子任务**：{task}\n\n（Worker 会话 #{workerSids[started.Count]} 独立执行，完成后在此汇总）",
                 ToolKind = "split",
                 Text = $"拆出子任务「{role}」",
                 Meta = "拆分任务",
@@ -84,8 +130,8 @@ public sealed partial class Kernel
                 await gate.WaitAsync(ct).ConfigureAwait(false);
                 try
                 {
-                    results[idx] = await RunOneSubAgentAsync(tasks[idx].Role, tasks[idx].Task, mode, ct)
-                        .ConfigureAwait(false);
+                    results[idx] = await RunOneSubAgentAsync(tasks[idx].Role, tasks[idx].Task, mode, ct,
+                                                             workerSids[idx], shared).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) { results[idx] = "（已停止）"; }
                 catch (Exception ex) { results[idx] = "[子智能体出错] " + ex.Message; }
@@ -94,13 +140,47 @@ public sealed partial class Kernel
         }
         try { await Task.WhenAll(workers).ConfigureAwait(false); } catch { /* 单路异常已在内部兜住 */ }
 
+        // 收口：Worker 会话落最终状态与摘要，Router 汇总成组织记忆（同会话下一次拆分直接复用）
+        var artifacts = new List<string>();
+        for (int i = 0; i < tasks.Count; i++)
+        {
+            bool ok = !results[i].StartsWith("[子智能体出错]", StringComparison.Ordinal)
+                      && results[i] != "（已停止）" && !string.IsNullOrWhiteSpace(results[i]);
+            string state = results[i] == "（已停止）" ? "stopped" : ok ? "done" : "stopped";
+            string summary = ok ? Cap(results[i], 200) : results[i];
+            UpsertSession(workerSids[i], "worker", routerSid, tasks[i].Role, state, summary,
+                new List<AgentMessage>
+                {
+                    new() { Role = "user", Content = tasks[i].Task },
+                    new() { Role = "assistant", Content = results[i] },
+                });
+            foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
+                         results[i] ?? "", @"(?m)^\s*(?:产出路径|文件|产物)[：:]\s*(\S.+)$"))
+                artifacts.Add(m.Groups[1].Value.Trim());
+        }
+        shared.Artifacts = artifacts.Distinct().Take(12).ToList();
+        UpsertSession(routerSid, "router", parentSid, "路由：" + Cap(tasks[0].Role, 20) + " 等 " + tasks.Count + " 路",
+            "done", shared.ToSummary(), new List<AgentMessage>());
+        Emit(new
+        {
+            ev = "routerDone",
+            routerSid,
+            path = decision.Path == RoutePath.Slow ? "slow" : "fast",
+            workers = tasks.Select((t, i) => (object)new
+            {
+                sid = workerSids[i], role = t.Role, state = results[i] == "（已停止）" ? "stopped" : "done",
+            }).ToList(),
+            artifacts = shared.Artifacts,
+        });
+
         // 把结果回填到卡片（用户点开就能看到每一路到底做了什么）
         var conv2 = _agentConvs.FirstOrDefault(c => c.Sid == sid);
         if (conv2 != null)
         {
             for (int i = 0; i < tasks.Count && i < started.Count; i++)
             {
-                started[i].ToolDetail = $"**角色**：{tasks[i].Role}\n\n**子任务**：{tasks[i].Task}\n\n---\n\n"
+                started[i].ToolDetail = $"**角色**：{tasks[i].Role}\n\n**子任务**：{tasks[i].Task}\n\n"
+                    + $"**Worker 会话**：#{workerSids[i]}\n\n---\n\n"
                     + (string.IsNullOrWhiteSpace(results[i]) ? "（没有产出）" : results[i]);
                 Emit(new { ev = "msgUpdate", kind = 0, conv = sid, id = started[i].Id, toolDetail = started[i].ToolDetail });
             }
@@ -126,8 +206,9 @@ public sealed partial class Kernel
         return sb.ToString();
     }
 
-    /// <summary>跑一路子任务：独立 Agent 实例，配置继承主助手，但权限按 chat 规则收紧。</summary>
-    private async Task<string> RunOneSubAgentAsync(string role, string task, string mode, CancellationToken ct)
+    /// <summary>跑一路子任务：独立 Agent 实例（独立 Worker 会话），配置继承主助手，但权限按 chat 规则收紧。</summary>
+    private async Task<string> RunOneSubAgentAsync(string role, string task, string mode, CancellationToken ct,
+                                                   int workerSid = -1, SharedContext? shared = null)
     {
         var sub = new Agent(_engine)
         {
@@ -141,15 +222,38 @@ public sealed partial class Kernel
         sub.Backend = _agent.Backend;
         sub.MultimodalMain = _config.MultimodalMain;
         sub.Skills = _agent.Skills;
-        // 提示里写清角色与交付要求：子智能体看不到主对话，必须自包含
+        // 提示里写清角色与交付要求：子智能体看不到主对话，必须自包含（共享简报由 Router 下发）
         string prompt =
             $"你是一名独立执行子任务的智能体，你的角色是「{role}」。\n" +
             "完成后直接给出你的产出（可以是结论、代码、文件路径等），不要反问、不要等确认。\n" +
             (mode == "chat"
                 ? "当前处于只读模式：禁止执行任何会改动电脑的操作（不写文件、不运行命令），只做分析与给出建议。\n"
-                : "把产物真实写到磁盘，并在产出里给出完整本地路径。\n") +
+                : "把产物真实写到磁盘，并在产出里给出完整本地路径，形如「产出路径：D:\\…」。\n") +
+            (shared != null ? "\n" + shared.ToBrief() + "\n" : "") +
             "\n你的任务：\n" + task;
-        return await sub.RunAsync(-1, prompt, ct).ConfigureAwait(false);
+        // 传真实 Worker 会话 id：它在 Session 库里是一个独立会话，上下文与其它 Worker 完全隔离
+        return await sub.RunAsync(workerSid, prompt, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 落一个 Session 记录（保留 CreatedUtc、Meta 等已有字段，避免每次覆盖丢元数据）。
+    /// Router / Worker 的状态与摘要都走这里，Watchdog（第 4 期）直接读同一份数据。
+    /// </summary>
+    private void UpsertSession(int sid, string kind, int? parentSid, string title, string state,
+                               string summary, List<AgentMessage> messages)
+    {
+        try
+        {
+            var rec = Sessions.Load(sid) ?? new SessionRecord { Sid = sid };
+            rec.Kind = kind;
+            rec.ParentSid = parentSid;
+            rec.Title = string.IsNullOrWhiteSpace(title) ? rec.Title : title;
+            rec.State = state;
+            rec.Summary = summary ?? "";
+            if (messages.Count > 0) rec.Messages = messages;
+            Sessions.Upsert(rec);
+        }
+        catch { /* 落盘失败不能影响主流程：内存里照样跑完 */ }
     }
 
     /// <summary>解析拆分任务的参数。容忍几种常见写法（tasks/task/子任务、role/name/角色）。</summary>

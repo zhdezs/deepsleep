@@ -17,7 +17,6 @@
       <button data-tab="0" class="on">AI 助手</button>
     </div>
     <div class="tb-right">
-      <button id="btnModel" class="pill" title="切换模型（列表联网获取，不用去设置里翻）">🧠 <span id="modelText">模型</span></button>
       <button id="btnUpdate" class="pill hidden">⬆ <span id="updateText">检查更新</span></button>
       <button id="btnTheme" class="icon" title="深浅色">🌙</button>
       <button id="btnLink" class="icon" title="超级连接（配对码 / 远程桌面）">🔗</button>
@@ -44,25 +43,42 @@
       <button id="btnBottom" class="fab hidden" title="回到底部">↓</button>
 
       <div id="composer">
-        <div class="compose-row">
-          <button id="btnAttach" class="icon" title="上传文件">📎</button>
-          <button id="btnTpl" class="icon" title="快捷指令">💬</button>
-          <button id="btnClusterTpl" class="icon hidden" title="分工模板">👥</button>
-          <select id="mode" title="工具权限模式">
-            <option value="chat">chat · 聊天（不改动电脑）</option>
-            <option value="work">work · 命令需确认</option>
-            <option value="boom">boom · 全自动</option>
-          </select>
-          <label class="chip"><input type="checkbox" id="tgFast"><i>⚡</i><span>极速</span></label>
-          <label class="chip"><input type="checkbox" id="tgLocal"><i>🧠</i><span>本地</span></label>
-          <label class="chip" title="网络搜索 / 深度研究"><input type="checkbox" id="tgSearch"><i>🌐</i><span>联网</span></label>
-        </div>
-        <div class="input-row">
-          <textarea id="input" rows="1" placeholder="说点什么…（Enter 发送 / Shift+Enter 换行 / Esc 停止）"></textarea>
-          <div class="compose-actions">
-            <button id="btnRegen" class="icon" title="重新生成">↻</button>
-            <button id="btnClear" class="icon" title="清空当前对话">🗑</button>
-            <button id="btnSend" class="send">发送</button>
+        <!-- 输入卡片：一个圆角框装下所有控件。上面写内容，底部一条工具行
+             （＋ 添加上下文 / 权限模式 / 技能 / 上下文用量 / 模型 / 发送），
+             常用动作都收进 ＋ 菜单，避免底部堆一排小药丸把输入区挤满。 -->
+        <div class="compose-box">
+          <textarea id="input" rows="1" placeholder="今天帮你做些什么？@ 添加上下文，/ 调用技能与指令"></textarea>
+          <div class="compose-bar">
+            <button id="btnPlus" class="bar-icon plus" title="添加上下文 / 更多">＋</button>
+            <div class="mode-pill"><select id="mode" title="工具权限模式">
+              <option value="chat">chat · 聊天</option>
+              <option value="work">work · 需确认</option>
+              <option value="boom">boom · 全自动</option>
+            </select></div>
+            <button id="btnTpl" class="bar-icon" title="技能与指令（/）">🤖</button>
+            <span class="grow"></span>
+            <!-- 上下文用量：外圈 = 已占用比例，悬停看具体数字 -->
+            <button id="ctxRing" class="ctx-ring" title="上下文用量">
+              <svg viewBox="0 0 22 22" aria-hidden="true">
+                <circle class="track" cx="11" cy="11" r="8.5"></circle>
+                <circle class="bar" cx="11" cy="11" r="8.5"></circle>
+              </svg>
+            </button>
+            <button id="btnModel" class="model-pill" title="切换模型（列表联网获取，不用去设置里翻）">
+              <span class="dot"></span><span id="modelText">模型</span><span class="caret">⌄</span>
+            </button>
+            <button id="btnSend" class="send-circle" title="发送（Enter）">↑</button>
+          </div>
+          <!-- ＋ 菜单：上传 / 极速 / 本地 / 联网 / 重新生成 / 清空 / 技能 -->
+          <div id="plusMenu" class="plus-menu hidden">
+            <button id="btnAttach" class="menu-item">📎 <span>上传文件</span></button>
+            <label class="menu-item"><input type="checkbox" id="tgFast"><span>⚡ 极速模式</span></label>
+            <label class="menu-item"><input type="checkbox" id="tgLocal"><span>🧠 本地模型</span></label>
+            <label class="menu-item"><input type="checkbox" id="tgSearch"><span>🌐 联网搜索</span></label>
+            <div class="menu-sep"></div>
+            <button id="btnRegen" class="menu-item">↻ <span>重新生成</span></button>
+            <button id="btnClear" class="menu-item">🗑 <span>清空当前对话</span></button>
+            <button id="btnClusterTpl" class="menu-item hidden">👥 <span>分工模板</span></button>
           </div>
         </div>
         <div class="compose-foot">

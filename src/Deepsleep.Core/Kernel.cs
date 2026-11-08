@@ -58,6 +58,10 @@ public sealed partial class Kernel
     private int _nextAgentSid = 1;
     private int _nextCounterSid = 1;
     private int _nextClusterSid = 500001;
+    /// <summary>Router 会话 id 段（550001+）：与集群会话(500001+)、Worker(600001+) 都不重叠，避免串号。</summary>
+    private int _nextRouterSid = 550001;
+    /// <summary>Worker 会话 id 段（600001+）：第 2 期起子智能体各占一个隔离会话。</summary>
+    private int _nextWorkerSid = 600001;
     private string _agentBackendBefore = "auto";
     private bool _llmOnline;
     private UpdateInfo? _pendingUpdate;
@@ -124,6 +128,7 @@ public sealed partial class Kernel
         _dataDir = dataDir;
         Directory.CreateDirectory(_dataDir);
         Sessions = new SessionStore(_dataDir);
+        SyncSessionSidCounters();
         _engine.SetModelDir(_dataDir);
         _config = AppConfig.Load(_dataDir);
         _engine.ApplyConfig(_config);
@@ -315,6 +320,11 @@ public sealed partial class Kernel
             // Session 数据库：列表 / 单条详情，供设置页与后续 Router、Watchdog 使用
             case "sessionList": EmitSessions(GetStr(a, "kind"), GetStr(a, "state")); break;
             case "sessionGet": EmitSession(GetInt(a, "sid", 0)); break;
+            // 第 2 期：Router / Worker 会话树 + 路由诊断（界面「设置 → SuperAgent 架构」）
+            case "sessionTree": EmitSessionTree(); break;
+            case "routeDecide": EmitRouteDecision(GetStr(a, "text")); break;
+            // 输入框右侧的上下文用量环
+            case "ctxUsage": EmitCtxUsage(); break;
 
             case "settingsGet": EmitSettings(); break;
             case "settingsSave": SaveSettings(a); break;
