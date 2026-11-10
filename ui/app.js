@@ -81,7 +81,8 @@ window.addEventListener('focus', () => {
 const S = {
   tab: 0, conv: null, items: [], convs: [], settings: {},
   prompts: [], clusterTemplates: [], skills: [], state: 'idle', agents: [],
-  update: null, pet: true, version: '', host: null
+  // versionFull = 版本号 + 内部构建（3.2.3 · nebula.4）；build/code 单独留着给诊断信息用
+  update: null, pet: true, version: '', versionFull: '', build: 0, code: '', host: null
 };
 const kind = () => (S.tab === 1 ? 2 : 0);
 
@@ -661,7 +662,9 @@ function paintCtxPanel(m) {
     '<div class="ctx-bar ' + cls + '"><i style="width:' + p + '%"></i></div>' +
     '<div style="margin-top:9px">' +
       '<div class="ctx-kv"><span>消息条数</span><span>' + (d.messages || 0) + ' 条</span></div>' +
-      '<div class="ctx-kv"><span>当前模型</span><span>' + esc(d.model || '未设置') + '</span></div>' +
+      '<div class="ctx-kv"><span>当前模型</span><span class="kv-model">' +
+        (window.DSBrand && d.model ? DSBrand.html(d.model, 'sm') : '') +
+        esc(d.model || '未设置') + '</span></div>' +
       '<div class="ctx-kv"><span>上限来源</span><span>' + (ov > 0 ? '手动指定 ' + fmtTok(ov) : '跟随模型（推断 ' + fmtTok(auto) + '）') + '</span></div>' +
     '</div>' +
     '<div class="ctx-sec"><h5>上下文上限</h5>' +
@@ -720,8 +723,10 @@ function paintModelPanel() {
   list.innerHTML = hits.slice(0, 400).map(m => {
     const isCur = m.id === cur;
     const name = (m.label && m.label !== m.id) ? m.label + '　·　' + m.id : m.id;
-    return '<div class="mrow' + (isCur ? ' cur' : '') + '" data-id="' + esc(m.id) + '">' +
-      '<span class="mname">' + (m.free ? '🆓 ' : '') + esc(name) + '</span>' +
+    // 图标按模型名认品牌：列表一眼能分出这是哪家的模型，比一串英文 id 好扫。
+    const logo = window.DSBrand ? DSBrand.html(m.id + ' ' + (m.label || '')) : '';
+    return '<div class="mrow' + (isCur ? ' cur' : '') + '" data-id="' + esc(m.id) + '" title="' + esc(m.id) + '">' +
+      '<span class="m-left">' + logo + '<span class="mname">' + (m.free ? '🆓 ' : '') + esc(name) + '</span></span>' +
       '<span class="mtag">' + (isCur ? '当前' : '') + '</span></div>';
   }).join('');
 }
@@ -950,6 +955,9 @@ function handleEvent(m) {
       break;
     case 'boot':
       S.version = m.version || ''; S.theme = m.theme;
+      // 内部构建号 + 代号（v3.2.3 · nebula.4）：同版本号重新打包时，靠它说明手上是哪一次构建
+      S.versionFull = m.display || S.version;
+      S.build = m.build || 0; S.code = m.code || '';
       S.settings = m.settings || {}; S.prompts = m.prompts || [];
       S.clusterTemplates = m.clusterTemplates || []; S.skills = m.skills || [];
       // 上次联网拉到的模型列表（内核按 API 地址缓存在 data/models-cache.json）：
@@ -967,7 +975,7 @@ function handleEvent(m) {
       S.agents = m.agents || [];
       renderConvs(); renderItems(); renderAgents(); renderStatus(m.status);
       if (S.update) showUpdatePill(S.update);
-      document.title = 'deepsleep v' + S.version;
+      document.title = 'deepsleep v' + (S.versionFull || S.version);
       break;
     case 'tab':
       setTabUI(m.tab || 0);
@@ -1551,6 +1559,16 @@ function modelShortName() {
 function renderModelLabel() {
   const el = $('#modelText');
   if (el) el.textContent = modelShortName();
+  // 模型名旁边那个图标按名字自动认品牌（gpt / claude / deepseek / glm …），
+  // 认不出来就退化成首字母圆标，不会空着。
+  const id = String((S.settings || {}).apiModel || '');
+  const box = $('#modelLogo');
+  if (box) box.innerHTML = window.DSBrand ? DSBrand.html(id, 'sm') : '';
+  const btn = $('#btnModel');
+  if (btn) {
+    const b = window.DSBrand && id ? DSBrand.of(id) : null;
+    btn.title = id ? (b ? b.n + ' · ' + id : id) : '切换模型（列表联网获取，不用去设置里翻）';
+  }
 }
 
 function openModelPicker() {
@@ -2288,20 +2306,21 @@ let updateMsg = '';
 function showUpdatePill(u) {
   if (!u) { $('#btnUpdate').classList.add('hidden'); return; }   // 更新线路被切换：旧提醒作废
   $('#btnUpdate').classList.remove('hidden');
-  $('#updateText').textContent = updateActive ? '升级中…' : '有新版 v' + u.version;
+  // display = 版本号 + 内部构建（3.2.3 · nebula.4）：只改构建号推送时，用户能看出确实换了包
+  $('#updateText').textContent = updateActive ? '升级中…' : '有新版 v' + (u.display || u.version);
 }
 function onUpdateClick() {
   if (updateActive) { updateDismissed = false; openUpdateProgress(); return; }
   const u = S.update;
   if (!u) { call('checkUpdate'); return; }
-  const body = openModal('updateinfo', '发现新版本 v' + u.version, [
+  const body = openModal('updateinfo', '发现新版本 v' + (u.display || u.version), [
     { t: '稍后' },
     // 返回 false：进度窗由 startUpdate 自己开，别让弹窗骨架再关一次
     { t: '立即升级', primary: true, fn: () => { startUpdate(); return false; } },
   ]);
   const d = document.createElement('div');
   d.style.cssText = 'font-size:12.5px;line-height:1.6;white-space:pre-wrap;margin:6px 0 14px';
-  d.textContent = '当前版本：v' + u.current + '\n\n更新内容：\n' + (u.notes || '（无更新说明）') +
+  d.textContent = '当前版本：v' + (u.currentDisplay || u.current) + '\n\n更新内容：\n' + (u.notes || '（无更新说明）') +
     '\n\n升级会下载安装包，退出后静默覆盖安装并自动重启。用户数据（API Key、对话历史、记忆、自训练模型）不受影响。\n\n' + (u.route || '');
   body.appendChild(d);
 }

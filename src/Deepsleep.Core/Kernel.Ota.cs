@@ -18,6 +18,13 @@ public sealed partial class Kernel
     {
         ["version"] = i.Version,
         ["current"] = Updater.CurrentVersion,
+        // 版本号相同、只改构建号的包：界面靠这两个字段说清「新在哪」
+        ["build"] = i.Build,
+        ["code"] = i.Code,
+        ["display"] = Updater.DisplayOf(i),
+        ["currentBuild"] = Updater.CurrentBuild,
+        ["currentCode"] = Updater.CurrentCode,
+        ["currentDisplay"] = Updater.CurrentDisplay,
         ["notes"] = i.Notes,
         ["size"] = i.Size,
         ["sha256"] = i.Sha256,
@@ -66,7 +73,7 @@ public sealed partial class Kernel
             if (info == null)
             {
                 _pendingUpdate = null;
-                Emit(new { ev = "updateLatest", text = $"已是最新版本（v{Updater.CurrentVersion}）。" });
+                Emit(new { ev = "updateLatest", text = $"已是最新版本（v{Updater.CurrentDisplay}）。" });
                 return;
             }
             _pendingUpdate = info;
@@ -103,7 +110,7 @@ public sealed partial class Kernel
                 info = await Updater.CheckAsync(_config.UpdateUrl, _config.GiteeFirst).ConfigureAwait(false);
                 if (info == null)
                 {
-                    Emit(new { ev = "updateLatest", text = $"已是最新版本（v{Updater.CurrentVersion}）。" });
+                    Emit(new { ev = "updateLatest", text = $"已是最新版本（v{Updater.CurrentDisplay}）。" });
                     return;
                 }
                 _pendingUpdate = info;

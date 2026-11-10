@@ -16,6 +16,10 @@ namespace TrollWrangler;
 public sealed class UpdateInfo
 {
 public string Version { get; set; } = "";
+/// <summary>内部构建号（版本号第 4 段）。版本号相同时靠它判断谁更新；0 = 对方没写，按老规矩当没有新版。</summary>
+public int Build { get; set; }
+/// <summary>对方这次构建的内部代号（发布说明里的 build 行 / 清单里的 code 字段）。</summary>
+public string Code { get; set; } = "";
 public string Url { get; set; } = "";
 /// <summary>国内加速地址（Gitee 同名仓库的同一版本）；有就优先用它下载。</summary>
 public string MirrorUrl { get; set; } = "";
@@ -55,6 +59,21 @@ public List<string> FallbackUrls { get; set; } = new();
 public static class Updater
 {
 public static string CurrentVersion { get; } = ReadCurrentVersion();
+
+/// <summary>
+/// 当前内部构建号（版本号第 4 段，见 src\Directory.Build.props 里的 &lt;FileVersion&gt;）。
+/// 版本号不变、只改构建号时，OTA 就是靠它认出「这是新包」的。
+/// </summary>
+public static int CurrentBuild { get; } = ReadCurrentBuild();
+
+/// <summary>当前构建的内部代号（Directory.Build.props 的 &lt;DeepSleepCode&gt;，编译进程序集元数据）。</summary>
+public static string CurrentCode { get; } = AsmMeta("DeepSleepCode");
+
+/// <summary>界面上显示的完整版本：3.2.3 · nebula.4（没有代号/构建号时自动退化）。</summary>
+public static string CurrentDisplay =>
+    CurrentCode.Length > 0
+        ? (CurrentBuild > 0 ? $"{CurrentVersion} · {CurrentCode}.{CurrentBuild}" : $"{CurrentVersion} · {CurrentCode}")
+        : (CurrentBuild > 0 ? $"{CurrentVersion} · b{CurrentBuild}" : CurrentVersion);
 
 /// <summary>
 /// GitHub 令牌（私有仓库 / 提高 API 限额）。只从两处读取：
@@ -159,12 +178,12 @@ private static string ReadCurrentVersion()
 {
     try
     {
-        foreach (var name in new[] { "deepsleep.exe", "deepsleep-core", "deepsleep" })
+        foreach (var name in new[] { "deepsleep.exe", "deepsleep-core.exe", "deepsleep-core", "deepsleep" })
         {
             string exe = Path.Combine(AppContext.BaseDirectory, name);
             if (!File.Exists(exe)) continue;
             var vi = System.Diagnostics.FileVersionInfo.GetVersionInfo(exe);
-            string fromExe = CleanVersion(vi.FileVersion ?? vi.ProductVersion);
+            string fromExe = VersionOnly(CleanVersion(vi.FileVersion ?? vi.ProductVersion));
             if (fromExe.Length > 0) return fromExe;
         }
     }
@@ -175,10 +194,74 @@ private static string ReadCurrentVersion()
         var asm = typeof(Updater).Assembly;
         var attr = (System.Reflection.AssemblyInformationalVersionAttribute?)
             Attribute.GetCustomAttribute(asm, typeof(System.Reflection.AssemblyInformationalVersionAttribute));
-        string v = CleanVersion(attr?.InformationalVersion ?? asm.GetName().Version?.ToString());
+        string v = VersionOnly(CleanVersion(attr?.InformationalVersion ?? asm.GetName().Version?.ToString()));
         return v.Length > 0 ? v : "1.0.0";
     }
     catch { return "1.0.0"; }
+}
+
+/// <summary>
+/// 当前内部构建号：先读安装目录 exe 的文件版本第 4 段（与 CurrentVersion 同源，升级完不会对不上号），
+/// 读不到再退回程序集元数据里的 DeepSleepBuild。
+/// </summary>
+private static int ReadCurrentBuild()
+{
+    try
+    {
+        foreach (var name in new[] { "deepsleep.exe", "deepsleep-core.exe", "deepsleep-core", "deepsleep" })
+        {
+            string exe = Path.Combine(AppContext.BaseDirectory, name);
+            if (!File.Exists(exe)) continue;
+            var vi = System.Diagnostics.FileVersionInfo.GetVersionInfo(exe);
+            int b = BuildOf(vi.FileVersion ?? vi.ProductVersion);
+            if (b > 0) return b;
+        }
+    }
+    catch { }
+    return BuildOf(AsmMeta("DeepSleepBuild"));
+}
+
+/// <summary>读程序集元数据（Directory.Build.props 里的 AssemblyMetadata 项）；没有就返回空串。</summary>
+private static string AsmMeta(string key)
+{
+    try
+    {
+        foreach (var a in typeof(Updater).Assembly.GetCustomAttributes(
+                     typeof(System.Reflection.AssemblyMetadataAttribute), false))
+            if (a is System.Reflection.AssemblyMetadataAttribute m &&
+                string.Equals(m.Key, key, StringComparison.OrdinalIgnoreCase))
+                return (m.Value ?? "").Trim();
+    }
+    catch { }
+    return "";
+}
+
+/// <summary>
+/// 取内部构建号：3.2.3.4 取第 4 段；只有一段数字（build: 4）就取它本身；
+/// 普通三段版本号返回 0（表示没有构建号）。
+/// </summary>
+private static int BuildOf(string? v)
+{
+    if (string.IsNullOrWhiteSpace(v)) return 0;
+    string s = v.Trim().TrimStart('v', 'V');
+    int cut = s.IndexOfAny(new[] { '+', '-', '（', '(', ' ' });
+    if (cut > 0) s = s[..cut];
+    var parts = s.Split('.', StringSplitOptions.RemoveEmptyEntries);
+    if (parts.Length == 0) return 0;
+    string last = parts.Length >= 4 ? parts[3] : (parts.Length == 1 ? parts[0] : "0");
+    string digits = new string(last.TakeWhile(char.IsDigit).ToArray());
+    return int.TryParse(digits, out int n) && n > 0 ? n : 0;
+}
+
+/// <summary>
+/// 版本号只留 3 段：第 4 段是内部构建号，交给 CurrentBuild 单独管。
+/// 否则 3.2.3.4 会和远端 tag 的 3.2.3 比出「本地比线上还新」的假象。
+/// </summary>
+private static string VersionOnly(string v)
+{
+    if (string.IsNullOrEmpty(v)) return v;
+    var parts = v.Split('.');
+    return parts.Length > 3 ? string.Join(".", parts.Take(3)) : v;
 }
 
 /// <summary>去掉 +构建元数据、-预览后缀，以及尾部多余的 .0（2.1.0.0 → 2.1.0）。</summary>
@@ -254,7 +337,7 @@ public static async Task<UpdateInfo?> CheckAsync(string manifestUrl, bool giteeF
     {
         var only = await CheckGiteeAsync(gOwner, gRepo, ct).ConfigureAwait(false);
         if (only != null) only.GiteeOnly = true;   // 更新源就是 Gitee：没有 GitHub 可回退
-        return (only != null && IsNewer(only.Version, CurrentVersion)) ? only : null;
+        return IsUpgrade(only) ? only : null;
     }
 
     // 2) GitHub 仓库 → Releases API（顺便看 Gitee 同名仓库，能加速就加速）
@@ -268,7 +351,7 @@ public static async Task<UpdateInfo?> CheckAsync(string manifestUrl, bool giteeF
         if (giteeFirst)
         {
             gt = await CheckGiteeAsync(owner, repo, ct).ConfigureAwait(false);
-            if (gt != null && IsNewer(gt.Version, CurrentVersion) && !string.IsNullOrWhiteSpace(gt.Sha256))
+            if (IsUpgrade(gt) && !string.IsNullOrWhiteSpace(gt!.Sha256))
             {
                 // 快路径：整条链不依赖 GitHub API。但手上只有 Gitee 地址，
                 // 顺手拼一份 GitHub 直链（含镜像）当退路，Gitee 下不动时不至于"无源可试"。
@@ -278,8 +361,8 @@ public static async Task<UpdateInfo?> CheckAsync(string manifestUrl, bool giteeF
         }
         var gh = await ghTask.ConfigureAwait(false);
 
-        bool ghNewer = gh != null && IsNewer(gh.Version, CurrentVersion);
-        bool gtNewer = gt != null && IsNewer(gt.Version, CurrentVersion);
+        bool ghNewer = IsUpgrade(gh);
+        bool gtNewer = IsUpgrade(gt);
 
         if (ghNewer)
         {
@@ -289,7 +372,10 @@ public static async Task<UpdateInfo?> CheckAsync(string manifestUrl, bool giteeF
             // 完整性最终由 GitHub 官方摘要（以及这边记录的 gh.Size）兜底。
             if (giteeFirst)
             {
-                bool sameVersion = gt != null && gt.Version == gh!.Version;
+                // 版本号相同还不够，构建号也得对得上 —— 否则会把 Gitee 上「同版本号的旧构建」
+                // 当成 GitHub 新构建的下载地址，装完还是老包（表现为「更新了但没变化」）。
+                bool sameVersion = gt != null && SameVersion(gt.Version, gh!.Version) &&
+                                   (gt.Build == 0 || gh.Build == 0 || gt.Build == gh.Build);
                 bool sizeOk = gt != null && (gt.Size == 0 || gh.Size == 0 || gt.Size == gh.Size);
                 if (sameVersion && sizeOk)
                 {
@@ -481,11 +567,11 @@ private static async Task<UpdateInfo?> CheckGiteeAsync(string owner, string repo
         notes = System.Text.RegularExpressions.Regex
             .Replace(notes ?? "", @"(?im)^\s*SHA-?256\s*(\([^)]*\))?\s*[:：].*$", "").Trim();
 
-        return new UpdateInfo
+        return WithBuildMarker(new UpdateInfo
         {
             Version = NormalizeVersion(tag), Url = url, Notes = notes ?? "", Size = size, Source = "gitee",
             Sha256 = sha, PartUrls = partUrls, PartSizes = partSizes,
-        };
+        });
     }
     catch { return null; }
 }
@@ -537,7 +623,7 @@ url = (HasToken && !string.IsNullOrWhiteSpace(apiAssetUrl)) ? apiAssetUrl : brow
         }
 
         if (string.IsNullOrWhiteSpace(url)) return null;
-        return new UpdateInfo { Version = NormalizeVersion(tag), Url = url, Sha256 = sha, Notes = notes, Size = size, Source = "github" };
+        return WithBuildMarker(new UpdateInfo { Version = NormalizeVersion(tag), Url = url, Sha256 = sha, Notes = notes, Size = size, Source = "github" });
     }
     catch { return null; }
 }
@@ -565,7 +651,9 @@ private static async Task<UpdateInfo?> CheckManifestAsync(string manifestUrl, Ca
             new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
         if (info == null || string.IsNullOrWhiteSpace(info.Version) || string.IsNullOrWhiteSpace(info.Url))
             return null;
-        return IsNewer(info.Version, CurrentVersion) ? info : null;
+        // 清单里既可以直接写 build / code 字段，也可以只在 notes 里带那一行标记，两种都认
+        WithBuildMarker(info);
+        return IsUpgrade(info) ? info : null;
     }
     catch { return null; }
 }
@@ -615,6 +703,61 @@ public static bool IsNewer(string remote, string local)
 /// <summary>本机平台的更新包文件名（Windows 是 Setup.exe，Unix 是 core 的 tar.gz）。</summary>
 public static string InstallerFileName =>
     Platform.IsWindows ? "deepsleep-Setup.exe" : "deepsleep-core.tar.gz";
+
+/// <summary>
+/// 远端这份更新是不是比本机新。
+/// 先比版本号；**版本号相同时比内部构建号** —— 这就是「版本号不动、只改构建号」
+/// 也能把更新推下去的关键。远端没写构建号（老发布说明）时维持原行为：同版本号不算更新。
+/// </summary>
+public static bool IsUpgrade(UpdateInfo? info)
+{
+    if (info == null || string.IsNullOrWhiteSpace(info.Version)) return false;
+    if (IsNewer(info.Version, CurrentVersion)) return true;
+    if (!SameVersion(info.Version, CurrentVersion)) return false;
+    return info.Build > 0 && info.Build > CurrentBuild;
+}
+
+/// <summary>
+/// 两个版本号是不是「同一条线上的同一版本」（只比三段数字，预发布后缀另算）。
+/// 3.2.3 / 3.2.3.0 / v3.2.3 算同一个；3.2.3-alpha 与 3.2.3 不算（交给 IsNewer 的预发布规则）。
+/// </summary>
+public static bool SameVersion(string a, string b)
+{
+    if (!string.Equals(VersionOnly(CleanVersion(NormalizeVersion(a))),
+                       VersionOnly(CleanVersion(NormalizeVersion(b))),
+                       StringComparison.OrdinalIgnoreCase)) return false;
+    bool pa = (a ?? "").Contains('-'), pb = (b ?? "").Contains('-');
+    return pa == pb;
+}
+
+/// <summary>
+/// 从发布说明里读出内部构建标记，读完把那一行从说明里去掉。
+/// 发布脚本（publish.py）会在说明顶部写一行「build: 3.2.3.4 · code: nebula」，
+/// 版本号不动、只加构建号时，OTA 全靠这一行认出「这是新包还不算旧包」。
+/// </summary>
+private static UpdateInfo WithBuildMarker(UpdateInfo info)
+{
+    string notes = info.Notes ?? "";
+    if (notes.Length == 0) return info;
+    var m = System.Text.RegularExpressions.Regex.Match(notes,
+        @"(?im)^[ \t]*build[ \t]*[:：][ \t]*v?([0-9][0-9.]*)[ \t]*(?:[·•|,，][ \t]*)?(?:code[ \t]*[:：][ \t]*)?\(?([A-Za-z][A-Za-z0-9._\-]*)?\)?[ \t\r]*$");
+    if (!m.Success) return info;
+    if (info.Build <= 0) info.Build = BuildOf(m.Groups[1].Value);
+    if (string.IsNullOrWhiteSpace(info.Code) && m.Groups[2].Success)
+        info.Code = m.Groups[2].Value.Trim();
+    info.Notes = System.Text.RegularExpressions.Regex
+        .Replace(notes, @"(?im)^[ \t]*build[ \t]*[:：][ \t]*v?[0-9][0-9.]*.*$", "").Trim();
+    return info;
+}
+
+/// <summary>远端这次构建的显示名：3.2.3 · nebula.4（缺代号/构建号时自动退化，够老客户端用）。</summary>
+public static string DisplayOf(UpdateInfo? info)
+{
+    if (info == null) return "";
+    if (info.Code.Length > 0)
+        return info.Build > 0 ? $"{info.Version} · {info.Code}.{info.Build}" : $"{info.Version} · {info.Code}";
+    return info.Build > 0 ? $"{info.Version} · b{info.Build}" : info.Version;
+}
 
 /// <summary>这个 Release 资产是不是本机平台可用的安装包。</summary>
 private static bool IsInstallerAsset(string name)

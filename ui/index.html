@@ -14,7 +14,7 @@
     <!-- 集群标签页已撤掉：拆分任务改由主助手自己完成（「拆分任务」工具），
          不再需要用户手动切到另一个标签页去拼一个团队。 -->
     <div class="seg" id="seg">
-      <button data-tab="0" class="on">AI 助手</button>
+      <button data-tab="0" class="on">Deepsleep</button>
     </div>
     <div class="tb-right">
       <button id="btnUpdate" class="pill hidden">⬆ <span id="updateText">检查更新</span></button>
@@ -65,7 +65,7 @@
               </svg>
             </button>
             <button id="btnModel" class="model-pill" title="切换模型（列表联网获取，不用去设置里翻）">
-              <span class="dot"></span><span id="modelText">模型</span><span class="caret">⌄</span>
+              <span id="modelLogo" class="brand-slot"></span><span id="modelText">模型</span><span class="caret">⌄</span>
             </button>
             <button id="btnSend" class="send-circle" title="发送（Enter）">↑</button>
           </div>
@@ -165,9 +165,13 @@
   document.body.classList.toggle('dark', remembered === 'dark');
   document.body.classList.toggle('light', remembered !== 'dark');
 
-  var sc = document.createElement('script');
-  sc.src = 'app.js?v=' + v;
-  document.body.appendChild(sc);
+  // 品牌图标表（logos.js 由 tools/build-logos.py 生成）+ 识别规则，必须在 app.js 前就位：
+  // 首屏绘制模型药丸时就要用，晚一步就只能先画个空位再补，看着像闪一下。
+  ['logos.js', 'brands.js', 'app.js'].forEach(function (f) {
+    var sc = document.createElement('script');
+    sc.src = f + '?v=' + v;
+    document.body.appendChild(sc);
+  });
 })();
 </script>
 </body>

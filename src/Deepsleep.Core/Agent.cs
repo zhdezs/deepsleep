@@ -185,6 +185,13 @@ public sealed class Agent
     /// </summary>
     public event Action<int, string>? ReasoningStreaming;
 
+    /// <summary>
+    /// 临时状态提示（会话 id, 文案），例如「模型 30 秒无响应，已暂停并自动恢复（1/3）」。
+    /// 界面把它显示在输入框下面那行状态里 —— 网络卡住时用户得知道是软件在自救，
+    /// 而不是以为界面卡死了。
+    /// </summary>
+    public event Action<int, string>? StatusNote;
+
     private int _currentSid;
 
     public Agent(Engine counter) => _counter = counter;
@@ -551,7 +558,11 @@ public sealed class Agent
                 if (!string.IsNullOrWhiteSpace(_ollama.LastError)) errs.Add($"Ollama：{_ollama.LastError}");
                 string detail = errs.Count > 0 ? "（" + string.Join("；", errs) + "）" : "";
                 bool rateLimited = !string.IsNullOrWhiteSpace(_api.LastError) && IsRateLimit(_api.LastError);
-                string advice = rateLimited
+                // 看门狗已经自动掐断 + 续写过几轮还是没动静：这不是配置写错，是链路卡死，
+                // 给「检查地址/模型名」的建议只会把用户带偏。
+                string advice = _api.IdleAborted
+                    ? "模型 30 秒内没有任何响应，已自动暂停并恢复 3 次仍失败：多半是网络/代理不通或服务端排队，稍后重试，或在 ⚙ 设置换一个模型/线路。"
+                    : rateLimited
                     ? "API 限流（模型访问量过大），已自动重试仍失败：可稍后重试，或把 AI 助手模式切到「本地（自训练）」/「大模型 1.5B」走本地。"
                     : "请在 ⚙ 设置检查 API 地址/模型名/API Key：OpenAI 兼容地址一般要写到 /chat/completions（例如 https://api.deepseek.com/chat/completions），模型名要和账号可用模型一致。";
                 string msg = $"LLM 后端不可用{detail}。{advice}";
@@ -1225,13 +1236,18 @@ public sealed class Agent
                 if (Streaming && onDelta != null)
                 {
                     // 思考内容也走流式：边生成边推给界面，而不是等整轮结束才一次性出现
+                    // idleSeconds=30：30 秒一个字节都不来就掐掉重发（已经吐出来的部分会保留并续写）
                     reply = await _api.ChatStreamAsync(system, msgs, sink, ct: ct,
                         onReasoning: emitReasoning
                             ? t => ReasoningStreaming?.Invoke(_currentSid, t)
-                            : null);
-                    // 流式不支持/失败（非限流、非取消）→ 回退普通请求，保证能出话
+                            : null,
+                        idleSeconds: 30, maxResumes: 3,
+                        onStatus: t => StatusNote?.Invoke(_currentSid, t));
+                    // 流式不支持/失败（非限流、非取消）→ 回退普通请求，保证能出话。
+                    // 但如果刚才已经被看门狗自动恢复过几轮，再补一次普通请求就是让用户再干等一轮，
+                    // 这时直接把「无响应」如实报出去。
                     if (string.IsNullOrEmpty(reply) && !ct.IsCancellationRequested &&
-                        !IsRateLimit(_api.LastError))
+                        !IsRateLimit(_api.LastError) && !_api.IdleAborted)
                         reply = await _api.ChatAsync(system, msgs, ct: ct);
                 }
                 else
@@ -1253,7 +1269,8 @@ public sealed class Agent
         }
         // API 已配置但返回的是配置类错误（4xx，限流除外）→ 不许静默降级到本地小模型，
         // 否则用户看到的是「AI 突然不会用工具了、还胡说八道」，其实是 API 地址/模型名/key 写错了。
-        if (_api.Configured && IsClientConfigError(_api.LastError)) return null;
+        // 「30 秒无响应」同理：看门狗已经自动重试过三轮，再偷偷换成本地小模型只会让人以为模型变笨。
+        if (_api.Configured && (_api.IdleAborted || IsClientConfigError(_api.LastError))) return null;
 
         return SanitizeOllamaReply(Streaming && onDelta != null
             ? await _ollama.ChatStreamAsync(system, msgs, onDelta, ct: ct)

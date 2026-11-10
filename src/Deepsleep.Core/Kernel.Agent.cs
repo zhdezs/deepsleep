@@ -28,7 +28,25 @@ public sealed partial class Kernel
     private void SetAgentState(int sid, RunState state)
     {
         _agentStates[sid] = state;
+        // 一轮结束就把「正在自动恢复」这类临时提示收掉，别让旧状态挂在状态栏上
+        if (state != RunState.Running) _agentNote = "";
         EmitStatus(0);
+    }
+
+    /// <summary>
+    /// 输入框下面那行临时提示（例如「模型 30 秒无响应，已暂停并自动恢复（1/3）」）。
+    /// 只在本次运行期间有效，跑完 / 停止就清空。
+    /// </summary>
+    private string _agentNote = "";
+
+    private void OnAgentStatusNote(int sid, string text)
+    {
+        _agentNote = text ?? "";
+        EmitStatus(0);
+        // 状态栏在最底下，用户正盯着气泡时根本不会注意到 —— 顺手飘一条 toast，
+        // 「刚才卡了一下、已经自己接上了」这件事得让人看得见。
+        if (_agentNote.Length > 0)
+            Emit(new { ev = "toast", text = _agentNote });
     }
 
     private string AgentBusy(int sid) => GetAgentState(sid) switch
@@ -60,7 +78,8 @@ public sealed partial class Kernel
             : "工具：命令 / Python / 生成图片 / 看图 / 抓取网页 / 网络搜索 / 深度研究 / 读写文件";
         string search = _agent.WebSearchEnabled ? "🌐 网络搜索开" : "网络搜索关";
         string fast = _agent.FastMode ? "⚡ 极速" : "";
-        return $"模式：{runMode}　后端：{backend}　{search}　🧠 记忆开　{fast}　{tools}";
+        string note = _agentNote.Length > 0 ? "　" + _agentNote : "";
+        return $"模式：{runMode}　后端：{backend}　{search}　🧠 记忆开　{fast}　{tools}{note}";
     }
 
     /// <summary>推一条状态事件（kind 0 = AI 助手 / 2 = 集群）。</summary>

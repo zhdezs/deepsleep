@@ -153,6 +153,7 @@ public sealed partial class Kernel
         _agent.ToolStarted += OnAgentToolStarted;
         _agent.ReasoningAdded += OnAgentReasoning;
         _agent.ReasoningStreaming += OnAgentReasoningStreaming;
+        _agent.StatusNote += OnAgentStatusNote;
         _agent.ConfirmRequested += ConfirmCommandAsync;
         _agent.SkillUsed += OnSkillUsed;
 
@@ -178,6 +179,7 @@ public sealed partial class Kernel
         _clusterAgent.SkillUsed += OnSkillUsed;
         _clusterAgent.ReasoningAdded += OnClusterReasoning;
         _clusterAgent.ReasoningStreaming += OnClusterReasoningStreaming;
+        _clusterAgent.StatusNote += OnAgentStatusNote;
         _clusterAgent.ToolStarted += OnClusterToolStarted;
         _clusterAgent.Skills = _skills;
         string workspace = Path.Combine(_dataDir, "cluster_workspace");
@@ -200,6 +202,11 @@ public sealed partial class Kernel
         {
             ["ev"] = "boot",
             ["version"] = Updater.CurrentVersion,
+            // 内部构建号 + 代号：界面标题/关于里显示成 v3.2.3 · nebula.4，
+            // 同版本号重新打包时一眼看出手上装的是第几次构建
+            ["build"] = Updater.CurrentBuild,
+            ["code"] = Updater.CurrentCode,
+            ["display"] = Updater.CurrentDisplay,
             ["dataDir"] = _dataDir,
             ["os"] = Environment.OSVersion.VersionString,
             ["tab"] = _tab,

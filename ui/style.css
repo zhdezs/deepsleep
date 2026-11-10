@@ -341,10 +341,20 @@ body.dark .seg button.on { background: #636366; }
   transition: background-color .16s, color .16s;
 }
 .model-pill:hover { background: var(--hover); color: var(--text); }
-.model-pill .dot {
-  width: 14px; height: 14px; border-radius: 50%; flex: 0 0 auto;
-  background: linear-gradient(135deg, #5B8CFF, #8E5BFF);
+/* 模型药丸/列表里的品牌图标：单色 logo（gpt）是 currentColor，跟着文字色走；
+   彩色 logo 用自家的品牌色。方块圆角比正圆更像 App 图标，也更省得跟头像混淆。 */
+.brand-slot { width: 15px; height: 15px; flex: 0 0 15px; display: inline-flex; align-items: center; justify-content: center; }
+.brand {
+  width: 15px; height: 15px; flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  color: inherit;
 }
+.brand svg { width: 100%; height: 100%; display: block; }
+.brand.mono {
+  border-radius: 5px; color: #fff; font-size: 9px; font-weight: 700; line-height: 1;
+  letter-spacing: -.2px;
+}
+.brand.sm { width: 14px; height: 14px; }
 .model-pill #modelText { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; }
 .model-pill .caret { font-size: 11px; opacity: .6; }
 
@@ -418,6 +428,11 @@ body.dark .seg button.on { background: #636366; }
 .pop-list .mrow:hover { background: var(--hover); }
 .pop-list .mrow.cur { color: var(--blue); font-weight: 600; background: rgba(0,122,255,.13); }
 .pop-list .mrow .mname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 左边一列「图标 + 模型名」：名字要能被压缩省略，图标不能被挤扁 */
+.pop-list .mrow .m-left { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; }
+/* 列表行比药丸高，图标给到 16px 才跟 12.5px 的字配得上 */
+.pop-list .mrow .brand { width: 16px; height: 16px; }
+.pop-list .mrow .brand.mono { font-size: 9.5px; }
 .pop-list .mrow .mtag { flex: 0 0 auto; font-size: 11px; color: var(--muted); }
 
 /* 用量面板 */
@@ -433,6 +448,7 @@ body.dark .seg button.on { background: #636366; }
 .ctx-bar.hot i { background: #FF3B30; }
 .ctx-kv { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; padding: 4px 0; }
 .ctx-kv span:first-child { color: var(--muted); }
+.ctx-kv .kv-model { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .ctx-sec { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
 .ctx-sec h5 { font-size: 12px; font-weight: 600; margin: 0 0 7px; color: var(--muted); letter-spacing: .2px; }
 .presets { display: flex; flex-wrap: wrap; gap: 6px; }

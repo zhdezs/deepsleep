@@ -252,15 +252,30 @@ public sealed class ApiClient : IDisposable
         return text;
     }
 
+    /// <summary>一次流式请求的结局：正常结束 / 长时间无响应被掐 / 用户取消 / 出错。</summary>
+    private enum StreamOutcome { Done, Idle, Cancelled, Failed }
+
+    /// <summary>
+    /// 最近一次流式调用是否被「长时间没有任何增量」的看门狗掐断过。
+    /// 上层据此判断还要不要再补一次普通请求（已经自动重试过的就别再等了）。
+    /// </summary>
+    public bool IdleAborted { get; private set; }
+
     /// <summary>
     /// 流式版本：逐段回调增量内容，返回完整文本（供真·流式输出）。
     /// <paramref name="onReasoning"/> 收的是**累积到当前的思考全文**（不是增量），
     /// 界面直接整段替换即可 —— 这样思考内容和正文一样是边生成边显示的。
+    ///
+    /// 看门狗：<paramref name="idleSeconds"/> 秒内一个字节都没来（连响应头都没回），
+    /// 就把这次请求掐掉，已经收到的内容留着，然后自动重发「接着写」——
+    /// 用户看到的是暂停一下又继续，而不是干等十分钟最后弹个超时。
+    /// 连续 <paramref name="maxResumes"/> 次都救不回来才如实报错。
     /// </summary>
     public async Task<string?> ChatStreamAsync(string system,
         IReadOnlyList<(string Role, string Content)> messages,
         Action<string>? onDelta = null, int timeoutSeconds = 600, CancellationToken ct = default,
-        Action<string>? onReasoning = null)
+        Action<string>? onReasoning = null,
+        int idleSeconds = 30, int maxResumes = 3, Action<string>? onStatus = null)
     {
         if (!Configured)
         {
@@ -268,6 +283,7 @@ public sealed class ApiClient : IDisposable
             return null;
         }
         ResetReasoning();
+        IdleAborted = false;
         try
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -280,6 +296,124 @@ public sealed class ApiClient : IDisposable
             if (EffectiveFormat == "responses")
                 return await ChatResponsesAsync(system, messages, cts.Token, stream: true, onDelta: onDelta);
 
+            var sb = new StringBuilder();
+            int resumes = 0;
+            while (true)
+            {
+                // 续写轮：把已经吐出来的内容当成 assistant 前文补进去，模型才知道从哪儿接。
+                // 一个字都没来的话（压根没开始），原样重发同一份请求即可。
+                string already = sb.ToString();
+                var round = resumes == 0 ? messages : WithContinuation(messages, already);
+
+                // 续写轮先攒一小段再往外发：不是所有模型都老实「接着写」，
+                // 有的会把整段从头背一遍。攒够一点才判断得出它是不是在重写，
+                // 判定完就恢复逐字流式，用户不会觉得卡。
+                var pending = new StringBuilder();
+                bool flushed = false;
+                void Sink(string chunk)
+                {
+                    if (flushed) { sb.Append(chunk); onDelta?.Invoke(chunk); return; }
+                    if (already.Length == 0) { flushed = true; sb.Append(chunk); onDelta?.Invoke(chunk); return; }
+                    pending.Append(chunk);
+                    if (pending.Length < 64) return;
+                    flushed = true;
+                    string add = TrimReplay(already, pending.ToString());
+                    if (add.Length > 0) { sb.Append(add); onDelta?.Invoke(add); }
+                }
+
+                var outcome = await StreamOnceAsync(system, round, Sink,
+                    ct, onReasoning, idleSeconds, timeoutSeconds).ConfigureAwait(false);
+
+                if (!flushed && pending.Length > 0)      // 这一轮很短，收尾时再判一次
+                {
+                    string add = TrimReplay(already, pending.ToString());
+                    if (add.Length > 0) { sb.Append(add); onDelta?.Invoke(add); }
+                }
+
+                if (outcome == StreamOutcome.Done)
+                {
+                    LastError = null;
+                    return sb.ToString();
+                }
+                if (outcome != StreamOutcome.Idle)
+                    return sb.Length > 0 ? sb.ToString() : null;   // 取消 / 出错：有半截就交半截
+
+                IdleAborted = true;
+                if (++resumes > maxResumes)
+                {
+                    LastError = $"模型连续 {resumes} 次在 {idleSeconds} 秒内没有响应，已停止等待";
+                    return sb.Length > 0 ? sb.ToString() : null;
+                }
+                onStatus?.Invoke($"⏸ 模型 {idleSeconds} 秒无响应，已暂停并自动恢复（{resumes}/{maxResumes}）");
+                // 稍等一下再发：立刻重发多半会撞同一个坑（网关排队 / 连接被吞）
+                await Task.Delay(600, ct).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            LastError = ct.IsCancellationRequested ? "已取消" : null;
+            return null;
+        }
+        catch (Exception ex)
+        {
+            LastError = ex.Message;
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 续写去重：模型如果没听招呼、把已经写过的开头又背了一遍，就把重复的那截剪掉。
+    /// 只认「整段复述」和「≥4 字的重合」，免得把正常要写的短句（叠词、重复标点）也剪了。
+    /// </summary>
+    private static string TrimReplay(string already, string more)
+    {
+        if (already.Length == 0 || more.Length == 0) return more;
+        if (more.Length <= 24 && already.EndsWith(more, StringComparison.Ordinal)) return "";
+        int max = Math.Min(already.Length, more.Length);
+        for (int len = max; len >= 4; len--)
+        {
+            if (string.CompareOrdinal(already, already.Length - len, more, 0, len) == 0)
+                return more[len..];
+        }
+        return more;
+    }
+
+    /// <summary>续写用的消息表：在原始对话后面补一段「我已经写到这儿了」。</summary>
+    private static List<(string Role, string Content)> WithContinuation(
+        IReadOnlyList<(string Role, string Content)> messages, string partial)
+    {
+        var list = new List<(string Role, string Content)>(messages.Count + 2);
+        list.AddRange(messages);
+        if (partial.Length > 0)
+        {
+            list.Add(("assistant", partial));
+            list.Add(("user", "（上一条回复在传输中断了。请紧接着写下去，不要重复已经写过的内容，也不要重新开头。）"));
+        }
+        return list;
+    }
+
+    /// <summary>
+    /// 真正发一次 SSE 请求，把增量回调出去；返回结局，重试逻辑交给调用方。
+    /// idleSeconds：从发请求开始计时，每收到一行数据重新计时；总时长另外受 timeoutSeconds 约束。
+    /// </summary>
+    private async Task<StreamOutcome> StreamOnceAsync(string system,
+        IReadOnlyList<(string Role, string Content)> messages,
+        Action<string> onDelta, CancellationToken outerCt, Action<string>? onReasoning,
+        int idleSeconds, int timeoutSeconds)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(outerCt);
+        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+        // 每次有动静就重新上弦；离总超时越近，上弦越短，避免两套超时各算各的
+        void Rearm()
+        {
+            double left = (deadline - DateTime.UtcNow).TotalSeconds;
+            if (left <= 0) { try { cts.Cancel(); } catch { } return; }
+            double idle = Math.Max(1, Math.Min(idleSeconds, left));
+            try { cts.CancelAfter(TimeSpan.FromSeconds(idle)); } catch { }
+        }
+        Rearm();
+        try
+        {
             var msgs = new List<object> { new { role = "system", content = system } };
             foreach (var (role, content) in messages)
                 msgs.Add(new { role = MapRole(role), content = BuildContent(content) });
@@ -313,16 +447,19 @@ public sealed class ApiClient : IDisposable
                     LastError += " " + errBody;
                 }
                 catch { /* 只保留状态码 */ }
-                return null;
+                return StreamOutcome.Failed;
             }
+            Rearm();   // 响应头到了：从现在起重新算「多久没动静」
 
-            var sb = new StringBuilder();
             await using var stream = await resp.Content.ReadAsStreamAsync(cts.Token).ConfigureAwait(false);
             using var reader = new StreamReader(stream, Encoding.UTF8);
             while (true)
             {
-                string? line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
+                // ⚠ 这里必须用带看门狗的 token。以前传的是外层 ct，CancelAfter 压根管不到这句，
+                //   服务端一声不吭挂住时就能一直等下去（用户看到的是「转圈转到天荒地老」）。
+                string? line = await reader.ReadLineAsync(cts.Token).ConfigureAwait(false);
                 if (line == null) break;
+                Rearm();   // 来字节了就算活着（空行 / keep-alive 注释也算）
                 if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("data:", StringComparison.Ordinal))
                     continue;
                 string data = line["data:".Length..].Trim();
@@ -351,22 +488,27 @@ public sealed class ApiClient : IDisposable
                     if (delta.TryGetProperty("content", out var c) && c.ValueKind == JsonValueKind.String)
                     {
                         string chunk = c.GetString() ?? "";
-                        if (chunk.Length > 0)
-                        {
-                            sb.Append(chunk);
-                            onDelta?.Invoke(chunk);
-                        }
+                        if (chunk.Length > 0) onDelta(chunk);
                     }
                 }
                 catch { /* 跳过无法解析的 SSE 行 */ }
             }
-            LastError = null;
-            return sb.ToString();
+            return StreamOutcome.Done;
+        }
+        catch (OperationCanceledException)
+        {
+            if (outerCt.IsCancellationRequested)
+            {
+                LastError = "已取消";
+                return StreamOutcome.Cancelled;
+            }
+            LastError = $"模型 {idleSeconds} 秒没有响应";
+            return StreamOutcome.Idle;
         }
         catch (Exception ex)
         {
             LastError = ex.Message;
-            return null;
+            return StreamOutcome.Failed;
         }
     }
 
