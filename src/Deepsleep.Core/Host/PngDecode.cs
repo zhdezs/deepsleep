@@ -2,12 +2,7 @@ using System.IO.Compression;
 
 namespace TrollWrangler.CoreHost;
 
-/// <summary>
-/// 最小 PNG 解码器：只认截图工具产出的常规 PNG（非隔行；颜色类型 0/2/3/4/6；位深 8，
-/// 16 位取高字节）。
-/// Linux 被控端只能让外部工具（GNOME 的 DBus 截图、xdg-desktop-portal、grim、gnome-screenshot…）
-/// 把画面存成 PNG 文件；隧道带宽很小，必须先把整屏缩到 960px 左右再发，所以这里得自己解一遍。
-/// </summary>
+/// <summary>最小 PNG 解码器：只认截图工具产出的常规 PNG（非隔行；颜色类型 0/2/3/4/6；</summary>
 internal static class PngDecode
 {
     /// <summary>解码成 RGB24（每行 width*3 字节）。失败返回 null。</summary>

@@ -96,7 +96,7 @@ public static partial class CoreServer
         await res.SendTextAsync("not found: " + path, "text/plain; charset=utf-8", 404);
     }
 
-    /// <summary>把 "/web/app/" 这类路径剥成相对路径（结尾斜杠要能对上目录，所以不能用 TrimEnd 过的 path）。</summary>
+    /// <summary>把 "/web/app/"这类路径剥成相对路径（结尾斜杠要能对上目录，所以不能用 TrimEnd 过的 path）。</summary>
     private static string? SubPath(string raw, string prefix)
     {
         if (raw == prefix || raw == prefix + "/") return "";

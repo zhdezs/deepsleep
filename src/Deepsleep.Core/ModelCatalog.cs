@@ -19,16 +19,7 @@ public sealed class ModelEntry
     public bool Free { get; init; }
 }
 
-/// <summary>
-/// 联网获取模型列表。
-/// <para>
-/// 各家的「列模型」端点并不统一，这里按已知规律推导：
-/// OpenAI 兼容 → 把结尾的 <c>/chat/completions</c> 换成 <c>/models</c>；
-/// Gemini 原生 → <c>:generateContent</c> 换成 <c>/models</c> 并把 Key 放到 <c>?key=</c>；
-/// Anthropic → <c>/v1/messages</c> 换成 <c>/v1/models</c>，Key 走 <c>x-api-key</c> 头。
-/// </para>
-/// <para>零第三方依赖，只用 System.Net.Http + System.Text.Json，和 ApiClient 保持一致。</para>
-/// </summary>
+/// <summary>联网获取模型列表，按各家端点规律推导。</summary>
 public static class ModelCatalog
 {
     /// <summary>把「对话地址」推导成「模型列表地址」。推不出来时返回 null（界面会提示手动填）。</summary>
@@ -70,10 +61,7 @@ public static class ModelCatalog
         return t + "/v1/models";
     }
 
-    /// <summary>
-    /// 拉取模型列表。<paramref name="url"/> 传的是对话地址即可（内部自动推导 models 地址）。
-    /// 失败返回 <c>ok=false</c> 与一句人话原因，界面直接显示。
-    /// </summary>
+    /// <summary>拉取模型列表。传的是对话地址即可（内部自动推导 models 地址）。 失败返回 ok=false与一句人话原因，界面直接显示。</summary>
     public static async Task<(bool Ok, string? Error, List<ModelEntry> Models)> FetchAsync(
         string url, string apiKey, string format, int timeoutSeconds = 25, CancellationToken ct = default)
     {

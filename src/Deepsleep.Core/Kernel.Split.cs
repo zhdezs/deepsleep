@@ -8,18 +8,7 @@ using System.Threading.Tasks;
 
 namespace TrollWrangler.Core;
 
-/// <summary>
-/// 「拆分任务」的执行器：把主助手交给的一个复杂任务拆成若干子任务，用**独立**的子智能体并行执行，再汇总。
-/// <para>
-/// 为什么每个子任务起一个新的 <see cref="Agent"/>，而不是复用集群那份共享实例：
-/// 共享实例要靠 sid 区分彼此，而 Agent 内部有 <c>_currentSid</c> 这类可变状态 ——
-/// 一路并行就会互相踩。独立实例彼此完全隔离，谁都不影响谁，代价只是多几个对象。
-/// </para>
-/// <para>
-/// 权限继承：主助手是 chat（不改动电脑）时，子智能体也必须是 chat，
-/// 否则用户会在「纯聊天」模式下被悄悄改了磁盘 —— 这是不可接受的越权。
-/// </para>
-/// </summary>
+/// <summary>「拆分任务」的执行器：把主助手交给的一个复杂任务拆成若干子任务，用独立的子智能体并行执行，再汇总。</summary>
 public sealed partial class Kernel
 {
     /// <summary>一次最多拆几路。太多会同时打满 API 限流、也会把用户电脑跑满。</summary>
@@ -40,9 +29,7 @@ public sealed partial class Kernel
 
         string mode = _agent.RunMode;
 
-        // ---- Router 层（第 2 期）：一次拆分 = 一个 Router 会话 + N 个上下文隔离的 Worker 会话 ----
-        // Router 持有共享上下文（目标/权限/约束/角色/产物/同会话历史结论），Worker 只能看这份简报，
-        // 彼此的私有历史互相不可见 —— 这就是"共享上下文 + 上下文隔离"的落地方式。
+        // Router 会话持有共享简报，Worker 只看这份简报，各自历史互相不可见。
         int parentSid = _agentCurrentSid();
         var decision = AgentRouter.Decide(
             string.Join("\n", tasks.Select(t => t.Role + "：" + t.Task)), mode, tasks.Count);
@@ -61,17 +48,24 @@ public sealed partial class Kernel
                  })
             shared.Constraints.Add(c);
 
-        int routerSid = _nextRouterSid++;
-        UpsertSession(routerSid, "router", parentSid, "路由：" + Cap(tasks[0].Role, 20) + " 等 " + tasks.Count + " 路",
-            "active", shared.ToSummary(), new List<AgentMessage>());
+        // Router 常驻：同一条主会话永远复用同一个 Router 记录（不写 done、不换 id），
+        // 所以「路由层记得上次拆过什么」这件事不用额外存 —— 记录本身就是它的记忆。
+        int routerSid = EnsureRouterSession(parentSid, shared.ToSummary(), tasks.Count);
 
+        // Worker 走名单：同角色复用同一个会话（继承上次的产物与上下文），新角色才开新席位。
         var workerSids = new int[tasks.Count];
+        var seats = new WorkerSeat[tasks.Count];
         for (int i = 0; i < tasks.Count; i++)
         {
-            workerSids[i] = _nextWorkerSid++;
+            var seat = SeatFor(tasks[i].Role);
+            seats[i] = seat;
+            if (seat.Sid <= 0) seat.Sid = _nextWorkerSid++;
+            workerSids[i] = seat.Sid;
             UpsertSession(workerSids[i], "worker", routerSid, tasks[i].Role, "active",
                 "等待执行：" + Cap(tasks[i].Task, 80), new List<AgentMessage>());
         }
+        SaveSeats();
+        EmitWorkers();
         Emit(new
         {
             ev = "routerPlan",
@@ -128,6 +122,8 @@ public sealed partial class Kernel
             workers.Add(Task.Run(async () =>
             {
                 await gate.WaitAsync(ct).ConfigureAwait(false);
+                // 登记为「真在跑」：看门狗据此区分僵尸会话和正常长任务
+                MarkWorkerLive(workerSids[idx], true);
                 try
                 {
                     results[idx] = await RunOneSubAgentAsync(tasks[idx].Role, tasks[idx].Task, mode, ct,
@@ -135,7 +131,11 @@ public sealed partial class Kernel
                 }
                 catch (OperationCanceledException) { results[idx] = "（已停止）"; }
                 catch (Exception ex) { results[idx] = "[子智能体出错] " + ex.Message; }
-                finally { gate.Release(); }
+                finally
+                {
+                    MarkWorkerLive(workerSids[idx], false);
+                    gate.Release();
+                }
             }, ct));
         }
         try { await Task.WhenAll(workers).ConfigureAwait(false); } catch { /* 单路异常已在内部兜住 */ }
@@ -148,19 +148,32 @@ public sealed partial class Kernel
                       && results[i] != "（已停止）" && !string.IsNullOrWhiteSpace(results[i]);
             string state = results[i] == "（已停止）" ? "stopped" : ok ? "done" : "stopped";
             string summary = ok ? Cap(results[i], 200) : results[i];
-            UpsertSession(workerSids[i], "worker", routerSid, tasks[i].Role, state, summary,
-                new List<AgentMessage>
-                {
-                    new() { Role = "user", Content = tasks[i].Task },
-                    new() { Role = "assistant", Content = results[i] },
-                });
+            // 追加到它自己的历史里（不覆盖）：下一轮复用同一席位时能接着上次的上下文。
+            // 只留最近 40 条 —— Worker 的会话不该无限膨胀，重点靠 summary。
+            List<AgentMessage> hist;
+            try { hist = Sessions.Load(workerSids[i])?.Messages ?? new List<AgentMessage>(); }
+            catch { hist = new List<AgentMessage>(); }
+            hist.Add(new AgentMessage { Role = "user", Content = tasks[i].Task });
+            hist.Add(new AgentMessage { Role = "assistant", Content = results[i] });
+            if (hist.Count > 40) hist = hist.Skip(hist.Count - 40).ToList();
+            UpsertSession(workerSids[i], "worker", routerSid, tasks[i].Role, state, summary, hist);
             foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
                          results[i] ?? "", @"(?m)^\s*(?:产出路径|文件|产物)[：:]\s*(\S.+)$"))
                 artifacts.Add(m.Groups[1].Value.Trim());
         }
         shared.Artifacts = artifacts.Distinct().Take(12).ToList();
-        UpsertSession(routerSid, "router", parentSid, "路由：" + Cap(tasks[0].Role, 20) + " 等 " + tasks.Count + " 路",
-            "done", shared.ToSummary(), new List<AgentMessage>());
+        // Router 依旧是 active（常驻）；只把这一轮的组织记忆写进 summary，下一轮直接读它
+        UpsertSession(routerSid, "router", parentSid,
+            "Router · 已跑 " + tasks.Count + "路（" + Now() + "）", "active", shared.ToSummary(), new List<AgentMessage>());
+        // 席位记一笔：谁跑过、什么时候跑的（名单面板按最近使用排序）
+        for (int i = 0; i < seats.Length; i++)
+        {
+            if (seats[i] == null) continue;
+            seats[i].Runs++;
+            seats[i].LastUsed = Now();
+        }
+        SaveSeats();
+        EmitWorkers();
         Emit(new
         {
             ev = "routerDone",
@@ -218,7 +231,7 @@ public sealed partial class Kernel
             MaxConcurrentCalls = 2,
             AutoRemember = false,
         };
-        sub.ApplyConfig(_config);
+        sub.ApplyConfig(WorkerCfg);   // Worker 可以单独指定模型（设置里「Worker 模型」）
         sub.Backend = _agent.Backend;
         sub.MultimodalMain = _config.MultimodalMain;
         sub.Skills = _agent.Skills;
@@ -231,14 +244,21 @@ public sealed partial class Kernel
                 : "把产物真实写到磁盘，并在产出里给出完整本地路径，形如「产出路径：D:\\…」。\n") +
             (shared != null ? "\n" + shared.ToBrief() + "\n" : "") +
             "\n你的任务：\n" + task;
-        // 传真实 Worker 会话 id：它在 Session 库里是一个独立会话，上下文与其它 Worker 完全隔离
+        // 复用席位：把这位 Worker 上次的历史灌回实例，它才真的「记得上一轮」。
+        // （只复用 sid 而不回灌历史，界面看着是一个会话，模型却是白纸 —— 那就等于没复用。）
+        if (workerSid > 0)
+        {
+            try
+            {
+                var rec = Sessions.Load(workerSid);
+                if (rec?.Messages is { Count: > 0 }) sub.RestoreSession(workerSid, rec.Messages);
+            }
+            catch { /* 历史读不到就当新会话跑，不阻塞 */ }
+        }
         return await sub.RunAsync(workerSid, prompt, ct).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// 落一个 Session 记录（保留 CreatedUtc、Meta 等已有字段，避免每次覆盖丢元数据）。
-    /// Router / Worker 的状态与摘要都走这里，Watchdog（第 4 期）直接读同一份数据。
-    /// </summary>
+    /// <summary>落一个 Session 记录（保留 CreatedUtc、Meta 等已有字段，避免每次覆盖丢元数据）。</summary>
     private void UpsertSession(int sid, string kind, int? parentSid, string title, string state,
                                string summary, List<AgentMessage> messages)
     {

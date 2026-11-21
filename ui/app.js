@@ -175,7 +175,7 @@ function renderConvs() {
     const t = document.createElement('span');
     t.className = 't'; t.textContent = c.title;
     d.appendChild(t);
-    if (c.pinned) { const p = document.createElement('span'); p.className = 'p'; p.textContent = '📌'; d.appendChild(p); }
+    if (c.pinned) { const p = document.createElement('span'); p.className = 'p'; p.textContent = ''; d.appendChild(p); }
     d.onclick = () => call('selectConv', { kind: kind(), sid: c.sid });
     d.oncontextmenu = ev => { ev.preventDefault(); convMenu(ev, c); };
     box.appendChild(d);
@@ -239,7 +239,7 @@ function paintBubble(row, it) {
     }
     b.classList.remove('thinking');
     b.style.opacity = '';
-    // 流式过程中正文每次增量都会重刷这个气泡，<details> 的展开状态会跟着丢。
+    // 流式过程中正文每次增量都会重刷这个气泡，<details>的展开状态会跟着丢。
     // 思考内容是边生成边刷的，用户想一直看着它，所以这里把展开状态接住。
     const prevThink = b.querySelector('details.thinkbox');
     const thinkOpen = !!(prevThink && prevThink.open);
@@ -250,7 +250,7 @@ function paintBubble(row, it) {
     if (it.image) html += '<img src="' + esc(it.image) + '" alt="图片">';
     // 生成的视频：直接用原生播放器（服务端按扩展名给 mp4，data.local 带令牌）
     if (it.video) html += '<video src="' + esc(it.video) + '" controls preload="metadata"></video>';
-    if (it.attName) html += '<div class="who">📎 ' + esc(it.attName) + '　' + esc(it.attSize) + '</div>';
+    if (it.attName) html += '<div class="who">附件：' + esc(it.attName) + '　' + esc(it.attSize) + '</div>';
     html += md(it.text);
     b.innerHTML = html;
   } else {
@@ -335,13 +335,13 @@ function groupTitle(kind) {
 }
 
 function groupSummary(kind, items) {
-  if (kind === 'cmd') return items.length + ' 条（点开看全部命令与输出）';
+  if (kind === 'cmd') return items.length + '条（点开看全部命令与输出）';
   if (kind === 'skill' || kind === 'split') {
     const names = items.map(it => String(it.toolSummary || it.tool || ''));
-    return items.length + ' 个：' + names.slice(0, 4).join('、') + (names.length > 4 ? ' 等' : '');
+    return items.length + '个：' + names.slice(0, 4).join('、') + (names.length > 4 ? '等' : '');
   }
   const names = items.map(fileNameOf);
-  return items.length + ' 个：' + names.slice(0, 4).join('、') + (names.length > 4 ? ' 等' : '');
+  return items.length + '个：' + names.slice(0, 4).join('、') + (names.length > 4 ? '等' : '');
 }
 
 function groupRowItems(row) {
@@ -442,7 +442,7 @@ function runNodes(entry) {
   const sum = document.createElement('summary');
   const nm = document.createElement('span'); nm.className = 'rtitle'; nm.textContent = '干活过程';
   const tx = document.createElement('span'); tx.className = 'rsum';
-  tx.textContent = entry.items.length + ' 步 · 点开看';
+  tx.textContent = entry.items.length + '步 · 点开看';
   sum.append(nm, tx);
   det.appendChild(sum);
 
@@ -620,7 +620,7 @@ function paintCtxRing(m) {
   el.classList.toggle('hot', p >= 85);
   const fmt = n => n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n);
   el.title = '上下文用量 ' + p + '%（约 ' + fmt(m.used || 0) + ' / ' + fmt(m.window || 0) + ' tokens，' +
-    (m.messages || 0) + ' 条消息）\n' + (m.model || '') + '\n按字符估算，用于判断何时该开新对话。';
+    (m.messages || 0) + '条消息）\n' + (m.model || '') + '\n按字符估算，用于判断何时该开新对话。';
   paintCtxPanel(m);
 }
 
@@ -661,7 +661,7 @@ function paintCtxPanel(m) {
     '<div class="ctx-top"><b>' + p + '%</b><span class="pct">已用约 ' + fmtTok(used) + ' / ' + fmtTok(win) + ' tokens</span></div>' +
     '<div class="ctx-bar ' + cls + '"><i style="width:' + p + '%"></i></div>' +
     '<div style="margin-top:9px">' +
-      '<div class="ctx-kv"><span>消息条数</span><span>' + (d.messages || 0) + ' 条</span></div>' +
+      '<div class="ctx-kv"><span>消息条数</span><span>' + (d.messages || 0) + '条</span></div>' +
       '<div class="ctx-kv"><span>当前模型</span><span class="kv-model">' +
         (window.DSBrand && d.model ? DSBrand.html(d.model, 'sm') : '') +
         esc(d.model || '未设置') + '</span></div>' +
@@ -681,7 +681,7 @@ function paintSkillPanel() {
   if (!box) return;
   const skills = S.skills || [];
   const prompts = S.prompts || [];
-  let h = '<div class="pop-hint">内置 + 已安装的技能（' + skills.length + ' 个），点一行展开说明与路径。</div>';
+  let h = '<div class="pop-hint">内置 + 已安装的技能（' + skills.length + '个），点一行展开说明与路径。</div>';
   if (!skills.length) {
     h += '<div class="sk-empty">还没有技能。左下角「技能」可从 URL 或文件夹安装。</div>';
   }
@@ -689,7 +689,7 @@ function paintSkillPanel() {
     '<div class="sk-row" data-i="' + i + '">' +
       '<button class="sk-head"><span class="sk-arw">▶</span>' +
         '<span class="sk-name">' + esc(s.name || '') + '</span>' +
-        '<span class="sk-meta">' + (s.files || 0) + ' 文件</span></button>' +
+        '<span class="sk-meta">' + (s.files || 0) + '文件</span></button>' +
       '<div class="sk-body">' + esc(s.description || '（没有写说明）') +
         (s.path ? '<code>' + esc(s.path) + '</code>' : '') + '</div>' +
     '</div>').join('');
@@ -713,9 +713,9 @@ function paintModelPanel() {
   const all = apiModelList || [];
   const hits = kw ? all.filter(m => (m.id + ' ' + (m.label || '')).toLowerCase().includes(kw)) : all;
   hint.textContent = all.length
-    ? '共 ' + all.length + ' 个模型（🆓 = 确认免费）· 当前 ' + (cur || '未设置') +
+    ? '共 ' + all.length + ' 个模型（带星标的是免费）· 当前 ' + (cur || '未设置') +
       (ctxData ? ' · 窗口 ' + fmtTok(ctxData.window) : '')
-    : (s.apiKey ? '还没有模型列表，点这里重新拉取。' : '还没绑定 API Key —— 先去 ⚙ 设置里填供应商。');
+    : (s.apiKey ? '还没有模型列表，点这里重新拉取。' : '还没绑定 API Key —— 先去设置里填供应商。');
   if (!hits.length) {
     list.innerHTML = '<div class="sk-empty">' + (all.length ? '没有匹配的模型。' : '') + '</div>';
     return;
@@ -726,7 +726,7 @@ function paintModelPanel() {
     // 图标按模型名认品牌：列表一眼能分出这是哪家的模型，比一串英文 id 好扫。
     const logo = window.DSBrand ? DSBrand.html(m.id + ' ' + (m.label || '')) : '';
     return '<div class="mrow' + (isCur ? ' cur' : '') + '" data-id="' + esc(m.id) + '" title="' + esc(m.id) + '">' +
-      '<span class="m-left">' + logo + '<span class="mname">' + (m.free ? '🆓 ' : '') + esc(name) + '</span></span>' +
+      '<span class="m-left">' + logo + '<span class="mname">' + (m.free ? ' ' : '') + esc(name) + '</span></span>' +
       '<span class="mtag">' + (isCur ? '当前' : '') + '</span></div>';
   }).join('');
 }
@@ -755,7 +755,7 @@ function maybeRefreshModels() {
 
 // ---------------- 第 2 期：Router / Worker 会话树 ----------------
 function showSessionTree(m) {
-  const body = openModal('sessiontree', '🕸 SuperAgent 架构', [
+  const body = openModal('sessiontree', 'SuperAgent 架构', [
     { t: '关闭' },
     { t: '刷新', fn: () => { call('sessionTree'); return false; } },
   ]);
@@ -763,9 +763,9 @@ function showSessionTree(m) {
   const head = document.createElement('div');
   head.className = 'hint';
   head.style.marginBottom = '10px';
-  head.textContent = 'Router ' + (st.routerCount || 0) + ' 个 · Worker ' + (st.workerCount || 0) +
-    ' 个（活跃 ' + (st.activeWorkers || 0) + ' / 已停 ' + (st.stoppedWorkers || 0) + '）· 主会话 ' +
-    (st.mainCount || 0) + ' 个。Router 只持有共享摘要，Worker 各自独立上下文，互不串味。';
+  head.textContent = 'Router ' + (st.routerCount || 0) + '个 · Worker ' + (st.workerCount || 0) +
+    '个（活跃 ' + (st.activeWorkers || 0) + ' / 已停 ' + (st.stoppedWorkers || 0) + '）· 主会话 ' +
+    (st.mainCount || 0) + '个。Router 只持有共享摘要，Worker 各自独立上下文，互不串味。';
   body.appendChild(head);
 
   const routers = m.routers || [];
@@ -783,7 +783,7 @@ function showSessionTree(m) {
     card.style.cssText = 'border:1px solid var(--border);border-radius:12px;padding:10px 12px;margin-bottom:10px';
     const t = document.createElement('div');
     t.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600';
-    t.innerHTML = '<span>🧭 Router #' + r.sid + '</span>' +
+    t.innerHTML = '<span>Router #' + r.sid + '</span>' +
       '<span style="font-size:11px;font-weight:500;color:' + stateColor(r.state) + '">' + esc(stateName(r.state)) + '</span>' +
       '<span style="margin-left:auto;font-size:11px;color:var(--muted);font-weight:400">' + esc(r.title || '') + '</span>';
     card.appendChild(t);
@@ -809,8 +809,51 @@ function showSessionTree(m) {
   }
 }
 
+// GitHub 设备码登录：显示 8 位 code + 打开浏览器 + 复制；后台轮询由内核负责
+let loginModalName = '';
+function showConnectorLogin(m) {
+  if (m.state === 'ok') {
+    closeModal(true);
+    toast('GitHub 已连接：' + (m.account || '') );
+    if (S.settings) { S.settings.connectors = null; call('connectorList'); }
+    return;
+  }
+  if (m.state === 'fail') {
+    closeModal(true);
+    toast('GitHub 登录未完成：' + (m.msg || ''), 'error');
+    return;
+  }
+  if (m.state === 'waiting') {
+    const el = document.getElementById('loginWait');
+    if (el) el.textContent = '还在等你授权…（剩余约 ' + (m.left || 0) + '秒）';
+    return;
+  }
+  if (m.state !== 'code') return;
+
+  const body = openModal('connlogin', '用 GitHub 登录', [
+    { t: '取消', fn: () => call('connectorLoginCancel') },
+  ]);
+  const code = String(m.userCode || '');
+  body.innerHTML =
+    '<div class="hint">在浏览器里打开下面这个地址，输入这 8 位代码，点 Authorize 授权。授权完成后这个窗口会自动关掉。</div>' +
+    '<div style="font:700 26px/1.4 ui-monospace,Consolas,monospace;letter-spacing:4px;text-align:center;' +
+      'padding:14px;margin:12px 0;border:1px dashed var(--border);border-radius:12px;background:var(--card)">' +
+      esc(code) + '</div>' +
+    '<div style="display:flex;gap:8px;justify-content:center;margin-bottom:10px">' +
+      '<button class="btn pri sm" id="loginOpen">打开授权页</button>' +
+      '<button class="btn sm" id="loginCopy">复制代码</button></div>' +
+    '<div class="hint" id="loginWait">等待授权…</div>' +
+    '<div class="hint">授权页：' + esc(m.url || 'https://github.com/login/device') + '</div>';
+  const open = document.getElementById('loginOpen');
+  if (open) open.onclick = () => call('openUrl', { url: m.url || 'https://github.com/login/device' });
+  const cp = document.getElementById('loginCopy');
+  if (cp) cp.onclick = () => { try { navigator.clipboard.writeText(code); toast('代码已复制'); } catch (e) { } };
+  // 自动把授权页推给浏览器：用户少一步
+  call('openUrl', { url: m.url || 'https://github.com/login/device' });
+}
+
 function showRouteDecision(m) {
-  const body = openModal('routediag', '🧭 路由诊断', [{ t: '关闭' }]);
+  const body = openModal('routediag', '路由诊断', [{ t: '关闭' }]);
   if (m.error) {
     const e = document.createElement('div');
     e.className = 'hint';
@@ -821,7 +864,7 @@ function showRouteDecision(m) {
   const head = document.createElement('div');
   head.style.cssText = 'font-size:13px;font-weight:600;margin-bottom:8px';
   head.textContent = (m.path === 'slow' ? '慢路径 · 拆分并行' : '快路径 · 单个助手直做') +
-    '（置信度 ' + m.confidence + '，规划 ' + (m.workers || 1) + ' 路）';
+    '（置信度 ' + m.confidence + '，规划 ' + (m.workers || 1) + '路）';
   body.appendChild(head);
   const ul = document.createElement('div');
   ul.style.cssText = 'font-size:12.5px;line-height:1.75;color:var(--text)';
@@ -853,8 +896,6 @@ function setTheme(t) {
   // 亮/暗各有一整套固有 CSS（theme-dark.css / theme-light.css），全局选择器
   // 不能同时生效，按主题只启用一份；切主题即时生效，不用重载界面。
   if (typeof window.__setThemeCss === 'function') window.__setThemeCss(dark ? 'dark' : 'light');
-  const b = $('#btnTheme');
-  if (b) b.textContent = dark ? '☀️' : '🌙';
 }
 /* ---------------- Agent 名片（集群） ---------------- */
 let agentCardSid = 0;
@@ -870,8 +911,8 @@ function renderAgents() {
   if (!list.length) { box.classList.add('hidden'); box.innerHTML = ''; return; }
   box.classList.remove('hidden');
   const running = list.filter(a => a.status === '运行中').length;
-  let html = '<div class="ag-head"><span class="ag-title">👥 本场名册 ' + list.length + ' 人</span>' +
-    (running ? '<span class="ag-run">● ' + running + ' 人正在干活</span>' : '') +
+  let html = '<div class="ag-head"><span class="ag-title">本场名册 ' + list.length + '人</span>' +
+    (running ? '<span class="ag-run">● ' + running + '人正在干活</span>' : '') +
     '<span class="ag-hint">点名片看它在干什么</span></div><div class="ag-list">';
   for (const a of list) {
     html += '<button class="ag-card' + (a.active ? '' : ' off') + '" data-sid="' + a.sid + '">' +
@@ -926,10 +967,10 @@ function openAgentCard(a) {
   meta.append(n, now);
   head.append(av, meta);
   box.appendChild(head);
-  if (a.task) box.appendChild(agentSec('🎯 分工', a.task, 'acTask'));
-  if (a.result) box.appendChild(agentSec('📦 产出（这一轮交给指挥官的）', a.result, 'acRes', 'md'));
-  if (a.text && a.text !== a.result) box.appendChild(agentSec('📝 输出', a.text, 'acOut', 'md'));
-  box.appendChild(agentSec('🔧 过程（工具调用）', a.log, 'acLog', 'log'));
+  if (a.task) box.appendChild(agentSec('分工', a.task, 'acTask'));
+  if (a.result) box.appendChild(agentSec('产出（这一轮交给指挥官的）', a.result, 'acRes', 'md'));
+  if (a.text && a.text !== a.result) box.appendChild(agentSec('输出', a.text, 'acOut', 'md'));
+  box.appendChild(agentSec('过程（工具调用）', a.log, 'acLog', 'log'));
   body.appendChild(box);
 }
 
@@ -1034,10 +1075,10 @@ function handleEvent(m) {
       const st = $('#apiModelsStatus');
       if (st) {
         st.textContent = m.ok
-          ? ('✅ 拉到 ' + m.count + ' 个模型'
-             + (m.freeCount ? '，其中 ' + m.freeCount + ' 个确认免费（🆓 标出）' : '')
+          ? ('拉到 ' + m.count + ' 个模型'
+             + (m.freeCount ? '，其中 ' + m.freeCount + ' 个确认免费（带星标）' : '')
              + (m.autoModel ? '。已默认选用第一个：' + m.autoModel : '，在下面挑一个即可。'))
-          : ('❌ ' + (m.error || '拉取失败'));
+          : ('失败：' + (m.error || '未知错误'));
         st.style.color = m.ok ? '' : '#c0392b';
       }
       renderModelPicker();
@@ -1058,8 +1099,8 @@ function handleEvent(m) {
       const st = $('#apiTestResult');
       if (st) {
         st.textContent = m.ok
-          ? ('✅ 连接正常 · ' + m.model + ' · ' + m.ms + ' ms · 模型回了：' + (m.reply || '（空）'))
-          : ('❌ ' + (m.error || '连接失败'));
+          ? ('连接正常 · ' + m.model + ' · ' + m.ms + ' ms · 模型回了：' + (m.reply || '（空）'))
+          : ('失败：' + (m.error || '未知错误'));
         st.style.color = m.ok ? '' : '#c0392b';
       }
       releaseBtn('btnApiTest');
@@ -1078,20 +1119,51 @@ function handleEvent(m) {
         if (out) {
           // 用主题变量，深浅色都对；写死绿色在浅色下会发灰
           out.style.color = 'var(--blue)';
-          out.textContent = '✅ 已绑定 ' + m.provider + '，Key 已保存（尾号 ' + (m.keyTail || '') + '）。'
+          out.textContent = '已绑定 ' + m.provider + '，Key 已保存（尾号 ' + (m.keyTail || '') + '）。'
             + '下面已经自动拉回模型列表，挑一个再点「保存」即可。';
         }
       } else if (out) {
         out.style.color = '#c0392b';
-        out.textContent = '❌ 绑定失败：' + (m.error || '未知错误') + '　（可以改用下面的「按引导绑定」）';
+        out.textContent = '绑定失败：' + (m.error || '未知错误') + '　（可以改用下面的「按引导绑定」）';
       }
       break;
     }
     case 'ask': showAsk(m); break;
     case 'askClose': closeAsk(m.askId); break;
     case 'update': S.update = m.update; showUpdatePill(m.update); break;
-    case 'ctxUsage': paintCtxRing(m); break;    case 'sessionTree': showSessionTree(m); break;
+    case 'ctxUsage': paintCtxRing(m); break;
+    case 'sessionTree': showSessionTree(m); break;
+    // 上下文超阈值自动压缩：内核已经插了「 …」系统气泡、也弹过 toast、还刷了占用环。
+    // 前端只需要在「当前会话」里滚到底，让那条系统消息可见 —— 聊天区在别处滚动时别打断。
+    case 'ctxCompacted':
+      if (m.sid != null && S.conv && m.sid === S.conv.sid) scrollBottom();
+      break;
+    case 'workers':
+      if (S.settings) S.settings.workers = m.list || [];
+      if (modalName === 'settings' && settingsTab === 3) openSettings(S.settings, 3);
+      break;
+    case 'connectors':
+      if (S.settings) S.settings.connectors = m.list || [];
+      if (modalName === 'settings' && settingsTab === 3) openSettings(S.settings, 3);
+      break;
+    case 'connectorLogin': showConnectorLogin(m); break;
     case 'routeDecision': showRouteDecision(m); break;
+    // 入口 Router 的判定（自动路由）：不弹窗，只在状态里挂一句，免得每次发消息都盖一层
+    case 'routerPick':
+      S.lastRoute = m;
+      if (m.path === 'slow') toast('Router：慢路径，拆 ' + (m.workers || 2) + ' 路（' +
+        ((m.roles || []).join(' / ') || '执行') + '）');
+      break;
+    case 'watchdog':
+      toast('看门狗收掉 ' + (m.reaped || []).length + ' 个卡死会话');
+      break;
+    case 'triggerFired':
+      toast('触发器触发：' + (m.prompt || ''));
+      break;
+    case 'triggers':
+      if (S.settings) S.settings.triggers = m.list || [];
+      if (modalName === 'settings' && settingsTab === 3) openSettings(S.settings, 3);
+      break;
     case 'updateLatest': S.update = null; $('#btnUpdate').classList.add('hidden'); toast(m.text); break;
     case 'updateProgress': updateProgress(m.percent, m.status); break;
     case 'updateStatus': updateProgress(null, m.text, m.done); break;
@@ -1248,7 +1320,7 @@ function chk(id) { const e = $('#' + id); return !!(e && e.checked); }
 /* ---------------- 记忆 ---------------- */
 function openMemory(m) {
   if (!m) { call('memoryGet'); return; }
-  const body = openModal('memory', '🧠 长期记忆（跨会话生效）', [
+  const body = openModal('memory', '长期记忆（跨会话生效）', [
     { t: '取消' },
     { t: '清空', danger: true, fn: () => call('memoryClear') },
     { t: '保存', primary: true, fn: () => call('memorySave', { text: val('memText') }) },
@@ -1264,7 +1336,7 @@ function openMemory(m) {
 /* ---------------- 技能 ---------------- */
 function openSkills(m) {
   const list = (m && m.list) || S.skills || [];
-  const body = openModal('skills', '🧩 技能管理', [{ t: '关闭' }]);
+  const body = openModal('skills', '技能管理', [{ t: '关闭' }]);
   if (!m) call('skills');
   const intro = document.createElement('div');
   intro.style.cssText = 'font-size:12px;color:var(--muted);margin:8px 0';
@@ -1287,10 +1359,10 @@ function openSkills(m) {
   const row = document.createElement('div');
   row.style.cssText = 'display:flex;gap:8px;margin:4px 0 12px';
   const b1 = document.createElement('button');
-  b1.className = 'btn'; b1.textContent = '⬇️ 从 URL 安装';
+  b1.className = 'btn'; b1.textContent = '从 URL 安装';
   b1.onclick = () => { const u = val('skillUrl'); if (u) call('skillInstallUrl', { url: u }); };
   const b2 = document.createElement('button');
-  b2.className = 'btn'; b2.textContent = '📁 从本地文件夹安装';
+  b2.className = 'btn'; b2.textContent = '从本地文件夹安装';
   b2.onclick = () => call('pickFolder');
   row.append(b1, b2);
   body.appendChild(row);
@@ -1343,7 +1415,7 @@ function wireRd() {
 }
 
 function openSuperLink() {
-  const body = openModal('superlink', '🔗 超级连接', [{ t: '关闭', fn: stopSlPoll }]);
+  const body = openModal('superlink', '超级连接', [{ t: '关闭', fn: stopSlPoll }]);
   const box = document.createElement('div');
   box.innerHTML =
     '<div class="hint">让另一台设备（手机 / 平板 / 另一台电脑）也能用这台机器上的 deepsleep，远程桌面连上就能用：<br>' +
@@ -1364,8 +1436,8 @@ function openSuperLink() {
       '</div></div>' +
     '<div id="slState" class="hint" style="margin-top:12px;min-height:20px"></div>' +
     '<div id="slActions" style="display:none;gap:8px;margin-top:6px">' +
-      '<button class="btn" id="slRd">🖥 打开远程桌面</button>' +
-      '<button class="btn" id="slFull">💬 打开完整控制台</button>' +
+      '<button class="btn" id="slRd">打开远程桌面</button>' +
+      '<button class="btn" id="slFull">打开完整控制台</button>' +
     '</div>';
   body.appendChild(box);
 
@@ -1413,21 +1485,21 @@ function updateSl(st) {
     const base = String(st.baseUrl).replace(/\/+$/, '');
     const tk = encodeURIComponent(st.remoteToken || '');
     // 令牌放 # 片段：片段不发给服务器，也不会被隧道商（serveo 免费版）的浏览器警告页
-    // 「Continue」表单提交（action="" 的 GET）把查询串顶掉 —— 之前 rd.html 报「缺少配对令牌」就是这个原因。
+    // 「Continue」表单提交（action=""的 GET）把查询串顶掉 —— 之前 rd.html 报「缺少配对令牌」就是这个原因。
     //
-    // ⚠ 这里用应用内覆盖层承载，不再 openUrl 拉系统浏览器（桌面端本身就是 WebView）。
+    //  这里用应用内覆盖层承载，不再 openUrl 拉系统浏览器（桌面端本身就是 WebView）。
     const peer = st.peer ? '对端：' + st.peer : '';
     const via = st.p2p ? '点对点直连' : '内置隧道';
     // u 和 t 都放 # 片段：query 会被 serveo 免费隧道那个英文警告页的
-    // 「Continue」表单（action="" 的 GET 提交）整条顶掉，放片段才不会被带走。
+    // 「Continue」表单（action=""的 GET 提交）整条顶掉，放片段才不会被带走。
     $('#slRd').onclick = () => openInApp(
       base + '/web/core/rd.html#u=' + encodeURIComponent(base) + '&t=' + tk,
-      '🖥 远程桌面', via + (peer ? ' · ' + peer : ''));
+      '远程桌面', via + (peer ? ' · ' + peer : ''));
 
     // 「完整控制台」是对端内核的整站页面。它需要带 u=（对端地址）才能知道自己该连谁，
     // 且它自己是完整 HTML 页面，塞进 iframe 完全没问题。
     const fullUrl = base + '/web/core/#u=' + encodeURIComponent(base) + '&t=' + tk;
-    $('#slFull').onclick = () => openInApp(fullUrl, '💬 完整控制台', via + (peer ? ' · ' + peer : ''));
+    $('#slFull').onclick = () => openInApp(fullUrl, '完整控制台', via + (peer ? ' · ' + peer : ''));
   } else {
     acts.style.display = 'none';
   }
@@ -1451,7 +1523,7 @@ function applySkin(sk) {
   }
   document.body.classList.add('skin-on');
   const vars = Object.entries(sk.vars || {}).map(([k, v]) => k + ':' + v + ';').join('');
-  // ⚠ 必须挂到 body.skin-on 上：主题变量在 body.light / body.dark（0,1,1），
+  //  必须挂到 body.skin-on 上：主题变量在 body.light / body.dark（0,1,1），
   //   直接写 body{--bg:…}（0,0,1）会被压掉；skin-on 同为 (0,1,1) 但本 <style>
   //   后插入，能覆盖主题默认值 —— 这正是「皮肤叠加层」该有的优先级。
   const scope = 'body.skin-on';
@@ -1463,7 +1535,7 @@ function applySkin(sk) {
 }
 
 /* 右下角「可用工具」：内置 + 用户装的 .dslt 自定义工具。
-   工具集变了（装/删扩展）会重新渲染，点一下直接跳到 设置 → 🧩 扩展。 */
+   工具集变了（装/删扩展）会重新渲染，点一下直接跳到设置里的扩展页。 */
 const BUILTIN_TOOLS = [
   '运行命令', '运行Python脚本', '操作电脑', '读取文件', '写入文件', '打开文件',
   '网络搜索', '深度研究', '抓取网页', '看图', '生成图片', '生成视频',
@@ -1473,7 +1545,7 @@ const BUILTIN_TOOLS = [
 function toolBarText() {
   const ext = ((S.settings && S.settings.extTools) || []).filter(t => t.enabled);
   const names = ext.map(t => t.name);
-  let txt = '🛠 ' + (BUILTIN_TOOLS.length + names.length) + ' 个工具';
+  let txt = (BUILTIN_TOOLS.length + names.length) + ' 个工具';
   if (names.length) txt += ' · 自定义：' + names.join('、');
   return txt;
 }
@@ -1483,7 +1555,7 @@ function toolBarTitle() {
   const lines = ['内置：' + BUILTIN_TOOLS.join('、')];
   if (ext.length) lines.push('自定义：' + ext.map(t => t.name + '（' + (t.description || '无说明') + '）').join('、'));
   lines.push('界面版本：' + (window.__uiVersion || '未知'));
-  lines.push('点这里管理扩展（⚙ 设置 → 🧩 扩展）');
+  lines.push('点这里管理扩展（设置 → 扩展）');
   return lines.join('\n');
 }
 
@@ -1495,16 +1567,30 @@ function renderToolBar() {
   el.onclick = () => openSettings(S.settings, 3);
 }
 
+/* 思考强度：档位按钮的高亮跟着内核下发的 settings.reasoning 走，
+   这样在别处（设置页 / 另一台设备同步过来的配置）改了也能对上。 */
+function paintReasoning(level) {
+  const seg = $('#reasonSeg');
+  if (!seg) return;
+  const cur = level || 'off';
+  seg.querySelectorAll('button[data-level]').forEach(b => {
+    b.classList.toggle('on', b.dataset.level === cur);
+  });
+  const hint = seg.parentElement && seg.parentElement.querySelector('.reason-cur');
+  if (hint) hint.textContent = ({ off: '关', low: '低', medium: '中', high: '高' })[cur] || '高';
+}
+
 function applySettings() {
   const s = S.settings || {};
   if ($('#mode') && s.mode) $('#mode').value = s.mode;
   if ($('#tgFast')) $('#tgFast').checked = !!s.fast;
   if ($('#tgLocal')) $('#tgLocal').checked = !!s.local;
   if ($('#tgSearch')) $('#tgSearch').checked = !!s.search;
+  paintReasoning(s.reasoning);
   if (s.theme) setTheme(s.theme);
   applySkin(s.skin);    // 皮肤：没启用就传 null，等价于清掉自定义样式
   renderToolBar();      // 右下角工具清单（含已装的自定义工具）
-  renderModelLabel();   // 顶部「🧠 模型」始终显示当前模型
+  renderModelLabel();   // 顶部「 模型」始终显示当前模型
 }
 
 /* ---------------- 外部 API：联网模型列表 ---------------- */
@@ -1539,8 +1625,8 @@ function renderModelPicker() {
   wrap.style.display = '';
   const cur = val('apiModel');
   sel.innerHTML = list.map((m, i) => {
-    const name = m.label && m.label !== m.id ? (m.label + '  ·  ' + m.id) : m.id;
-    return '<option value="' + i + '">' + (m.free ? '🆓 ' : '') + esc(name) + '</option>';
+    const name = m.label && m.label !== m.id ? (m.label + ' · ' + m.id) : m.id;
+    return '<option value="' + i + '">' + (m.free ? ' ' : '') + esc(name) + '</option>';
   }).join('');
   const hit = list.findIndex(m => m.id === cur);
   sel.value = String(hit >= 0 ? hit : 0);
@@ -1574,7 +1660,7 @@ function renderModelLabel() {
 function openModelPicker() {
   const s = S.settings || {};
   // closeOnPick：选完就关，不打断会话
-  const body = openModal('model', '🧠 切换模型', [{ t: '关闭' }]);
+  const body = openModal('model', '切换模型', [{ t: '关闭' }]);
 
   const head = document.createElement('div');
   head.className = 'hint';
@@ -1608,7 +1694,7 @@ function openModelPicker() {
       const name = (m.label && m.label !== m.id) ? (m.label + '　·　' + m.id) : m.id;
       const cur = m.id === s.apiModel ? ' ✔' : '';
       return '<div class="mrow' + (cur ? ' cur' : '') + '" data-id="' + esc(m.id) + '">'
-        + (m.free ? '🆓 ' : '') + esc(name) + cur + '</div>';
+        + (m.free ? ' ' : '') + esc(name) + cur + '</div>';
     }).join('');
     listBox.querySelectorAll('.mrow').forEach(el => {
       el.onclick = () => {
@@ -1623,28 +1709,28 @@ function openModelPicker() {
   paint();
   modelPickerRefresh = () => {
     if (modalName !== 'model') { modelPickerRefresh = null; return; }
-    status.textContent = '共 ' + (apiModelList || []).length + ' 个模型（🆓 = 确认免费）';
+    status.textContent = '共 ' + (apiModelList || []).length + ' 个模型（带星标的是免费）';
     paint();
   };
 
   // 列表为空 → 自动联网拉一次（不用手动点）
   if (!apiModelList || apiModelSource !== String(s.apiUrl || '')) {
     if (!s.apiKey) {
-      status.textContent = '还没有配置 API Key —— 先去 ⚙ 设置里绑定一个供应商。';
+      status.textContent = '还没有配置 API Key —— 先去设置里绑定一个供应商。';
       return;
     }
     status.textContent = '正在联网获取模型列表…';
     apiModelSource = String(s.apiUrl || '');
     call('apiModels', { url: s.apiUrl, key: s.apiKey, format: s.apiFormat });
   } else {
-    status.textContent = '共 ' + apiModelList.length + ' 个模型（🆓 = 确认免费）';
+    status.textContent = '共 ' + apiModelList.length + ' 个模型（带星标的是免费）';
   }
 }
 
 let settingsTab = 0;   // 设置弹窗记住上次停留的页签
 function openSettings(fresh, tabIdx) {
   const s = fresh || S.settings || {};
-  const body = openModal('settings', '⚙ 设置', [
+  const body = openModal('settings', '设置', [
     { t: '取消' },
     { t: '保存', primary: true, fn: () => saveSettings() },
   ]);
@@ -1653,7 +1739,7 @@ function openSettings(fresh, tabIdx) {
   // 一屏塞几十个输入框太难找，按用途分页；页签状态不持久化，默认回到「模型」。
   const tabBar = document.createElement('div');
   tabBar.className = 'set-tabs';
-  const tabNames = ['🧠 模型', '🖼 图像', '🎬 视频', '🧩 扩展', '⚙ 其他'];
+  const tabNames = ['模型', '图像', '视频', '扩展', '其他'];
   tabBar.innerHTML = tabNames.map((t, i) =>
     '<button type="button" data-tab="' + i + '">' + t + '</button>').join('');
   // 页签条和四个页容器要挂在弹窗 body 上（此时 pane 还没定义，别挂错）
@@ -1672,7 +1758,7 @@ function openSettings(fresh, tabIdx) {
     settingsTab = i;                 // 记住停留的页签，重建弹窗时不跳回第一页
   };
   tabBar.onclick = e => { const b = e.target.closest('button'); if (b) switchTab(+b.dataset.tab); };
-  // ⚠ 这里千万不能用 switchTab(tabIdx)：它会把写入指针 pane 也改掉，
+  //  这里千万不能用 switchTab(tabIdx)：它会把写入指针 pane 也改掉，
   //   而下面整段内容是按 pane = panes[0]/[1]/[2]… 顺序往里塞的 ——
   //   一旦一开始就指向 panes[3]，模型页会被整个塞进「扩展」页（点扩展却看到绑定平台）。
   switchTab(0);
@@ -1728,7 +1814,7 @@ function openSettings(fresh, tabIdx) {
 
   const guide = document.createElement('button');
   guide.className = 'btn';
-  guide.textContent = '🔑 按引导绑定（跳到官网申请页，手动创建 Key）';
+  guide.textContent = '按引导绑定（跳到官网申请页，手动创建 Key）';
   guide.style.margin = '2px 0 4px';
   guide.onclick = () => {
     const p = curPlat();
@@ -1751,7 +1837,7 @@ function openSettings(fresh, tabIdx) {
     const op = oauthTarget(curPlat(), oauthMap);
     oneClick.style.display = op ? '' : 'none';
     guide.style.display = op ? 'none' : '';
-    if (op) oneClick.textContent = '⚡ 一键绑定 ' + op.name.split('（')[0] + '（授权登录，自动拿 Key）';
+    if (op) oneClick.textContent = '一键绑定 ' + op.name.split('（')[0] + '（授权登录，自动拿 Key）';
   }
   const oauthOut = document.createElement('div');
   oauthOut.className = 'hint';
@@ -1793,9 +1879,9 @@ function openSettings(fresh, tabIdx) {
     } else {
       bRestore.style.display = 'none';
       rHint.textContent = profiles.length
-        ? ('已记住 ' + profiles.length + ' 家供应商的配置：'
+        ? ('已记住 ' + profiles.length + '家供应商的配置：'
            + profiles.map(x => x.label || x.model || x.url).slice(0, 3).join('、')
-           + (profiles.length > 3 ? ' 等' : '') + '。切到对应平台就能一键恢复。')
+           + (profiles.length > 3 ? '等' : '') + '。切到对应平台就能一键恢复。')
         : '填好 Key 并保存一次，这里就会记住这家供应商的配置；以后切换供应商可以一键恢复，不用重填。';
     }
   }
@@ -1829,7 +1915,7 @@ function openSettings(fresh, tabIdx) {
   const bTest = document.createElement('button');
   bTest.className = 'btn';
   bTest.id = 'btnApiTest';
-  bTest.textContent = '🔌 测试连接（发一个最小请求验证 Key）';
+  bTest.textContent = '测试连接（发一个最小请求验证 Key）';
   bTest.style.margin = '2px 0 4px';
   bTest.onclick = () => {
     markBtnBusy(bTest, '正在测试…');
@@ -1851,7 +1937,7 @@ function openSettings(fresh, tabIdx) {
   const bFetch = document.createElement('button');
   bFetch.className = 'btn';
   bFetch.id = 'btnFetchModels';
-  bFetch.textContent = '🔄 联网获取模型列表';
+  bFetch.textContent = '联网获取模型列表';
   bFetch.style.margin = '2px 0 4px';
   bFetch.onclick = () => { fetchModels(true); };
   fetchRow.appendChild(bFetch);
@@ -1878,7 +1964,7 @@ function openSettings(fresh, tabIdx) {
   const pickerWrap = document.createElement('div');
   pickerWrap.className = 'field';
   pickerWrap.id = 'modelPickerWrap';
-  pickerWrap.innerHTML = '<label>从列表里挑一个（🆓 = 确认免费）</label><select id="modelPicker"></select>';
+  pickerWrap.innerHTML = '<label>从列表里挑一个（带星标的是免费）</label><select id="modelPicker"></select>';
   pane.appendChild(pickerWrap);
 
   pane.appendChild(field('API 模型名', 'apiModel', s.apiModel, 'text',
@@ -1907,7 +1993,7 @@ function openSettings(fresh, tabIdx) {
   };
   pane.appendChild(field('API 地址', 'apiUrl', s.apiUrl, 'text', '选平台时已自动填好；只有「自定义平台」才需要手动改。'));
 
-  sect('⚡ 模型快速预设（离线可用，一步填好地址 + 模型 + 协议）');
+  sect('模型快速预设（离线可用，一步填好地址 + 模型 + 协议）');
   const presetSel = document.createElement('div');
   presetSel.className = 'field';
   presetSel.innerHTML = '<label>预设</label><select id="preset"></select>' +
@@ -1947,10 +2033,53 @@ function openSettings(fresh, tabIdx) {
   pane.appendChild(field('服务地址', 'ollamaUrl', s.ollamaUrl));
   pane.appendChild(ck('启用本地 Ollama 模型（不花 API 额度，适合长任务 / 集群）', 'useOllama', s.useOllama));
   const inst = document.createElement('button');
-  inst.className = 'btn'; inst.textContent = '⬇️ 一键安装 Ollama + 大模型（qwen3:4b / qwen2.5:1.5b）';
+  inst.className = 'btn'; inst.textContent = '一键安装 Ollama + 大模型（qwen3:4b / qwen2.5:1.5b）';
   inst.style.margin = '6px 0 4px';
   inst.onclick = () => { closeModal(); call('installOllama'); };
   pane.appendChild(inst);
+
+  // ---- Router / Worker 各自的模型 ----
+  // 发送消息 = 交给常驻的 Router：它自己答，或者按 Worker 名单派活。
+  // 这里把两层拆开配：路由用便宜快的，Worker 用能打的，是很常见的省钱方式。
+  const bindingBlock = (title, desc, kind, b) => {
+    b = b || {};
+    sect(title);
+    pane.appendChild(hintEl(desc));
+    const head = document.createElement('div');
+    head.className = 'field';
+    head.innerHTML = '<label>模型来源</label><select id="' + kind + 'UseMain">' +
+      '<option value="1">跟随主模型（跟「① AI 接口」同一套）</option>' +
+      '<option value="0">单独指定一家 / 一个模型</option></select>';
+    pane.appendChild(head);
+    const own = document.createElement('div');
+    own.className = 'bind-own';
+    own.innerHTML =
+      '<div class="field"><label for="' + kind + 'ApiUrl">接口地址</label>' +
+        '<input id="' + kind + 'ApiUrl" type="text" placeholder="https://…/chat/completions"></div>' +
+      '<div class="field"><label for="' + kind + 'ApiFormat">协议</label>' +
+        '<select id="' + kind + 'ApiFormat">' +
+        '<option value="openai">OpenAI 兼容</option><option value="anthropic">Anthropic</option>' +
+        '<option value="gemini">Gemini</option></select></div>' +
+      '<div class="field"><label for="' + kind + 'ApiModel">模型名</label>' +
+        '<input id="' + kind + 'ApiModel" type="text" placeholder="例如 gpt-4.1-mini / glm-4-flash"></div>' +
+      '<div class="field"><label for="' + kind + 'ApiKey">Key（留空沿用主 Key）</label>' +
+        '<input id="' + kind + 'ApiKey" type="password" placeholder="' +
+          (b.hasKey ? '已保存，留空不改' : '同一家网关时不用再填') + '"></div>';
+    pane.appendChild(own);
+    const sel = document.getElementById(kind + 'UseMain');
+    sel.value = b.useMain === false ? '0' : '1';
+    document.getElementById(kind + 'ApiUrl').value = b.apiUrl || '';
+    document.getElementById(kind + 'ApiModel').value = b.apiModel || '';
+    document.getElementById(kind + 'ApiFormat').value = b.apiFormat || 'openai';
+    const sync = () => { own.style.display = sel.value === '0' ? 'block' : 'none'; };
+    sel.onchange = sync; sync();
+  };
+  bindingBlock('Router 模型（常驻·收消息 + 派活）',
+    '发送的每条消息都先到 Router：它决定自己回答，还是按 Worker 名单拆出去并行做。默认跟主模型。',
+    'router', s.router);
+  bindingBlock('Worker 模型（子任务执行）',
+    '拆分出来的每个 Worker 用它自己的模型跑，上下文彼此隔离。默认跟主模型。',
+    'worker', s.worker);
 
   pane = panes[1];
   // ---- 图像 / 识别 / 视频：都能「选平台 → 绑账号」----
@@ -1960,6 +2089,7 @@ function openSettings(fresh, tabIdx) {
     image: [
       { name: '智谱 CogView', url: 'https://open.bigmodel.cn/api/paas/v4/images/generations', model: 'cogview-3-flash' },
       { name: '硅基流动', url: 'https://api.siliconflow.cn/v1/images/generations', model: 'Kwai-Kolors/Kolors' },
+      { name: '豆包 Seedream（火山方舟）', url: 'https://ark.cn-beijing.volces.com/api/v3/images/generations', model: 'doubao-seedream-3-0-t2i-250415' },
       { name: 'OpenAI', url: 'https://api.openai.com/v1/images/generations', model: 'gpt-image-1' },
       { name: '自定义', url: '', model: '' },
     ],
@@ -1970,6 +2100,7 @@ function openSettings(fresh, tabIdx) {
       { name: '自定义', url: '', model: '' },
     ],
     video: [
+      { name: '豆包 Seedance（火山方舟）', url: 'https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks', model: 'doubao-seedance-1-0-pro-250528', poll: 'https://ark.cn-beijing.volces.com/api/v3/contents/generations/tasks/{id}' },
       { name: '智谱 CogVideoX', url: 'https://open.bigmodel.cn/api/paas/v4/videos/generations', model: 'cogvideox-flash', poll: '' },
       { name: '自定义', url: '', model: '', poll: '' },
     ],
@@ -2001,11 +2132,11 @@ function openSettings(fresh, tabIdx) {
     b.className = 'btn';
     b.type = 'button';
     b.style.margin = '2px 0 4px';
-    b.textContent = '🔗 用主账号的 Key（省得再填一遍）';
+    b.textContent = '用主账号的 Key（省得再填一遍）';
     b.onclick = () => {
       const main = document.getElementById('apiKey');
       const k = main ? main.value.trim() : '';
-      if (!k) return toast('先去「🧠 模型」页把主账号 Key 填好。', 'error');
+      if (!k) return toast('先去「 模型」页把主账号 Key 填好。', 'error');
       const el = document.getElementById(keyId);
       if (el) el.value = k;
       toast('已填入主账号 Key，点「保存」生效。');
@@ -2043,6 +2174,227 @@ function openSettings(fresh, tabIdx) {
   pane.appendChild(bindMainKey('videoApiKey'));
 
   pane = panes[3];
+  sect('连接器（把外部账号接进来）');
+  pane.appendChild(hintEl('连上之后 AI 才能代表你去调对应能力。凭据只存在本机 data\\connectors.json，且是 DPAPI + AES-256-GCM 加密后的密文；不进配置文件、不上传。'));
+  const connList = s.connectors || [];
+  if (!connList.length) pane.appendChild(hintEl('当前版本没有可用的连接器。'));
+  connList.forEach(c => {
+    const row = document.createElement('div');
+    row.className = 'extrow' + (c.connected ? ' on' : '');
+    row.innerHTML = '<div class="extinfo"><b>' + esc(c.name) + '</b><span>' +
+      (c.connected ? ('已连接：' + esc(c.account || '（未知）')) : '未连接') + '</span><em>' +
+      esc(c.hint || '') + (c.connected && c.at ? ' · ' + esc(c.at) : '') + '</em></div>';
+
+    if (c.connected) {
+      const off = document.createElement('button');
+      off.className = 'btn danger sm';
+      off.textContent = '断开';
+      off.onclick = () => { if (confirm('断开 ' + c.name + '？本机保存的连接信息会被删除。')) call('connectorDisconnect', { connector: c.id }); };
+      row.appendChild(off);
+      pane.appendChild(row);
+      return;
+    }
+
+    if (c.kind === 'login') {
+      // 登录授权：用户只需要在浏览器点一次 Authorize，不碰令牌
+      const on = document.createElement('button');
+      on.className = 'btn pri sm';
+      on.textContent = '用 ' + c.name + '登录';
+      on.onclick = () => { on.disabled = true; on.textContent = '正在申请设备码…'; call('connectorLogin', { connector: c.id });
+        setTimeout(() => { on.disabled = false; on.textContent = '用 ' + c.name + '登录'; }, 20000); };
+      row.appendChild(on);
+      const alt = document.createElement('button');
+      alt.className = 'btn sm';
+      alt.textContent = '用令牌';
+      alt.onclick = () => { const box = row.querySelector('.conn-token'); box.style.display = box.style.display === 'flex' ? 'none' : 'flex'; };
+      row.appendChild(alt);
+      pane.appendChild(row);
+
+      const tok = document.createElement('div');
+      tok.className = 'conn-token';
+      tok.style.display = 'none';
+      tok.style.flexBasis = '100%';
+      tok.innerHTML = '<input type="password" class="conn-input" placeholder="粘贴 ' + esc(c.name) +
+        ' PAT（想用更小权限时选这条）" spellcheck="false">';
+      const go = document.createElement('button');
+      go.className = 'btn pri sm';
+      go.textContent = '验证并保存';
+      go.onclick = () => {
+        const el = tok.querySelector('.conn-input');
+        const v = (el.value || '').trim();
+        if (!v) return toast('先粘贴令牌', 'error');
+        go.disabled = true; go.textContent = '验证中…';
+        call('connectorConnect', { connector: c.id, token: v });
+        setTimeout(() => { go.disabled = false; go.textContent = '验证并保存'; }, 12000);
+      };
+      tok.appendChild(go);
+      pane.appendChild(tok);
+      return;
+    }
+
+    if (c.kind === 'local') {
+      // 本机程序：自动探测 + 验版本；找不到再让用户填路径
+      const on = document.createElement('button');
+      on.className = 'btn pri sm';
+      on.textContent = '连接';
+      on.onclick = () => { on.disabled = true; on.textContent = '正在探测…'; call('connectorConnect', { connector: c.id });
+        setTimeout(() => { on.disabled = false; on.textContent = '连接'; }, 25000); };
+      row.appendChild(on);
+
+      const box = document.createElement('div');
+      box.className = 'conn-token';
+      box.style.display = 'none';
+      box.style.flexBasis = '100%';
+      box.innerHTML = '<input type="text" class="conn-input" placeholder="找不到就手填完整路径，例如 C:////Program Files\\Blender Foundation\\Blender 4.3\\blender.exe" spellcheck="false">';
+      const go = document.createElement('button');
+      go.className = 'btn pri sm';
+      go.textContent = '用这个路径连接';
+      go.onclick = () => {
+        const v = (box.querySelector('.conn-input').value || '').trim();
+        if (!v) return toast('先填路径', 'error');
+        call('connectorConnect', { connector: c.id, path: v });
+      };
+      box.appendChild(go);
+
+      // 「填路径」要一眼能看见，别藏在右键里
+      const pick = document.createElement('button');
+      pick.className = 'btn sm';
+      pick.textContent = '填路径';
+      pick.onclick = () => { box.style.display = box.style.display === 'flex' ? 'none' : 'flex'; };
+      row.appendChild(pick);
+      pane.appendChild(row);
+      pane.appendChild(box);
+      return;
+    }
+
+    // 其它：只能手填令牌
+    const on = document.createElement('button');
+    on.className = 'btn pri sm';
+    on.textContent = '连接';
+    on.onclick = () => { const box = row.querySelector('.conn-token'); box.style.display = box.style.display === 'flex' ? 'none' : 'flex'; };
+    row.appendChild(on);
+    pane.appendChild(row);
+    const tok = document.createElement('div');
+    tok.className = 'conn-token';
+    tok.style.display = 'none';
+    tok.style.flexBasis = '100%';
+    tok.innerHTML = '<input type="password" class="conn-input" placeholder="粘贴令牌" spellcheck="false">';
+    const go = document.createElement('button');
+    go.className = 'btn pri sm';
+    go.textContent = '验证并保存';
+    go.onclick = () => {
+      const v = (tok.querySelector('.conn-input').value || '').trim();
+      if (!v) return toast('先粘贴令牌', 'error');
+      call('connectorConnect', { connector: c.id, token: v });
+    };
+    tok.appendChild(go);
+    pane.appendChild(tok);
+  });
+
+  sect('Worker 名单（可增可删）');
+  pane.appendChild(hintEl('Router 收到消息后，按这里的角色派人：同名角色复用同一个 Worker 会话（沿用上次的产物与上下文），名单外的角色会自动加进来。跑完可以随时删，会话历史仍保留。'));
+  const live = s.routerLive || {};
+  if (live.sid) {
+    pane.appendChild(hintEl('常驻 Router：会话 #' + live.sid + ' · Router 模型 ' + (live.model || '（跟随主模型）') +
+      ' · Worker 模型 ' + (live.workerModel || '（跟随主模型）') + ' · 名册 ' + (live.workers || 0) + ' 个'));
+  }
+  const seats = s.workers || [];
+  if (!seats.length) pane.appendChild(hintEl('名单是空的：下次拆分时会按任务自己建。'));
+  seats.forEach(w => {
+    const row = document.createElement('div');
+    row.className = 'extrow';
+    row.innerHTML = '<div class="extinfo"><b>' + esc(w.role) + '</b><span>' +
+      esc(w.note || '（没写备注）') + '</span><em>会话 #' + esc(String(w.sid || 0)) + ' · 跑过 ' +
+      esc(String(w.runs || 0)) + '轮' + (w.lastUsed ? ' · 最近 ' + esc(w.lastUsed) : '') + '</em></div>';
+    const del = document.createElement('button');
+    del.className = 'btn danger sm';
+    del.textContent = '移除';
+    del.onclick = () => { if (confirm('把「' + w.role + '」从 Worker 名单移除？（会话历史保留）')) call('workerRemove', { worker: w.id }); };
+    row.appendChild(del);
+    pane.appendChild(row);
+  });
+  const addRow = document.createElement('div');
+  addRow.className = 'extrow';
+  addRow.innerHTML = '<div class="extinfo"><b>＋ 添加 Worker</b></div>' +
+    '<input class="conn-input" id="newWorkerRole" placeholder="角色名，例如 测试" style="flex:1 1 120px">' +
+    '<input class="conn-input" id="newWorkerNote" placeholder="备注：擅长什么（可选）" style="flex:2 1 180px">';
+  const addBtn = document.createElement('button');
+  addBtn.className = 'btn pri sm';
+  addBtn.textContent = '加入名单';
+  addBtn.onclick = () => {
+    const role = (document.getElementById('newWorkerRole') || {}).value || '';
+    if (!role.trim()) return toast('先填角色名', 'error');
+    const note = (document.getElementById('newWorkerNote') || {}).value || '';
+    call('workerAdd', { role: role.trim(), note: note.trim() });
+  };
+  addRow.appendChild(addBtn);
+  pane.appendChild(addRow);
+
+  sect('⏰ 触发器（定时 / 文件变动）');
+  pane.appendChild(hintEl('到点或文件一变，就把下面那句话当成「用户消息」交给 Router —— 和你手打完全同一条链路。剪贴板事件没做（内核要跨平台编译，不想为它拖进 WinForms）。'));
+  const trs = s.triggers || [];
+  if (!trs.length) pane.appendChild(hintEl('还没有触发器。'));
+  trs.forEach(t => {
+    const row = document.createElement('div');
+    row.className = 'extrow' + (t.enabled ? ' on' : '');
+    const when = t.kind === 'daily' ? ('每天 ' + esc(t.at || '09:00'))
+      : t.kind === 'file' ? ('文件变动（' + esc(t.path || '') + '）')
+      : ('每 ' + esc(String(t.everyMinutes || 30)) + '分钟');
+    row.innerHTML = '<div class="extinfo"><b>' + when + '</b><span>' + esc(t.prompt || '') +
+      '</span><em>' + (t.enabled ? '已启用' : '已停用') + (t.lastFired ? ' · 上次 ' + esc(t.lastFired) : '') + '</em></div>';
+    const tg = document.createElement('button');
+    tg.className = 'btn sm';
+    tg.textContent = t.enabled ? '停用' : '启用';
+    tg.onclick = () => call('triggerToggle', { trigger: t.id, on: !t.enabled });
+    row.appendChild(tg);
+    const del = document.createElement('button');
+    del.className = 'btn danger sm';
+    del.textContent = '删除';
+    del.onclick = () => { if (confirm('删除这个触发器？')) call('triggerRemove', { trigger: t.id }); };
+    row.appendChild(del);
+    pane.appendChild(row);
+  });
+  // 添加行分两段排：上面那行是「什么时候」，下面那行是「做什么 + 按钮」，挤成一行会折字
+  const trAdd = document.createElement('div');
+  trAdd.className = 'extrow';
+  trAdd.style.flexDirection = 'column';
+  trAdd.style.alignItems = 'stretch';
+  trAdd.innerHTML =
+    '<div style="font-weight:600;font-size:13px">＋ 添加触发器</div>' +
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
+      '<select id="trKind" class="conn-input" style="flex:0 0 120px">' +
+        '<option value="interval">每隔几分钟</option><option value="daily">每天固定时刻</option>' +
+        '<option value="file">文件变动</option></select>' +
+      '<input id="trEvery" class="conn-input" type="number" min="1" value="30" title="间隔分钟" style="flex:0 0 90px">' +
+      '<input id="trAt" class="conn-input" type="text" value="09:00" title="每天几点（HH:mm）" style="flex:0 0 100px">' +
+      '<input id="trPath" class="conn-input" type="text" placeholder="要盯的文件完整路径（仅文件变动需要）" style="flex:1 1 220px;min-width:0">' +
+    '</div>' +
+    '<div style="display:flex;gap:8px;align-items:center">' +
+      '<input id="trPrompt" class="conn-input" type="text" placeholder="到点让助手做什么（写成一句话）" style="flex:1 1 auto;min-width:0">' +
+    '</div>';
+  const trBtn = document.createElement('button');
+  trBtn.className = 'btn pri sm';
+  trBtn.textContent = '添加';
+  trBtn.style.flex = '0 0 auto';
+  trBtn.onclick = () => {
+    const v = id => (document.getElementById(id) || {}).value || '';
+    if (!v('trPrompt').trim()) return toast('先写一句要助手做什么', 'error');
+    call('triggerAdd', {
+      kind: v('trKind'), everyMinutes: parseInt(v('trEvery'), 10) || 30,
+      at: v('trAt').trim(), path: v('trPath').trim(), prompt: v('trPrompt').trim(),
+    });
+  };
+  trAdd.lastElementChild.appendChild(trBtn);
+  pane.appendChild(trAdd);
+
+  sect('Blender 连接器');
+  pane.appendChild(hintEl('Blender 作为连接器使用。在上面的连接器里点「连接」，连上之后 AI 才有建模工具，能写 bpy 脚本，并按扩展名导出 .blend / .glb / .gltf / .obj / .stl / .fbx。当前：' + (s.blenderPath || '（没连）')));
+
+  sect('GitHub 登录（可选）');
+  pane.appendChild(hintEl('默认用内置的 GitHub CLI 公开 App 走设备码登录，开箱就能用。想用自己注册的 OAuth App（独立配额 / 自己的应用名）就填它的 Client ID；留空 = 用内置。'));
+  pane.appendChild(field('OAuth App Client ID（留空用内置）', 'githubClientId', s.githubClientId,
+    'text', 'github.com/settings/developers → New OAuth App，记得勾 Enable Device Flow。'));
+
   sect('自定义工具（.dslt）');
   pane.appendChild(hintEl('装好的自定义工具会变成 AI 能直接调用的工具。双击 .dslt 文件即可安装，也可以把路径贴到下面点安装。'));
   const extTools = s.extTools || [];
@@ -2068,7 +2420,7 @@ function openSettings(fresh, tabIdx) {
   }
 
   sect('皮肤（.dslp）');
-  pane.appendChild(hintEl('亮色 / 暗色模式各有一套自带 CSS（右上角 ☀️/🌙 切换时会整套换掉）。这里装的是叠加层：可以改配色、圆角、背景，还能加自定义动效（CSS @keyframes），会盖在当前模式之上。双击 .dslp 安装，然后点「使用」。'));
+  pane.appendChild(hintEl('亮色 / 暗色模式各有一套自带 CSS（在右上角切换）。这里装的是叠加层：可以改配色、圆角、背景，还能加自定义动效（CSS @keyframes），会盖在当前模式之上。双击 .dslp 安装，然后点「使用」。'));
   const extSkins = s.extSkins || [];
   if (!extSkins.length) {
     pane.appendChild(hintEl('还没有安装皮肤，当前用的就是模式的自带样式。'));
@@ -2106,7 +2458,7 @@ function openSettings(fresh, tabIdx) {
       row.appendChild(del);
       pane.appendChild(row);
     });
-    pane.appendChild(hintEl('皮肤只叠加、不替换模式自带 CSS；切换 ☀️/🌙 时皮肤会保留，如果配色不搭，关掉皮肤即可。'));
+    pane.appendChild(hintEl('皮肤只叠加、不替换模式自带 CSS；切换主题时皮肤会保留，如果配色不搭，关掉皮肤即可。'));
   }
 
   sect('安装扩展包');
@@ -2133,8 +2485,8 @@ function openSettings(fresh, tabIdx) {
     '<option value="boom">boom · 全自动（命令免确认）</option></select>';
   pane.appendChild(modeSel);
   $('#setMode').value = s.mode || 'work';
-  pane.appendChild(ck('⚡ 极速模式', 'setFast', s.fast));
-  pane.appendChild(ck('🌐 网络搜索 / 深度研究', 'setSearch', s.search));
+  pane.appendChild(ck('极速模式', 'setFast', s.fast));
+  pane.appendChild(ck('网络搜索 / 深度研究', 'setSearch', s.search));
 
   sect('OTA 自动更新');
   pane.appendChild(field('更新源（owner/repo 或 update.json 的 URL）', 'updateUrl', s.updateUrl));
@@ -2151,22 +2503,43 @@ function openSettings(fresh, tabIdx) {
   $('#updateSource').value = s.updateSource === 'github' ? 'github' : 'gitee';
   pane.appendChild(field('录入 GitHub 令牌（多层加密保存，' + (s.tokenSaved ? '已保存' : '未保存') + '）', 'token', '', 'password', '私有仓库或想提高 GitHub API 限额时录入；用 DPAPI 加密存在 data\\github.token，不进配置文件。'));
   const tk = document.createElement('button');
-  tk.className = 'btn'; tk.textContent = '🔑 加密保存令牌';
+  tk.className = 'btn'; tk.textContent = '加密保存令牌';
   tk.style.margin = '0 0 6px';
   tk.onclick = () => { const v = val('token'); if (v) call('setToken', { token: v }); };
   pane.appendChild(tk);
 
   // ---- 第 2 期：SuperAgent 架构（Router / Worker 会话）----
-  sect('SuperAgent 架构（第 2 期）');
+  sect('SuperAgent 架构');
   const archBox = document.createElement('div');
   archBox.className = 'field';
   archBox.innerHTML = '<label>路由层与 Worker 会话</label>' +
-    '<div class="hint">每次「拆分任务」都会开一个 Router 会话 + 若干上下文隔离的 Worker 会话；' +
-    'Router 只持有共享摘要（目标/权限/约束/产物），Worker 私有历史互不可见。</div>';
+    '<div class="hint">Router 常驻（就是主会话本身，一直记得上下文），Worker 是一份可增删的名单；' +
+    'Router 只下发共享摘要（目标/权限/约束/产物），Worker 私有历史互不可见。</div>';
   pane.appendChild(archBox);
+
+  // 入口自动路由：用户这条消息先交给 Router 判定
+  archBox.appendChild(ck('自动路由（发送即交给 Router）', 'routerAuto', s.routerAuto !== false));
+  archBox.appendChild(hintEl('开：每条消息先按规则判定，多路任务自动拆给 Worker 并行（会多一次 Router 规划调用）。' +
+    '关：只在你手动要求拆分时才拆。斜杠命令永远不路由。'));
+
+  // 看门狗：僵尸会话自愈
+  const wd = document.createElement('div');
+  wd.className = 'field';
+  wd.innerHTML = '<label>看门狗：多久没动静算卡死（分钟，0 = 关）</label>';
+  const wdIn = document.createElement('input');
+  wdIn.className = 'conn-input';
+  wdIn.id = 'setWatchdog';
+  wdIn.type = 'number';
+  wdIn.min = '0'; wdIn.max = '240';
+  wdIn.value = String(s.watchdogMinutes == null ? 10 : s.watchdogMinutes);
+  wd.appendChild(wdIn);
+  wd.insertAdjacentHTML('beforeend',
+    '<div class="hint">只收「状态写着运行中、但本进程根本没在跑」的 Worker 会话（重启遗留、崩溃、卡死）。' +
+    '真在跑的长任务不会被误杀。</div>');
+  pane.appendChild(wd);
   const archBtn = document.createElement('button');
   archBtn.className = 'btn';
-  archBtn.textContent = '🕸 查看会话架构';
+  archBtn.textContent = '查看会话架构';
   archBtn.style.margin = '0 6px 6px 0';
   archBtn.onclick = () => call('sessionTree');
   pane.appendChild(archBtn);
@@ -2184,7 +2557,7 @@ function openSettings(fresh, tabIdx) {
   pane.appendChild(diagWrap);
   const diagBtn = document.createElement('button');
   diagBtn.className = 'btn';
-  diagBtn.textContent = '🧭 诊断这段任务';
+  diagBtn.textContent = '诊断这段任务';
   diagBtn.style.margin = '0 0 6px';
   diagBtn.onclick = () => {
     const t = (document.getElementById('setRouteText') || {}).value || '';
@@ -2229,7 +2602,7 @@ function openSettings(fresh, tabIdx) {
     row.className = 'field';
     const bTun = document.createElement('button');
     bTun.className = 'btn';
-    bTun.textContent = h.tunnelUrl ? '🌐 关闭公网隧道' : '🌐 开启公网隧道（免注册，外网可用）';
+    bTun.textContent = h.tunnelUrl ? '关闭公网隧道' : '开启公网隧道（免注册，外网可用）';
     bTun.onclick = () => {
       bTun.disabled = true;
       bTun.textContent = h.tunnelUrl ? '正在关闭…' : '正在建内置隧道…不用下组件，约 10-40 秒';
@@ -2239,7 +2612,7 @@ function openSettings(fresh, tabIdx) {
     const bCopy = document.createElement('button');
     bCopy.className = 'btn';
     bCopy.style.marginLeft = '8px';
-    bCopy.textContent = '📋 复制配对链接';
+    bCopy.textContent = '复制配对链接';
     bCopy.onclick = () => { try { navigator.clipboard.writeText(link); toast('配对链接已复制'); } catch (e) { toast('复制失败，手动选中吧'); } };
     row.appendChild(bCopy);
     pane.appendChild(row);
@@ -2264,7 +2637,23 @@ function saveSettings() {
     toast('还没选模型 —— 点「③ 联网获取模型列表」挑一个，或手动填模型名。', 'error');
     return false;
   }
+  // Router / Worker 的独立模型绑定（没选「单独指定」就只传 useMain）
+  const bindOf = kind => {
+    const el = id => document.getElementById(kind + id);
+    const o = { useMain: !(el('UseMain') && el('UseMain').value === '0') };
+    if (el('ApiUrl')) o.apiUrl = el('ApiUrl').value.trim();
+    if (el('ApiModel')) o.apiModel = el('ApiModel').value.trim();
+    if (el('ApiFormat')) o.apiFormat = el('ApiFormat').value;
+    // Key 留空 = 不改（不把已存的 Key 抹掉）
+    if (el('ApiKey') && el('ApiKey').value.trim()) o.apiKey = el('ApiKey').value.trim();
+    return o;
+  };
   call('settingsSave', {
+    router: bindOf('router'), worker: bindOf('worker'),
+    blenderPath: val('blenderPath'),
+    githubClientId: val('githubClientId'),
+    routerAuto: !!(document.getElementById('routerAuto') && document.getElementById('routerAuto').checked),
+    watchdogMinutes: parseInt((document.getElementById('setWatchdog') || {}).value, 10) || 0,
     apiUrl: val('apiUrl'), apiModel: val('apiModel'), apiKey: val('apiKey'),
     apiFormat: val('apiFormat'), useFreeKey: chk('useFreeKey'),
     ollamaModel: val('ollamaModel'), ollamaModelStrong: val('ollamaModelStrong'), ollamaUrl: val('ollamaUrl'),
@@ -2407,7 +2796,7 @@ function doSend() {
 }
 
 /* 安全绑定：元素可能不存在。
-   ⚠ 网页版（web/core/index.html）没有桌面版顶栏的「🧠 模型」和「🔗 超级连接」两个按钮。
+    网页版（web/core/index.html）没有桌面版顶栏的「 模型」和「 超级连接」两个按钮。
    以前 wire() 里直接写 $('#btnModel').onclick = …，网页版上 $() 返回 null，
    赋 onclick 立刻抛 TypeError，于是 wire() 从这一行就中断了 —— 后面的
    『#btnSend 发送按钮』和『#input 回车发送』绑定全都没执行，表现就是
@@ -2440,12 +2829,18 @@ function wire() {
   });
   bind('btnClusterTpl', 'onclick', e => {
     menuAt(e.clientX, e.clientY - 10, S.clusterTemplates.map((t, i) => ({
-      text: t.name + '（' + t.members.length + ' 人）',
+      text: t.name + '（' + t.members.length + '人）',
       fn: () => call('clusterTemplate', { index: i }),
     })));
   });
   bind('mode', 'onchange', e => call('setMode', { mode: e.target.value }));
   bind('tgFast', 'onchange', e => call('setFast', { on: e.target.checked }));
+  const reasonSeg = $('#reasonSeg');
+  if (reasonSeg) reasonSeg.addEventListener('click', e => {
+    const b = e.target.closest('button[data-level]');
+    if (!b) return;
+    call('setReasoning', { level: b.dataset.level });
+  });
   bind('tgLocal', 'onchange', e => call('setLocal', { on: e.target.checked }));
   bind('tgSearch', 'onchange', e => call('setSearch', { on: e.target.checked }));
   bind('btnSend', 'onclick', () => doSend());

@@ -6,11 +6,7 @@ using System.Text;
 
 namespace TrollWrangler;
 
-/// <summary>
-/// Windows DPAPI（crypt32.dll）薄封装：不依赖额外 NuGet 包。
-/// 非 Windows 平台没有 DPAPI：TryProtect 返回 null、Unprotect 返回 null，
-/// 上层 TokenVault 会自动退化到 PBKDF2 派生密钥的 pbkdf 模式。
-/// </summary>
+/// <summary>Windows DPAPI（crypt32.dll）薄封装：不依赖额外 NuGet 包。</summary>
 internal static class Dpapi
 {
 #if WINDOWS

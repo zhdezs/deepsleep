@@ -6,22 +6,7 @@ using System.Text.RegularExpressions;
 
 namespace TrollWrangler.CoreHost;
 
-/// <summary>
-/// 内网穿透：把内核的本地端口通过隧道暴露到公网，人在外面（手机 / 别的电脑）也能提问。
-///
-/// 内置隧道（默认、手写、零下载）：直接驱动系统自带的 ssh 建一条反向隧道
-///   （serveo.net / localhost.run 这些免费公共入口，谁先连上、谁自检通过就用谁），
-///   拿到 https 地址后先自己访问一次 /api/ping 确认真能通，再对外公布；
-///   通道断了自动换一条重建，并把新地址重新发布给超级连接的对端。
-///   Windows 10+ / macOS / Linux 都自带 ssh，所以不用下任何组件。
-///
-/// 另外两种用法（可选）：
-///   --tunnel-cf 路径    自己已有的 cloudflared（也可设环境变量 DS_TUNNEL_CF）。
-///   --tunnel-cmd "命令" 自己的穿透工具（frp / cpolar / ngrok / ssh -R … 都行），
-///                       内核从它的输出里抓第一个公网地址。
-///
-/// 抓到公网地址后：打印配对链接（带令牌）、写 &lt;dataDir&gt;\tunnel.txt，桌面端和网页端都能读。
-/// </summary>
+/// <summary>内网穿透：把内核的本地端口通过隧道暴露到公网，人在外面（手机 / 别的电脑）也能提问。</summary>
 public static partial class CoreServer
 {
     private static Process? _tunnel;
@@ -42,17 +27,13 @@ public static partial class CoreServer
     {
         if (!wanted && string.IsNullOrWhiteSpace(custom) && string.IsNullOrWhiteSpace(cfPath)) return;
 
-        // ⚠ 幂等：**已经在跑同一种隧道就别再起一条**。
-        //   踩过的坑：内核启动时 --tunnel 起了一条并公布了地址，随后超级连接配对时
-        //   EnsureTunnel 又调一次 StartTunnel → 下面的 StopTunnel() 把刚建好的那条 ssh
-        //   杀了 → 新起的隧道是**另一个域名**。结果对外公布的还是旧地址，对方拿它死磕，
-        //   现象就是「跨机永远连不上，同机却没事」（同机走局域网直连，根本不碰隧道）。
+        // 幂等：已经在跑同一种隧道就别再起一条。
         string wantKind = !string.IsNullOrWhiteSpace(custom) ? "custom"
                         : !string.IsNullOrWhiteSpace(cfPath) ? "cf"
                         : "builtin";
         if (!_tunnelStop && _tunnelKind == wantKind)
         {
-            Say("  隧道        已经在跑了（" + wantKind + "），不用重复建");
+            Say("隧道已经在跑了（" + wantKind + "），不用重复建");
             return;
         }
 
@@ -85,11 +66,7 @@ public static partial class CoreServer
         public int Port = 22;
     }
 
-    /// <summary>
-    /// 可用的隧道入口（按顺序试）：免费公共入口，可用 DEEPSLEEP_TUNNEL_SSH 换（user@host[:端口]，逗号分隔）。
-    /// 443 放在 22 前面 —— 不少网络（公司网 / 校园网 / 部分家宽）只放行 443，22 出不去，
-    /// 以前只试 22 就是"配对永远连不上"的直接原因；两个端口都试，谁能用用谁。
-    /// </summary>
+    /// <summary>可用的隧道入口（按顺序试）：免费公共入口，可用 DEEPSLEEP_TUNNEL_SSH 换（user@host[:端口]，逗号分隔）。</summary>
     private static List<SshEntry> SshEntries()
     {
         var list = new List<SshEntry>();
@@ -154,7 +131,7 @@ public static partial class CoreServer
         string? cf = CloudflaredPath();
         if (ssh == null && cf == null)
         {
-            Say("  隧道        这台机器上没有 ssh（Windows 10+ 系统自带），也没找到 cloudflared，隧道没建成");
+            Say("隧道这台机器上没有 ssh（Windows 10+ 系统自带），也没找到 cloudflared，隧道没建成");
             return;
         }
         int gen = _tunnelGen;
@@ -174,9 +151,9 @@ public static partial class CoreServer
                     if (_tunnelStop || gen != _tunnelGen) { KillAll(found); return; }
                     if (found.Count >= 1) break;    // 有一条能用就够了：先公布出去，别为了"比出最快的那条"再等 40 秒
                     var job = new TunnelJob(entry.Name, false);
-                    Say("  隧道        正在用手写隧道连 " + entry.Name + " …");
+                    Say("隧道正在用手写隧道连 " + entry.Name + " …");
                     try { job.StartSsh(ssh, entry.Target, entry.Port, _port, _dataDir); }
-                    catch (Exception ex) { Say("  隧道        ssh 起不来：" + ex.Message); continue; }
+                    catch (Exception ex) { Say("隧道 ssh 起不来：" + ex.Message); continue; }
                     if (job.TryReady(gen, out string u, out double kbps))
                     {
                         var cand = new Candidate(job, u, kbps);
@@ -189,10 +166,10 @@ public static partial class CoreServer
             if (cf != null && found.Count < 1 && !_tunnelStop && gen == _tunnelGen)
             {
                 var job = new TunnelJob("cloudflared", true);
-                Say("  隧道        正在用手头已有的 cloudflared 建隧道…");
+                Say("隧道正在用手头已有的 cloudflared 建隧道…");
                 bool started = true;
                 try { job.StartCloudflared(cf, _port); }
-                catch (Exception ex) { Say("  隧道        cloudflared 起不来：" + ex.Message); started = false; }
+                catch (Exception ex) { Say("隧道 cloudflared 起不来：" + ex.Message); started = false; }
                 if (!started) job.Kill();
                 else if (job.TryReady(gen, out string u, out double kbps)) found.Add(new Candidate(job, u, kbps));
                 else job.Kill();
@@ -201,7 +178,7 @@ public static partial class CoreServer
             if (found.Count == 0)
             {
                 if (_tunnelStop || gen != _tunnelGen) return;
-                Say("  隧道        这一轮都没连上，5 秒后再试…");
+                Say("隧道这一轮都没连上，5 秒后再试…");
                 for (int i = 0; i < 50 && !_tunnelStop && gen == _tunnelGen; i++) Thread.Sleep(100);
                 continue;
             }
@@ -209,25 +186,22 @@ public static partial class CoreServer
             found.Sort((a, b) => b.Kbps.CompareTo(a.Kbps));
             for (int i = 1; i < found.Count; i++)
             {
-                Say("  隧道        " + found[i].Job.Name + " 实测 " + SpeedText(found[i].Kbps) + "，比另一条慢，先不用");
+                Say("隧道 " + found[i].Job.Name + "实测 " + SpeedText(found[i].Kbps) + "，比另一条慢，先不用");
                 found[i].Job.Kill();
             }
-            if (found.Count > 1) Say("  隧道        两条都能用，留快的这条");
+            if (found.Count > 1) Say("隧道两条都能用，留快的这条");
             var best = found[0];
             if (!best.Published) best.Job.Publish(best.Url);
             if (best.Job.Monitor(gen)) return;
 
-            // ⚠ 通道断了：**必须立刻把公网地址清掉**，不然它会被当成「还在用」继续发给对方。
-            //   隧道重建要十几到几十秒，这期间 SuperLink 如果拿这条死地址去 PublishOffer，
-            //   对方就会对着一个已经废掉的域名反复探测（每轮 15 秒），表现就是「一直连不上」。
-            //   清空 + 通知上层，让上层知道该等新地址。
+            // 通道断了：必须立刻把公网地址清掉，不然它会被当成「还在用」继续发给对方。
             lock (TunnelGate)
             {
                 if (_tunnelUrl == best.Url)
                 {
                     _tunnelUrl = "";
                     _tunnel = null;
-                    Say("  隧道        " + best.Job.Name + " 断了，地址已作废，正在换一条重建…");
+                    Say("隧道 " + best.Job.Name + "断了，地址已作废，正在换一条重建…");
                     RaiseTunnelReady();      // 上层收到后发现 TunnelUrl 为空 → 不会把死地址发出去
                 }
             }
@@ -374,7 +348,7 @@ public static partial class CoreServer
                 if (HasExited)
                 {
                     string why = Tail();
-                    Say("  隧道        " + _name + " 退出了（退出码 " + ExitCode + "）" +
+                    Say("隧道 " + _name + "退出了（退出码 " + ExitCode + "）" +
                         (why.Length > 0 ? "：" + why : "：没有任何输出 —— 多半是这台机器的网络把 SSH 挡住了"));
                     return false;
                 }
@@ -383,7 +357,7 @@ public static partial class CoreServer
                 {
                     _tested = u;
                     _fails = 0;
-                    Say("  隧道        " + _name + " 给了地址 " + u + "，正在自检…");
+                    Say("隧道 " + _name + "给了地址 " + u + "，正在自检…");
                 }
                 if (_tested.Length > 0)
                 {
@@ -395,7 +369,7 @@ public static partial class CoreServer
                     }
                     if (++_fails >= 4)
                     {
-                        Say("  隧道        " + _name + " 的地址连不上，换下一个入口");
+                        Say("隧道 " + _name + "的地址连不上，换下一个入口");
                         return false;
                     }
                     Thread.Sleep(2500);
@@ -403,7 +377,7 @@ public static partial class CoreServer
                 }
                 Thread.Sleep(600);
             }
-            if (!_tunnelStop && gen == _tunnelGen) Say("  隧道        " + _name + " 超时没给出可用地址");
+            if (!_tunnelStop && gen == _tunnelGen) Say("隧道 " + _name + "超时没给出可用地址");
             return false;
         }
 
@@ -414,9 +388,9 @@ public static partial class CoreServer
             {
                 Thread.Sleep(15000);
                 if (_tunnelStop || gen != _tunnelGen) return true;
-                if (HasExited) { Say("  隧道        通道进程退出了"); return false; }
+                if (HasExited) { Say("隧道通道进程退出了"); return false; }
                 if (PingTunnel(_url)) { _fails = 0; continue; }
-                if (++_fails >= 3) { Say("  隧道        通道连续自检失败，重建"); return false; }
+                if (++_fails >= 3) { Say("隧道通道连续自检失败，重建"); return false; }
             }
             return true;
         }
@@ -486,7 +460,7 @@ public static partial class CoreServer
             sw.Stop();
             if (got < 65536 || sw.Elapsed.TotalSeconds <= 0) return 0;
             double kbps = got / 1024.0 / sw.Elapsed.TotalSeconds;
-            Say("  隧道        " + url + " 实测 " + SpeedText(kbps));
+            Say("隧道 " + url + "实测 " + SpeedText(kbps));
             return kbps;
         }
         catch { return 0; }
@@ -527,13 +501,13 @@ public static partial class CoreServer
                     psi.CreateNoWindow = true;
                     psi.RedirectStandardOutput = true;
                     psi.RedirectStandardError = true;
-                    Say("  隧道        自定义命令：" + custom);
+                    Say("隧道自定义命令：" + custom);
                     job.StartAny(psi);
                 }
-                catch (Exception ex) { Say("  隧道        启动失败：" + ex.Message); return; }
+                catch (Exception ex) { Say("隧道启动失败：" + ex.Message); return; }
                 if (job.TryReady(gen, out string cu, out _)) { job.Publish(cu); if (!job.Monitor(gen)) continue; return; }
                 job.Kill();
-                Say("  隧道        自定义命令没给出可用地址，10 秒后重试…");
+                Say("隧道自定义命令没给出可用地址，10 秒后重试…");
                 for (int i = 0; i < 100 && !_tunnelStop && gen == _tunnelGen; i++) Thread.Sleep(100);
             }
         });
@@ -544,16 +518,16 @@ public static partial class CoreServer
         string? exe = File.Exists(cfPath) ? cfPath : CloudflaredPath();
         if (exe == null)
         {
-            Say("  隧道        没找到 cloudflared：" + cfPath);
+            Say("隧道没找到 cloudflared：" + cfPath);
             return;
         }
         try
         {
-            Say("  隧道        cloudflared 快速隧道");
+            Say("隧道 cloudflared 快速隧道");
             var job = new TunnelJob("cloudflared", true);
             job.StartCloudflared(exe, _port);
         }
-        catch (Exception ex) { Say("  隧道        启动失败：" + ex.Message); }
+        catch (Exception ex) { Say("隧道启动失败：" + ex.Message); }
     }
 
     private static string? FindOnPath(string exe)

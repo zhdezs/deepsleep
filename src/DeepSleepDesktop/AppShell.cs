@@ -9,14 +9,7 @@ using TrollWrangler.CoreHost;
 
 namespace DeepSleep.Desktop;
 
-/// <summary>
-/// 桌面版外壳（Linux / macOS）—— 从 Windows 桌面版（src\MainWindow.xaml.cs）改来：
-///   · 一个主窗口装 ui\index.html（HTML/CSS/JS 界面），与界面之间只走 JSON 消息；
-///   · 自带内核服务 CoreServer（与内核版 deepsleep-core 同一份实现），设置里能开公网隧道；
-///   · 窗口类命令（显示 / 隐藏 / 退出 / 打开链接 / 选文件）由外壳真的执行（ShellOverride）；
-///   · 桌宠 + 桌宠聊天浮窗是独立窗口，共用同一个内核，所以和主界面对话连贯。
-/// 与 Windows 版唯一的不同是窗口后端：这里是 Photino（Linux = WebKitGTK，macOS = WKWebView）。
-/// </summary>
+/// <summary>桌面版外壳（Linux / macOS），结构对齐 Windows 桌面版：主窗口装 ui\index.html。</summary>
 internal sealed class AppShell : IDisposable
 {
     private readonly Kernel _kernel = new();
@@ -51,10 +44,7 @@ internal sealed class AppShell : IDisposable
         // 内核模式：不建窗口，只把服务跑起来（浏览器 / 网页版连上来用）
         if (args.Contains("--headless")) return RunHeadless(args);
 
-        // 建窗口逐项兜底：Photino 各平台支持的设置项并不完全一致，macOS 上某个 setter
-        // 不被支持就会抛异常。以前这整条链一个 try 都没有，一抛就直接结束进程 ——
-        // 而从访达 / 启动台点开是没有终端的，用户看到的就是"双击没反应"，
-        // 什么信息都提供不出来。现在哪一项失败就记一笔、跳过去继续。
+        // 建窗口逐项兜底：Photino 各平台支持的设置项并不完全一致，macOS 上某个 setter不被支持就会抛异常。
         PhotinoWindow win;
         try
         {
@@ -84,7 +74,7 @@ internal sealed class AppShell : IDisposable
             try
             {
                 Console.Error.WriteLine("deepsleep：建窗口失败 —— " + ex.Message);
-                Console.Error.WriteLine("  详情已写入：" + Path.Combine(_dataDir, "shell.log"));
+                Console.Error.WriteLine("详情已写入：" + Path.Combine(_dataDir, "shell.log"));
             }
             catch { }
             Shutdown();
@@ -107,26 +97,22 @@ internal sealed class AppShell : IDisposable
     }
 
 
-    /// <summary>
-    /// 内核模式（--headless）：与 Windows 内核版 deepsleep-core 等价 —— 不建窗口，只跑内核服务，
-    /// 浏览器打开 http://127.0.0.1:&lt;端口&gt;/web/core/#t=&lt;令牌&gt; 就是完整界面；
-    /// 加 --tunnel 还能生成公网配对链接（超远程提问）。
-    /// </summary>
+/// <summary>内核模式：不建窗口，只跑内核服务。</summary>
     private int RunHeadless(string[] args)
     {
         Console.WriteLine("deepsleep 内核模式（无窗口） · " + Platform.DisplayName + " / " + Platform.Rid);
-        Console.WriteLine("  本机打开：http://127.0.0.1:" + CoreServer.Port + "/web/core/#t=" + CoreServer.Token);
+        Console.WriteLine("本机打开：http://127.0.0.1:" + CoreServer.Port + "/web/core/#t=" + CoreServer.Token);
         if (args.Contains("--tunnel"))
         {
-            Console.WriteLine("  正在建立公网隧道…");
+            Console.WriteLine("正在建立公网隧道…");
             try { CoreServer.StartTunnel(true, ArgOf(args, "--tunnel-cmd"), ArgOf(args, "--tunnel-cf")); }
-            catch (Exception ex) { Console.WriteLine("  隧道启动失败：" + ex.Message); }
+            catch (Exception ex) { Console.WriteLine("隧道启动失败：" + ex.Message); }
             string u = CoreServer.TunnelUrl;
             Console.WriteLine(u.Length > 0
-                ? "  公网配对链接：" + u + "/web/core/#t=" + CoreServer.Token
-                : "  公网地址还没就绪，稍后重试或看日志。");
+                ? "公网配对链接：" + u + "/web/core/#t=" + CoreServer.Token
+                : "公网地址还没就绪，稍后重试或看日志。");
         }
-        Console.WriteLine("  按 Ctrl+C 退出。");
+        Console.WriteLine("按 Ctrl+C 退出。");
         var done = new ManualResetEventSlim(false);
         Console.CancelKeyPress += (_, e) => { e.Cancel = true; done.Set(); };
         AppDomain.CurrentDomain.ProcessExit += (_, _2) => done.Set();
@@ -144,9 +130,7 @@ internal sealed class AppShell : IDisposable
 
     private string UiPath() => Path.Combine(_rootDir, "ui", "index.html");
 
-    // ------------------------------------------------------------------
     // 界面通道（对齐 Windows 版：WebMessage → HandleAsync → 回一条 JSON）
-    // ------------------------------------------------------------------
 
     private void OnMessage(string json)
     {
@@ -257,9 +241,7 @@ internal sealed class AppShell : IDisposable
         }
     }
 
-    // ------------------------------------------------------------------
     // 选文件 / 窗口
-    // ------------------------------------------------------------------
 
     private string? PickFile()
     {
@@ -309,9 +291,7 @@ internal sealed class AppShell : IDisposable
         try { Environment.Exit(0); } catch { }
     }
 
-    // ------------------------------------------------------------------
     // 内核服务（HTTP + 内网穿透）：和内核版跑的是同一份 CoreServer
-    // ------------------------------------------------------------------
 
     private void StartCoreServer()
     {
@@ -425,9 +405,7 @@ internal sealed class AppShell : IDisposable
         return "127.0.0.1";
     }
 
-    // ------------------------------------------------------------------
     // 内核 → 界面
-    // ------------------------------------------------------------------
 
     private void OnKernelPush(string json)
     {
@@ -442,10 +420,7 @@ internal sealed class AppShell : IDisposable
         if (petChanged) ApplyPet();
     }
 
-    /// <summary>
-    /// 升级兜底：装完更新要退出进程，升级脚本才肯往下走。界面若没能发出 quitApp
-    /// （WebView 异常等），到点由外壳自己退，别让「正在启动升级程序…」一直卡着。
-    /// </summary>
+    /// <summary>升级兜底：装完更新要退出进程，升级脚本才肯往下走。界面若没能发出 quitApp （WebView 异常等），到点由外壳自己退，别让「正在启动升级程序…」一直卡着。</summary>
     private void ArmUpdateExitFallback()
     {
         _ = Task.Run(async () =>
@@ -467,9 +442,7 @@ internal sealed class AppShell : IDisposable
         try { w.SendWebMessage(json); } catch { }
     }
 
-    // ------------------------------------------------------------------
     // 桌宠 + 桌宠聊天浮窗
-    // ------------------------------------------------------------------
 
     private readonly object _chatGate = new();
 
@@ -496,11 +469,7 @@ internal sealed class AppShell : IDisposable
         catch (Exception ex) { _pet = null; Log("桌宠启动失败：" + ex.Message); }
     }
 
-    /// <summary>
-    /// 桌宠窗口只能等主窗口的原生窗口 + 消息循环都就绪之后再建：Photino 全局只有一个消息循环
-    /// （静态字段），提前建或者在别的线程建第二个窗口，GTK 会直接断言失败 abort 掉整个进程
-    /// —— 表现就是「双击图标完全没反应」。这里等到就绪再派发到 UI 线程。
-    /// </summary>
+/// <summary>桌宠窗口要等主窗口消息循环就绪后再建。</summary>
     private void EnsurePetScheduled()
     {
         lock (_chatGate)
@@ -605,9 +574,7 @@ internal sealed class AppShell : IDisposable
 
     public void Dispose() => Shutdown();
 
-    // ------------------------------------------------------------------
     // 工具
-    // ------------------------------------------------------------------
 
     private static string WithId(string json, int id)
     {

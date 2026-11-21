@@ -5,22 +5,7 @@ using System.Text;
 
 namespace TrollWrangler;
 
-/// <summary>
-/// GitHub 令牌保险箱：多层加密，绝不落明文。
-///
-/// 文件格式（data\github.token，纯文本单行）：
-///   DST3|mode|salt|keyWrap|nonce|tag|ciphertext      （都是 base64）
-///
-/// 四层保护：
-///   ① 密钥层：随机 256 位主密钥；能拿到 DPAPI 就用 Windows DPAPI(CurrentUser) 封起来（mode=dpapi），
-///      拿不到（例如服务/受限进程）就退化为 PBKDF2 从「机器+用户绑定串」派生（mode=pbkdf）
-///   ② 数据层：AES-256-GCM 加密令牌本身，密钥为上一步的主密钥
-///   ③ 绑定层：把「机器 GUID + 用户 SID + 机器名」作为 GCM 的 AAD（附加认证数据），
-///      文件被复制到别的机器/账号时即使解开 DPAPI 也认证失败
-///   ④ 文件层：文件 ACL 收紧到只允许当前 Windows 账号读写
-///
-/// 兼容旧格式：DST2| 或裸 base64（DPAPI 直接加密令牌）。
-/// </summary>
+/// <summary>GitHub 令牌保险箱：多层加密，绝不落明文。</summary>
 public static class TokenVault
 {
     private const int SaltLen = 16;

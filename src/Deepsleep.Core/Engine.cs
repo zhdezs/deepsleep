@@ -6,12 +6,7 @@ using System.Threading.Tasks;
 
 namespace TrollWrangler;
 
-/// <summary>
-/// 回怼引擎（内核）：攻击分类（朴素贝叶斯，真训练）、加权强度评估、文本脱敏、
-/// 上下文记忆、复读检测、策略自适应选择、实时组装回怼，
-/// 以及「对话 → 训练数据 → 模型进化」的自训练闭环（字符级语言模型 + 增量训练）。
-/// 零第三方依赖，纯 C#。
-/// </summary>
+/// <summary>回怼引擎：分类、强度评估、脱敏、记忆与自训练。</summary>
 public sealed class Engine
 {
     private static readonly Random Rng = new();
@@ -33,7 +28,7 @@ public sealed class Engine
     private readonly OllamaClient _llm = new();
     private readonly ApiClient _api = new();
 
-    /// <summary>LLM 使用模式："local" 纯本地 / "auto" 智能判断 / "llm" 本地大模型 / "api" 外部 API。</summary>
+    /// <summary>LLM 使用模式："local"纯本地 / "auto"智能判断 / "llm"本地大模型 / "api"外部 API。</summary>
     public string Mode = "auto";
 
     /// <summary>Ollama 快模型名（默认 1.5b，简单攻击用）。</summary>
@@ -118,9 +113,7 @@ public sealed class Engine
         _recent[sid] = new LinkedList<string>();
     }
 
-    // ======================================================================
     // 〇、自训练模型：加载 / 保存 / 喂数据
-    // ======================================================================
 
     /// <summary>设置模型持久化目录（每个会话独立模型文件，互不干扰）。</summary>
     public void SetModelDir(string dir)
@@ -136,7 +129,7 @@ public sealed class Engine
         _nb = NaiveBayes.Load(_nbPath);
         _lmReady = _lm.VocabSize > 0;
 
-        // 健康检查：如果加载的 NB 模型没有 "general" 类（说明从未见过非攻击样本，
+        // 健康检查：如果加载的 NB 模型没有 "general"类（说明从未见过非攻击样本，
         // 任何调侃词都会被错分到威胁类），强制重置重新种子训练
         if (_nb.ClassCount > 0 && !_nb.HasClass("general"))
         {
@@ -209,11 +202,7 @@ public sealed class Engine
 
     private readonly HashSet<string> _learnedResponses = new();
 
-    // ======================================================================
-    // 一、加权攻击强度评估
-    // ======================================================================
-
-    // 高强度词（辱骂/威胁/极端），命中权重更大
+    // 一、加权攻击强度评估高强度词（辱骂/威胁/极端），命中权重更大
     private static readonly HashSet<string> HeavyWords = new()
     {
         "傻逼", "煞笔", "蠢货", "智障", "脑残", "白痴", "废物", "垃圾", "人渣",
@@ -297,12 +286,7 @@ public sealed class Engine
         return Math.Max(0, Math.Min(10, score));
     }
 
-    // ======================================================================
-    // 二、多标签分类（主类 + 是否存在复读）
-    // ======================================================================
-
-    // 类别优先级：当多种攻击词同时出现时，优先按「意图明确度」判定，
-    // 避免「键盘侠」这类标签词盖过「你懂什么/你算老几」这类强质疑句式。
+    // 二、多标签分类（主类 + 是否存在复读）类别优先级：当多种攻击词同时出现时，优先按「意图明确度」判定，避免「键盘侠」这类标签词盖过「你懂什么/你算老几」这类强质疑句式。
     private static readonly List<string> CategoryPriority = new()
     {
         "threat",       // 威胁最严重，最优先
@@ -371,9 +355,7 @@ public sealed class Engine
         return CtxSignal.None;
     }
 
-    // ======================================================================
     // 三、工具
-    // ======================================================================
 
     private static string MaskProfanity(string text)
     {
@@ -442,9 +424,7 @@ public sealed class Engine
         return c.Take(Math.Min(n, c.Count)).ToList();
     }
 
-    // ======================================================================
     // 四、策略自适应选择
-    // ======================================================================
 
     private string ChooseStrategy(string category, int agg, int sid, string manual, bool repeating)
     {
@@ -498,9 +478,7 @@ public sealed class Engine
         return line;
     }
 
-    // ======================================================================
     // 五、实时组装
-    // ======================================================================
 
     private string Compose(string trollText, string category, string strategy, int agg, int turns, int sid,
                            bool rising, CtxSignal signal = CtxSignal.None, string prevQuote = "")
@@ -659,9 +637,7 @@ public sealed class Engine
         return r;
     }
 
-    // ======================================================================
     // 六、本地大模型（Ollama）接入
-    // ======================================================================
 
     private const string LlmSystemPrompt =
         "你在帮用户回怼一个正在骂人/抬杠的网络键盘侠。你的立场是「站在用户这边反击对方」，\n" +
@@ -669,11 +645,11 @@ public sealed class Engine
         "1. 全文绝不允许出现任何脏话、侮辱性词汇（如：垃圾、废物、傻X、滚、有病、智障等），违者整段作废；\n" +
         "2. 绝对禁止附和对方、禁止认错、禁止说「你说得对」「确实如此」「我承认」这类话——你是反击方；\n" +
         "3. 必须引用对方原话里的关键片段（用引号包起来）逐条拆解、逐一反击，让对方被精准点名，\n" +
-        "   要具体指出「他说了什么、错在哪」，不要泛泛而谈；\n" +
+        "要具体指出「他说了什么、错在哪」，不要泛泛而谈；\n" +
         "4. 写成 2~4 行短句（可用换行分隔），信息量足，别只回一句敷衍；\n" +
         "5. 【关键】用真人网友抬杠的口吻：说人话、口语化、短句为主，可以带点损、带点阴阳怪气，\n" +
-        "   绝对不要 AI 腔——禁止「首先/其次/综上/总而言之/不难发现/请问/希望我们共同」这类书面套话，\n" +
-        "   禁止工整排比、禁止口号、禁止一本正经讲大道理；\n" +
+        "绝对不要 AI 腔——禁止「首先/其次/综上/总而言之/不难发现/请问/希望我们共同」这类书面套话，\n" +
+        "禁止工整排比、禁止口号、禁止一本正经讲大道理；\n" +
         "6. 保持冷静、居高临下、游刃有余，不跟对方对骂，让对方自讨没趣；\n" +
         "\n【硬规则，违反任意一条整段作废】\n" +
         "· 输出里如果出现「你说得对/确实如此/我承认/我理解/加油/别难过/我们共同」" +
@@ -683,11 +659,11 @@ public sealed class Engine
         "· 回复总长度 2~4 行，多了就是凑字数；\n" +
         "· 输出末尾必须是句号/问号/感叹号，不能光秃秃一句话；\n" +
         "\n【正反对照（务必学「好的」风格，避开「坏的」风格）】\n" +
-        "坏的（❌ 像心理咨询师/键盘侠劝导员）：\n" +
+        "坏的（ 像心理咨询师/键盘侠劝导员）：\n" +
         "  「你说得对，确实是我没有理解你的话，继续加油哦！」\n" +
         "  「『破防』四个字就是你把没经历的事当成必然的体验。」\n" +
         "  「我们每个人都有不同的观点，希望我们能相互理解。」\n" +
-        "好的（✅ 像评论区真人损人）：\n" +
+        "好的（ 像评论区真人损人）：\n" +
         "  「『你懂个屁』这四个字，就是你把没词当成有道理的证据。」\n" +
         "  「『你也配』？配不配不是你定的，你这句话除了嗓门大，没一点分量。」\n" +
         "  「『破防了』——说明你这辈子在网上没赢过，这次终于找到一个赢点，当然高兴。」\n" +
@@ -701,10 +677,7 @@ public sealed class Engine
         "· 核心心法：不跟对方对骂，而是居高临下、体面碾压，让对方自破防。\n" +
         "\n直接输出回怼内容，不要任何解释与开场白。";
 
-    /// <summary>
-    /// 三档强度调度（auto 档核心）：
-    /// 返回 0=自训练模型（低强度）、1=本地大模型（中强度）、2=外部 API（高强度）。
-    /// </summary>
+    /// <summary>三档强度调度（auto 档核心）： 返回 0=自训练模型（低强度）、1=本地大模型（中强度）、2=外部 API（高强度）。</summary>
     private int GetTier(string category, int agg, bool rising, int turns)
     {
         if (Mode == "local") return 0;                 // 纯本地档：永远自训练
@@ -718,10 +691,7 @@ public sealed class Engine
         return 0;                                      // 低强度：自训练模型
     }
 
-    /// <summary>
-    /// 决定本地大模型这档里用「快模型」还是「强模型」。
-    /// 强模型慢（4~6 秒），只在「中高强度」时用，简单攻击交给快模型，省时省算力。
-    /// </summary>
+    /// <summary>决定本地大模型这档里用「快模型」还是「强模型」。 强模型慢（4~6 秒），只在「中高强度」时用，简单攻击交给快模型，省时省算力。</summary>
     private bool ShouldUseStrongModel(string category, int agg, bool rising, int turns)
     {
         if (agg >= 6) return true;              // 中高攻击
@@ -750,11 +720,7 @@ public sealed class Engine
         return hits >= 3;
     }
 
-    /// <summary>
-    /// 剥除回复开头的「引用对方原话」锚点前缀（你说「q」—— / 「q」—— / 就冲你这句「q」。等），
-    /// 只保留反击正文。防止训练语料固化「当前话 → 历史回复」配对，
-    /// 导致后续采样把早期对话的语句当上下文复读出来。
-    /// </summary>
+    /// <summary>剥除回复开头的「引用对方原话」锚点前缀（你说「q」—— / 「q」—— / 就冲你这句「q」。</summary>
     private static string StripQuoteAnchor(string text)
     {
         if (string.IsNullOrEmpty(text)) return text;
@@ -788,10 +754,7 @@ public sealed class Engine
         return text.Trim();
     }
 
-    /// <summary>
-    /// 异步生成：先跑本地引擎拿到分类/强度/策略与状态更新，
-    /// 再按模式决定是否调用大模型覆盖回复（失败自动回退本地）。
-    /// </summary>
+    /// <summary>异步生成：先跑本地引擎拿到分类/强度/策略与状态更新， 再按模式决定是否调用大模型覆盖回复（失败自动回退本地）。</summary>
     public async Task<Reply> GenerateAsync(string text, int sid, string manual = "auto", string tone = "live")
     {
         // 先用本地逻辑生成（含分类、强度、策略、状态更新、自训练闭环）
@@ -900,10 +863,7 @@ public sealed class Engine
         return null;
     }
 
-    /// <summary>
-    /// 判断 n-gram 采样结果是否「残片拼接」：
-    /// 大量孤立的短残片（如「敢吗」「。，」）、重复词、缺主谓的碎片堆叠。
-    /// </summary>
+    /// <summary>判断 n-gram 采样结果是否「残片拼接」： 大量孤立的短残片（如「敢吗」「。</summary>
     private static bool LooksLikeScraps(string text)
     {
         // 拆出子句（按标点）

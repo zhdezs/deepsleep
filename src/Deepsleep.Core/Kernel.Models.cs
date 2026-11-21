@@ -8,21 +8,10 @@ using System.Threading.Tasks;
 
 namespace TrollWrangler.Core;
 
-/// <summary>
-/// 设置面板「绑定平台」相关的内核命令：
-/// <list type="bullet">
-/// <item><c>apiModels</c> —— 联网拉取该平台的模型列表（模型列表联网获取）。</item>
-/// <item><c>apiTest</c> —— 用当前填的 Key / 模型发一个最小请求，验证能不能通。</item>
-/// </list>
-/// 两个命令都从参数里取 url/key/model/format，**不依赖已保存的配置** ——
-/// 用户可以先填好、点测试、通了再保存，不用「先存一次错的配置再改」。
-/// </summary>
+/// <summary>设置面板「绑定平台」相关的内核命令： apiModels —— 联网拉取该平台的模型列表（模型列表联网获取）。</summary>
 public sealed partial class Kernel
 {
-    // ---------------- 模型列表本地缓存 ----------------
-    // 每次打开模型面板都联网拉一遍太慢、还可能被限流；列表本身又很少一天变几次。
-    // 所以按「API 地址 + 协议」为键把列表存到 data/models-cache.json：
-    // 启动就能显示上次的列表，联网拉到新结果再比对，不一样才覆盖并通知界面刷新。
+    // ---- 模型列表本地缓存 ----每次打开模型面板都联网拉一遍太慢、还可能被限流；
     private sealed class ModelCacheFile
     {
         public Dictionary<string, ModelCacheEntry> Sources { get; set; } = new();
@@ -126,9 +115,8 @@ public sealed partial class Kernel
             .FetchAsync(url, key, format)
             .ConfigureAwait(false);
 
-        // 没选过模型就默认用列表第一个。
-        // 列表本身已经是「免费优先」排过序的（见 ModelCatalog），所以第一个基本就是
-        // 这家最划算的那个 —— 拉到列表还要用户再点一下才敢用，属于多余的一步。
+        // 没选过模型就默认用列表第一个。列表本身已经是「免费优先」排过序的（见 ModelCatalog），
+        // 所以第一个基本就是这家最划算的那个 —— 拉到列表还要用户再点一下才敢用，属于多余的一步。
         string autoModel = "";
         bool persisted = false;
         if (models.Count > 0 && string.IsNullOrWhiteSpace(GetStr(a, "model") ?? _config.ApiModel))
@@ -145,7 +133,7 @@ public sealed partial class Kernel
                              PlatformLabelFor(_config.ApiUrl));
                 _config.Save();
                 _engine.ApplyConfig(_config);
-                _agent.ApplyConfig(_config);
+                _agent.ApplyConfig(RouterCfg);
                 _clusterAgent.ApplyConfig(_config);
             }
         }
@@ -191,13 +179,13 @@ public sealed partial class Kernel
         if (string.IsNullOrWhiteSpace(key))
         {
             Emit(new { ev = "apiTest", ok = false, error = "还没填 API Key" });
-            Toast("⚠ 还没填 API Key —— 先点上面的「免费领取 Key」按钮。", "error");
+            Toast("还没填 API Key —— 先点上面的「免费领取 Key」按钮。", "error");
             return;
         }
         if (string.IsNullOrWhiteSpace(model))
         {
             Emit(new { ev = "apiTest", ok = false, error = "还没选模型" });
-            Toast("⚠ 还没填模型名 —— 点「联网获取模型列表」挑一个。", "error");
+            Toast("还没填模型名 —— 点「联网获取模型列表」挑一个。", "error");
             return;
         }
 
@@ -212,7 +200,7 @@ public sealed partial class Kernel
         {
             string err = client.LastError ?? "未知错误";
             Emit(new { ev = "apiTest", ok = false, error = err, ms = sw.ElapsedMilliseconds, model });
-            Toast("❌ 连接失败：" + Clip(err, 120), "error");
+            Toast("连接失败：" + Clip(err, 120), "error");
         }
         else
         {
@@ -225,26 +213,23 @@ public sealed partial class Kernel
                 model,
                 reply = Clip(text, 60),
             });
-            Toast($"✅ 连接成功 · {model} · {sw.ElapsedMilliseconds} ms", "info");
+            Toast($"连接成功 · {model} · {sw.ElapsedMilliseconds} ms", "info");
         }
     }
 
-    /// <summary>
-    /// 一键绑定：走平台的 OAuth 授权页，拿回专属 API Key，**直接写进配置并落盘**，
-    /// 再顺手把这个平台能用的模型列表也拉回来。用户全程只需要在授权页点一次「同意」。
-    /// </summary>
+    /// <summary>一键绑定：走平台的 OAuth 授权页，拿回专属 API Key，直接写进配置并落盘， 再顺手把这个平台能用的模型列表也拉回来。</summary>
     private async Task OAuthBindAsync(JsonElement a)
     {
         string id = GetStr(a, "provider") ?? "";
         var provider = OAuthFlow.Find(id);
         if (provider == null)
         {
-            Toast("⚠ 这个平台不支持一键绑定，请用「按引导绑定」。", "error");
+            Toast("这个平台不支持一键绑定，请用「按引导绑定」。", "error");
             Emit(new { ev = "oauthBind", ok = false, error = "不支持的平台：" + id });
             return;
         }
 
-        Toast("🔐 已打开授权页 —— 登录并点「同意」，回来会自动填好 Key。", "info");
+        Toast("已打开授权页 —— 登录并点「同意」，回来会自动填好 Key。", "info");
         Emit(new { ev = "oauthBind", phase = "waiting", provider = provider.Name });
 
         try
@@ -261,7 +246,7 @@ public sealed partial class Kernel
             _config.ApiModel = "";
             _config.Save();
             _engine.ApplyConfig(_config);
-            _agent.ApplyConfig(_config);
+            _agent.ApplyConfig(RouterCfg);
             _clusterAgent.ApplyConfig(_config);
 
             Emit(new
@@ -275,7 +260,7 @@ public sealed partial class Kernel
                 model = _config.ApiModel,
             });
             EmitSettings();
-            Toast($"✅ 已绑定 {provider.Name}，Key 已保存（尾号 {key[^Math.Min(4, key.Length)..]}）。", "info");
+            Toast($"已绑定 {provider.Name}，Key 已保存（尾号 {key[^Math.Min(4, key.Length)..]}）。", "info");
 
             // 绑定完立刻把模型列表也带回来，用户不用再点一次
             await FetchApiModelsAsync(default).ConfigureAwait(false);
@@ -283,7 +268,7 @@ public sealed partial class Kernel
         catch (Exception ex)
         {
             Emit(new { ev = "oauthBind", ok = false, error = ex.Message });
-            Toast("❌ 绑定失败：" + Clip(ex.Message, 120), "error");
+            Toast("绑定失败：" + Clip(ex.Message, 120), "error");
         }
     }
 }

@@ -11,10 +11,7 @@ public partial class MainWindow : Window
 {
     private const string AppName = "deepsleep";
     private const string AppDisplay = "deepsleep AI 助手";
-    /// <summary>
-    /// 安装器版本：从编译期注入的 AssemblyMetadata 读，源头是 src\Directory.Build.props。
-    /// 以前这里写死 "3.0.4"，载荷早已是 3.0.5-alpha，注册表 DisplayVersion 就一直是错的。
-    /// </summary>
+    /// <summary>安装器版本：从编译期注入的 AssemblyMetadata 读，源头是 src\Directory.Build.props。</summary>
     private static readonly string AppVersion = ResolveAppVersion();
     private const string Publisher = "deepsleep";
     private const string ExeName = "deepsleep.exe";
@@ -46,7 +43,7 @@ public partial class MainWindow : Window
         PathBox.Text = DefaultDir;
     }
 
-    // ------------------------------------------------------------ 界面事件
+    // ---- 界面事件 ----
 
     private void Browse_Click(object sender, RoutedEventArgs e)
     {
@@ -82,7 +79,7 @@ public partial class MainWindow : Window
             await InstallAsync(target, DesktopChk.IsChecked == true, true, true);
             MessageBox.Show(this,
                 $"安装完成！\n\n程序位置：{target}\n用户数据：{Path.Combine(target, "data")}\n\n" +
-                "首次使用请在 ⚙ 设置里填写自己的 API Key，或启用本地 Ollama 模型。",
+                "首次使用请在设置里填写自己的 API Key，或启用本地 Ollama 模型。",
                 "安装完成", MessageBoxButton.OK, MessageBoxImage.Information);
             if (LaunchChk.IsChecked == true)
                 Process.Start(new ProcessStartInfo(Path.Combine(target, ExeName)) { WorkingDirectory = target, UseShellExecute = true });
@@ -105,7 +102,7 @@ public partial class MainWindow : Window
         LaunchChk.IsEnabled = !busy;
     }
 
-    // ------------------------------------------------------------ 静默安装
+    // ---- 静默安装 ----
 
     public void RunSilent(string? dir, bool desktop, bool launch, bool registry)
     {
@@ -121,7 +118,7 @@ public partial class MainWindow : Window
             {
                 string log = Path.Combine(Path.GetTempPath(), "deepsleep-update", "install-error.log");
                 Directory.CreateDirectory(Path.GetDirectoryName(log)!);
-                File.AppendAllText(log, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "  静默安装失败：" + ex + Environment.NewLine);
+                File.AppendAllText(log, DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "静默安装失败：" + ex + Environment.NewLine);
             }
             catch { }
             throw;
@@ -130,12 +127,9 @@ public partial class MainWindow : Window
             Process.Start(new ProcessStartInfo(Path.Combine(target, ExeName)) { WorkingDirectory = target, UseShellExecute = true });
     }
 
-    // ------------------------------------------------------------ 安装实现
+    // ---- 安装实现 ----
 
-    /// <summary>
-    /// 自解压安装：把安装程序内嵌的 payload.zip 解压到目标目录，
-    /// 再创建快捷方式、登记卸载信息。已存在的用户数据（data 目录）不会被覆盖。
-    /// </summary>
+    /// <summary>自解压安装：把安装程序内嵌的 payload.zip 解压到目标目录， 再创建快捷方式、登记卸载信息。</summary>
     private async Task InstallAsync(string target, bool desktopShortcut, bool registerUninstall, bool reportProgress)
     {
         IProgress<(double Percent, string Text)> progress = new Progress<(double Percent, string Text)>(p =>
@@ -165,10 +159,7 @@ public partial class MainWindow : Window
         progress?.Report((100, "安装完成"));
     }
 
-    /// <summary>
-    /// 安装前先把正在跑的 deepsleep 结束掉：exe/dll 还被占用时解压会失败，留下半新半旧的
-    /// 安装目录（以前升级卡住就是这个）。优先只结束安装目录里的那个进程，读不到路径再按名字处理。
-    /// </summary>
+    /// <summary>安装前先把正在跑的 deepsleep 结束掉：exe/dll 还被占用时解压会失败，留下半新半旧的 安装目录（以前升级卡住就是这个）。</summary>
     private static void KillRunningApp(string target)
     {
         string exe = Path.Combine(target, ExeName);
@@ -228,10 +219,7 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>
-    /// 覆盖安装前把 data\config.json 备份成 data\config.json.bak。里面是 API Key 和各项设置，
-    /// 一旦被程序包里的模板覆盖、或者被误删，靠它还能捞回来（程序启动时发现配置不在会自动恢复）。
-    /// </summary>
+    /// <summary>覆盖安装前把 data\config.json 备份成 data\config.json.bak。</summary>
     private static void BackupUserConfig(string target)
     {
         try
@@ -283,11 +271,7 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>
-    /// 把 .dslt（自定义工具包）/ .dslp（皮肤包）默认关联到 deepsleep.exe。
-    /// 写 HKCU，不需要管理员；卸载时由 uninstall.ps1 删掉同样的键。
-    /// 双击 = 用 `--install-ext "%1"` 启动，程序收到后装完包就退出。
-    /// </summary>
+    /// <summary>把 .dslt（自定义工具包）/ .dslp（皮肤包）默认关联到 deepsleep.exe。</summary>
     private static void RegisterFileAssociations(string target)
     {
         try

@@ -3,13 +3,7 @@ using Photino.NET;
 
 namespace DeepSleep.Desktop;
 
-/// <summary>
-/// 跨平台桌宠：Windows 版的桌宠是 Win32 分层窗口直接画 pet.raw，这里改成
-/// 一个透明、无边框、置顶的小窗口，里面放一张 pet.png + 一小段 JS：
-///   · 按住拖 → 把增量发给外壳，外壳挪窗口（位置记进 config，下次还在原地）；
-///   · 单击 → 开 / 关桌宠聊天浮窗；双击 → 显示主窗口；右键 → 收起桌宠（设置里能再打开）。
-/// 自己的窗口跑在自己的线程上（Photino 每个窗口一个消息循环）。
-/// </summary>
+/// <summary>跨平台桌宠：透明、无边框、置顶的小窗口。</summary>
 internal sealed class PetWindow : IDisposable
 {
     private const int Size = 180;
@@ -40,9 +34,8 @@ internal sealed class PetWindow : IDisposable
     private static string BuildHtml(string imgPath, bool transparent)
     {
         string url = new Uri(imgPath, UriKind.Absolute).AbsoluteUri;
-        // 透明窗口在无 3D 加速 / 无合成器的 X 上会让 GTK 断言失败并 abort 掉整个进程
-        // （实测 VMware 无 3D 的 Debian：GLib-GObject-CRITICAL 刷屏后「已中止」），
-        // 所以 Linux 上退化成实色底 —— 桌宠外面是一块深色圆角卡片，功能完全一样。
+        // 透明窗口在无 3D 加速 / 无合成器的 X 上会让 GTK 断言失败并 abort 掉整个进程（实测 VMware 无 3D 的 Debian：GLib-GObject
+        // -CRITICAL 刷屏后「已
         string bg = transparent ? "transparent" : "#0f1115";
         string radius = transparent ? "0" : "50%";
         return """
@@ -110,7 +103,7 @@ window.addEventListener('contextmenu', function (e) { e.preventDefault(); post({
             try
             {
                 string log = Path.Combine(Path.GetTempPath(), "deepsleep-pet.log");
-                File.AppendAllText(log, DateTime.Now.ToString("s") + " 桌宠窗口起不来：" + ex.Message + "\n");
+                File.AppendAllText(log, DateTime.Now.ToString("s") + "桌宠窗口起不来：" + ex.Message + "\n");
             }
             catch { }
             _win = null;

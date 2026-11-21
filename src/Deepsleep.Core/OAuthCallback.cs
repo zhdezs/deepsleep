@@ -7,20 +7,7 @@ using System.Threading.Tasks;
 
 namespace TrollWrangler;
 
-/// <summary>
-/// 应用内回调接收器（OAuth 一键绑定的**收结果**那一半）。
-/// <para>
-/// 外壳把授权页开在应用内窗口里，用户点「同意」后平台会让窗口跳到本机回调地址。
-/// 我们不真的让那个 127.0.0.1 服务来收，而是：
-/// ① 先在网络层拦下这条导航（<see cref="InternalBrowser.ShouldIntercept"/>）；
-/// ② 调用这里，把查询串塞进队列；
-/// ③ <see cref="OAuthFlow"/> 那边像收到真实 HTTP 请求一样取走。
-/// </para>
-/// <para>
-/// 这样做的好处：**不占端口、不弹防火墙**，也不依赖「浏览器肯不肯访问 127.0.0.1」。
-/// 走系统浏览器兜底时仍用真实回环服务，两条路共用同一套解析代码。
-/// </para>
-/// </summary>
+/// <summary>应用内回调接收器（OAuth 一键绑定的收结果那一半）。 外壳把授权页开在应用内窗口里，用户点「同意」后平台会让窗口跳到本机回调地址。</summary>
 public static class OAuthCallback
 {
     // 平台会把 ?code=…&state=… 打在回调地址上，这里最多到几十字节。

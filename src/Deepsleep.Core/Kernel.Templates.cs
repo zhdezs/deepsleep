@@ -1,23 +1,9 @@
 ﻿namespace TrollWrangler.Core;
 
-/// <summary>
-/// 内核内置的静态内容：免费模型预设、Prompt 模板库、集群分工模板、汇总提示词。
-/// 界面（HTML）只负责展示，内容全部来自内核，改内容不用动前端。
-/// </summary>
+/// <summary>内核内置的静态内容：免费模型预设、Prompt 模板库、集群分工模板、汇总提示词。</summary>
 public sealed partial class Kernel
 {
-    /// <summary>
-    /// 免费大模型预设：选中自动填「地址 + 模型名 + 协议格式」三件套，用户只需要再粘一个自己的免费 Key。
-    /// <para>
-    /// Format 必须一起带出来 —— 以前只填地址和模型名，协议格式留在上一次的选择上，
-    /// 选了 Gemini / Anthropic 预设却仍按 anthropic 发请求，直接报错，用户根本不知道为什么。
-    /// </para>
-    /// <para>
-    /// ⚠ 模型 ID 是会变的，加新模型前务必去官方模型广场核一遍。已知的坑：
-    /// 硅基流动上智谱的命名空间是 <c>zai-org/</c>（不是 zhipuai / THUDM）；
-    /// DeepSeek 官方 Flash 已改名 <c>deepseek-flash</c>；智谱旗舰是 <c>glm-5.3</c>（不是 glm-5）。
-    /// </para>
-    /// </summary>
+    /// <summary>免费大模型预设：选中自动填「地址 + 模型名 + 协议格式」三件套，用户只需要再粘一个自己的免费 Key。</summary>
     public static readonly (string Name, string Url, string Model, string Format)[] FreePresets =
     {
         // ==== 硅基流动 SiliconFlow（注册送 14 元 ≈ 2000 万 token，国内直连不需要梯子）====
@@ -73,7 +59,7 @@ public sealed partial class Kernel
         ("智谱 GLM-4.6V-Flash【永久免费 · 看图】",
             "https://open.bigmodel.cn/api/paas/v4/chat/completions", "glm-4.6v-flash", "openai"),
 
-        // ==== DeepSeek 官方（⚠ Flash 已改名 deepseek-flash；无免费档，需充值）====
+        // ==== DeepSeek 官方（ Flash 已改名 deepseek-flash；无免费档，需充值）====
         ("DeepSeek V4.1-Flash（官方）",
             "https://api.deepseek.com/chat/completions", "deepseek-flash", "openai"),
         ("DeepSeek V4-Pro（官方旗舰）",
@@ -90,14 +76,7 @@ public sealed partial class Kernel
             "https://openrouter.ai/api/v1/chat/completions", "qwen/qwen3-coder:free", "openai"),
     };
 
-    /// <summary>
-    /// 可绑定平台（都是 OpenAI 兼容 + 有免费额度），用于设置面板「① 选平台 → ② 领 Key → ③ 拉模型」三步绑定。
-    /// <para>
-    /// KeyUrl 是「直达 API Key 创建页」的地址，点一下就跳到正确的地方，不用在官网里翻半天。
-    /// Quota 写清免费额度的真实口径（很多平台是「每天 N 次」而不是「无限免费」）。
-    /// 平台改版后 URL 可能失效，落地页兜底到控制台首页即可，不影响功能。
-    /// </para>
-    /// </summary>
+    /// <summary>可绑定平台（都是 OpenAI 兼容 + 有免费额度），用于设置面板「① 选平台 → ② 领 Key → ③ 拉模型」三步绑定。</summary>
     public static readonly (string Name, string Url, string Format, string KeyUrl, string Quota)[] Platforms =
     {
         ("硅基流动 SiliconFlow（注册送 14 元 · 国内直连 · 首推）",
@@ -111,12 +90,12 @@ public sealed partial class Kernel
         ("OpenRouter（25+ 款 :free 永久 0 元 · 支持一键绑定 · 需梯子）",
             "https://openrouter.ai/api/v1/chat/completions", "openai",
             "https://openrouter.ai/settings/keys",
-            "⭐ 支持一键绑定：点一下在应用内登录授权，自动拿到专属 Key，不用手动创建复制。" +
+            "支持一键绑定：点一下在应用内登录授权，自动拿到专属 Key，不用手动创建复制。" +
             "25+ 款模型 ID 带 :free 后缀永久 $0。默认 50 次/天、20 次/分；历史上充过 $10 后升到 1000 次/天。"),
         ("NanoGPT（聚合多渠道 · 支持一键绑定 · 无地区限制）",
             "https://nano-gpt.com/api/v1/chat/completions", "openai",
             "https://nano-gpt.com/account",
-            "⭐ 支持一键绑定：授权登录后自动拿到专属 sk-nano-… Key。聚合多家渠道、按量付费（无免费档），" +
+            "支持一键绑定：授权登录后自动拿到专属 sk-nano-… Key。聚合多家渠道、按量付费（无免费档），" +
             "适合当作「不用梯子也能到主流模型」的通道。"),
         ("NVIDIA NIM（82+ 免费模型 · 无每日 token 上限 · 需梯子）",
             "https://integrate.api.nvidia.com/v1/chat/completions", "openai",
@@ -134,7 +113,7 @@ public sealed partial class Kernel
             "https://open.bigmodel.cn/api/paas/v4/chat/completions", "openai",
             "https://open.bigmodel.cn/usercenter/apikeys",
             "GLM-4.7-Flash（纯文本）与 GLM-4.6V-Flash（看图）永久免费，仅受 QPS 限速。旗舰 GLM-5.3 需付费。" +
-            "⚠ 实测智谱的 /models 只返回「账号已开通」的模型，永久免费的 Flash 系不在其中 —— 这两款请用下面的「模型快速预设」直接选。"),
+            "实测智谱的 /models 只返回「账号已开通」的模型，永久免费的 Flash 系不在其中 —— 这两款请用下面的「模型快速预设」直接选。"),
         ("Moonshot Kimi（Token 不设日上限 · 国内直连）",
             "https://api.moonshot.cn/v1/chat/completions", "openai",
             "https://platform.moonshot.cn/console/api-keys",
@@ -236,13 +215,13 @@ public sealed partial class Kernel
 
     /// <summary>免费 Key 获取提示（设置面板里显示）。</summary>
     public const string FreeKeyHint =
-        "🏆 首选「硅基流动 SiliconFlow」：cloud.siliconflow.cn/account/ak 注册即送 14 元额度（约 2000 万 token），" +
+        "首选「硅基流动 SiliconFlow」：cloud.siliconflow.cn/account/ak 注册即送 14 元额度（约 2000 万 token），" +
         "国内直连不需要梯子，完全兼容 OpenAI 格式 —— 拿到的 Key 粘到下面「API Key」即可。" +
         "既有永久免费模型（GLM-5.3-Flash / Qwen3.5 系列 / R1 蒸馏 / DeepSeek-OCR / PaddleOCR），" +
         "付费旗舰（GLM-5.3 / DeepSeek-V4-Pro / Kimi-K2.7 / Qwen3.5-122B）也能直接用这笔赠送额度跑。" +
         "　　其他：智谱 open.bigmodel.cn（微信登录+实名，Flash 系永久免费）｜Groq console.groq.com｜" +
         "Gemini aistudio.google.com｜OpenRouter openrouter.ai｜DeepSeek api-docs.deepseek.com（无免费档，需充值）" +
-        "　　💡 上面「平台」下拉里已经内置 18 家有免费额度的平台，选中会自动填好地址，点「免费领取 Key」直达申请页，" +
+        "　　 上面「平台」下拉里已经内置 18 家有免费额度的平台，选中会自动填好地址，点「免费领取 Key」直达申请页，" +
         "拿回来粘上再点「联网获取模型列表」，模型名就不用背了。";
 
     /// <summary>Prompt 模板库（快捷指令）。</summary>

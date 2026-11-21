@@ -4,10 +4,7 @@ using TrollWrangler.Core;
 
 namespace TrollWrangler.CoreHost;
 
-/// <summary>
-/// CMD 模式（--cli 交互 / --say "一句话" 发完即退）：内核还是那个内核、会话还是那份会话，
-/// 只是宿主从 GUI 换成命令行 —— 发消息、看流式回复、看工具结果卡、回答权限确认都在 CMD 里完成。
-/// </summary>
+/// <summary>CMD 模式（--cli 交互 / --say "一句话"发完即退）：内核还是那个内核、会话还是那份会话</summary>
 internal static partial class Program
 {
     private static bool _cliMode;
@@ -23,7 +20,7 @@ internal static partial class Program
     /// <summary>--cli / --say 都算 CMD 模式。</summary>
     private static bool CliWanted(string[] args) => args.Contains("--cli") || args.Contains("--say");
 
-    /// <summary>CMD 模式一次性消息：--say "..." 优先，其次 --cli "..."。</summary>
+    /// <summary>CMD 模式一次性消息：--say "..."优先，其次 --cli "..."。</summary>
     private static string? CliOneShot(string[] args)
     {
         string? say = ArgStr(args, "--say");
@@ -44,11 +41,11 @@ internal static partial class Program
         Console.WriteLine();
         Console.WriteLine("deepsleep 内核版 · CMD 模式");
         Console.WriteLine("──────────────────────────────────────────────────────");
-        Console.WriteLine("  版本      " + CoreServer.VersionString());
-        Console.WriteLine("  数据目录  " + _dataDir);
-        Console.WriteLine("  会话数据  和桌面端 / 网页版完全共用（同一个内核）");
+        Console.WriteLine("版本      " + CoreServer.VersionString());
+        Console.WriteLine("数据目录  " + _dataDir);
+        Console.WriteLine("会话数据和桌面端 / 网页版完全共用（同一个内核）");
         if (oneShot == null)
-            Console.WriteLine("  用法      直接输入消息回车发送 ｜ /help 看命令 ｜ /exit 退出");
+            Console.WriteLine("用法直接输入消息回车发送 ｜ /help 看命令 ｜ /exit 退出");
         Console.WriteLine();
 
         await InvokeCliAsync("boot");           // 取对话列表 / 当前会话 / 模式 / 状态
@@ -107,9 +104,7 @@ internal static partial class Program
         Console.WriteLine("已退出 CMD 模式（会话已保存）。");
     }
 
-    // ------------------------------------------------------------------
     // 发消息 / 回答确认
-    // ------------------------------------------------------------------
 
     private static async Task SendCliAsync(string text)
     {
@@ -141,9 +136,7 @@ internal static partial class Program
         catch (Exception ex) { CliFlush(); Console.WriteLine("命令失败：" + ex.Message); }
     }
 
-    // ------------------------------------------------------------------
     // 斜杠命令
-    // ------------------------------------------------------------------
 
     private static async Task<bool> CliSlashAsync(string line)
     {
@@ -217,9 +210,9 @@ internal static partial class Program
             case "/rd":
                 CliSlPrint(true);
                 if (SuperLink.State == "connected" && SuperLink.BaseUrl.Length > 0 && SuperLink.RemoteToken.Length > 0)
-                    Console.WriteLine("  远程桌面：" + SuperLink.BaseUrl + "/web/core/rd.html#t=" + SuperLink.RemoteToken);
+                    Console.WriteLine("远程桌面：" + SuperLink.BaseUrl + "/web/core/rd.html#t=" + SuperLink.RemoteToken);
                 else if (SuperLink.State == "waiting" || SuperLink.State == "connected")
-                    Console.WriteLine("  本机被控中：把配对码给对方，对方连上后会自动弹出远程桌面地址。");
+                    Console.WriteLine("本机被控中：把配对码给对方，对方连上后会自动弹出远程桌面地址。");
                 return true;
             default:
                 Console.WriteLine("未知命令：" + c + "（/help 看全部）");
@@ -236,7 +229,7 @@ internal static partial class Program
             Console.WriteLine();
             Console.WriteLine("  ╭─ 超级连接 ────────────────────────────────────────");
             Console.WriteLine("  │  配对码：  " + SuperLink.Code);
-            Console.WriteLine("  │  把 6 位数字给对方；对方在桌面版点 🔗「超级连接」输入，");
+            Console.WriteLine("  │  把 6 位数字给对方；对方在桌面版点 「超级连接」输入，");
             Console.WriteLine("  │  也可以让他打开：");
             Console.WriteLine("  │  https://zhdezs.github.io/deepsleep/superlink/?type=" + SuperLink.Code);
             Console.WriteLine("  │  连上之后对方就能操作这台电脑（远程桌面），5 分钟内有效。");
@@ -246,7 +239,7 @@ internal static partial class Program
         else
         {
             SuperLink.Connect(code);
-            Console.WriteLine("→ 正在连配对码 " + code + " 的设备…");
+            Console.WriteLine("→ 正在连配对码 " + code + "的设备…");
         }
         CliSlWatch();
     }
@@ -276,7 +269,7 @@ internal static partial class Program
                             if (SuperLink.Role == "host")
                                 Console.WriteLine("  （对方已连上，它那边可以打开远程桌面控制这台电脑）");
                             else if (SuperLink.BaseUrl.Length > 0)
-                                Console.WriteLine("  远程桌面：" + SuperLink.BaseUrl + "/web/core/rd.html#t=" +
+                                Console.WriteLine("远程桌面：" + SuperLink.BaseUrl + "/web/core/rd.html#t=" +
                                                   SuperLink.RemoteToken);
                         }
                     }
@@ -291,12 +284,12 @@ internal static partial class Program
     private static void CliSlPrint(bool brief)
     {
         Console.WriteLine("→ 超级连接：角色=" + (SuperLink.Role.Length > 0 ? SuperLink.Role : "-") +
-                          " 状态=" + SuperLink.State + (brief ? "" : " " + SuperLink.Message));
-        if (SuperLink.Code.Length > 0) Console.WriteLine("  配对码：" + SuperLink.Code);
-        if (SuperLink.PeerName.Length > 0) Console.WriteLine("  对方：" + SuperLink.PeerName);
-        if (SuperLink.BaseUrl.Length > 0) Console.WriteLine("  对方地址：" + SuperLink.BaseUrl);
+                          "状态=" + SuperLink.State + (brief ? "" : " " + SuperLink.Message));
+        if (SuperLink.Code.Length > 0) Console.WriteLine("配对码：" + SuperLink.Code);
+        if (SuperLink.PeerName.Length > 0) Console.WriteLine("对方：" + SuperLink.PeerName);
+        if (SuperLink.BaseUrl.Length > 0) Console.WriteLine("对方地址：" + SuperLink.BaseUrl);
         if (SuperLink.State == "connected")
-            Console.WriteLine("  连接方式：" + (SuperLink.P2P ? "点对点直连" : "内置隧道"));
+            Console.WriteLine("连接方式：" + (SuperLink.P2P ? "点对点直连" : "内置隧道"));
     }
 
     private static void CliHelp()
@@ -317,7 +310,7 @@ internal static partial class Program
         Console.WriteLine("  /rd                  看超级连接状态 / 远程桌面地址");
         Console.WriteLine("  /exit                退出（等价于 Ctrl+C）");
         Console.WriteLine();
-        Console.WriteLine("  直接输入文字就是发消息；命令需要确认时，输入 y / n / a 回答。");
+        Console.WriteLine("直接输入文字就是发消息；命令需要确认时，输入 y / n / a 回答。");
         Console.WriteLine();
     }
 
@@ -329,9 +322,7 @@ internal static partial class Program
             Console.WriteLine("    " + (sid == _cliSid ? "* " : "  ") + "#" + sid + "  " + title);
     }
 
-    // ------------------------------------------------------------------
-    // 内核事件 -> 终端
-    // ------------------------------------------------------------------
+    // 内核事件 ->终端
 
     private static void OnCliPush(string json)
     {
@@ -465,7 +456,7 @@ internal static partial class Program
     {
         _cliAskId = Str(r, "askId");
         CliLine("");
-        Console.WriteLine("⚠ " + Str(r, "title"));
+        Console.WriteLine(" " + Str(r, "title"));
         foreach (string ln in Str(r, "detail").Split('\n')) Console.WriteLine("    " + ln.TrimEnd());
         Console.WriteLine("（就在这行输入 y=允许 / n=拒绝 / a=本对话里始终允许，然后回车）");
     }
@@ -476,14 +467,12 @@ internal static partial class Program
         string detail = Str(it, "toolDetail");
         if (detail.Length == 0) detail = Str(it, "text");
         CliLine("");
-        Console.WriteLine("⚙ " + tool + (sum.Length > 0 ? " · " + sum : ""));
+        Console.WriteLine(" " + tool + (sum.Length > 0 ? " · " + sum : ""));
         foreach (string ln in detail.Split('\n')) Console.WriteLine("    " + ln.TrimEnd());
         _cliOpen = false;
     }
 
-    // ------------------------------------------------------------------
     // 小工具
-    // ------------------------------------------------------------------
 
     private static void CliLine(string s)
     {

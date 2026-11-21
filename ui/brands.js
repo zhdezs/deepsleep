@@ -6,7 +6,8 @@
  * 所以这里只做「品牌特征串」匹配，顺序从专有名词到泛用词，命中即停。
  *
  * logo 本体在 ui/logos.js（由 tools/build-logos.py 从 ui/logos/*.svg 生成）。
- * 认不出来时退化成首字母圆标，不至于空一块或者显示个问号。
+ * 认不出来的模型统一用 deepsleep 自己的图标（ui/deepsleep.png，从 deepsleep.ico 转的）：
+ * 与其按名字哈希编一个首字母色块（看着像某家的 logo，其实是编的），不如老实标成自家。
  */
 (function () {
   'use strict';
@@ -57,20 +58,22 @@
     return { k: r[0], n: r[1], c: r[2] };
   }
 
-  // 返回一段 HTML：能认出品牌就给官方图形，认不出给首字母圆标。
+  // 自家图标：没有对应品牌、或者品牌图标文件缺失时都用它
+  function dsIcon(cls, title) {
+    var extra = cls ? ' ' + cls : '';
+    return '<span class="brand dsf' + extra + '" title="' + String(title || 'deepsleep').replace(/"/g, '') +
+      '"><img src="deepsleep.png" alt=""></span>';
+  }
+
+  // 返回一段 HTML：能认出品牌就给官方图形，认不出给 deepsleep 图标。
   // cls 用来追加 class（比如列表里的窄尺寸）。
   function html(name, cls) {
     var b = brandOf(name);
+    if (!b) return dsIcon(cls, name);
+    var svg = (window.DSL_LOGOS || {})[b.k];
+    if (!svg) return dsIcon(cls, b.n);
     var extra = cls ? ' ' + cls : '';
-    if (b) {
-      var svg = (window.DSL_LOGOS || {})[b.k];
-      if (svg) return '<span class="brand' + extra + '" title="' + b.n + '">' + svg + '</span>';
-      return '<span class="brand mono' + extra + '" title="' + b.n + '" style="background:' + b.c + '">' +
-        b.n.charAt(0).toUpperCase() + '</span>';
-    }
-    var nm = String(name || '?').replace(/^[^0-9a-zA-Z\u4e00-\u9fa5]+/, '');
-    return '<span class="brand mono' + extra + '" title="' + name + '" style="background:' +
-      pick(name) + '">' + (nm.charAt(0) || '?').toUpperCase() + '</span>';
+    return '<span class="brand' + extra + '" title="' + b.n + '">' + svg + '</span>';
   }
 
   // 给一个空容器填图标（容器自己带 .brand-slot 控制尺寸与居中）

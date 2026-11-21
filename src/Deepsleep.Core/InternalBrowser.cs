@@ -2,20 +2,7 @@ using System.Text;
 
 namespace TrollWrangler;
 
-/// <summary>
-/// 应用内浏览器（OAuth 一键绑定用）：把授权页开在**应用自己的窗口里**，
-/// 并在网络层拦下「跳回本机回调地址」的请求，把授权码直接交给 <see cref="OAuthFlow"/>。
-/// <para>
-/// 为什么要这样做：走系统浏览器也能拿到授权码（本地回环服务收得到），但用户会有两个割裂的窗口 ——
-/// 而且一旦浏览器把 127.0.0.1 的回调页当成「其它网站」拦下来，就永远等不到结果。
-/// 开在应用内，整个流程从点按钮到填好 Key 都在同一个窗口里完成，这才是真正的「一键」。
-/// </para>
-/// <para>
-/// 平台无关：只认「redirect 前缀」，不管平台是 OpenRouter 还是别家。
-/// 外壳（WinUI / Photino）实现这个接口去建原生 WebView；没实现时 <see cref="TryOpen"/>
-/// 返回 false，调用方自动退回系统浏览器，功能不会丢（只是体验退一步）。
-/// </para>
-/// </summary>
+/// <summary>应用内浏览器（OAuth 一键绑定用）：把授权页开在应用自己的窗口里， 并在网络层拦下「跳回本机回调地址」的请求，把授权码直接交给 。</summary>
 public static class InternalBrowser
 {
     /// <summary>同一条授权流程同一时刻只允许一个，防止用户连点开出多个窗口。</summary>
@@ -55,9 +42,7 @@ public static class InternalBrowser
     /// <summary>窗口关闭（无论成功 / 取消 / 报错）都要调用，释放「忙碌」标记。</summary>
     public static void Release() { lock (Gate) _busy = false; }
 
-    /// <summary>
-    /// 判断要不要拦截这条导航。命中就把授权码交给回调（在 UI 线程调用），并返回 true 表示「已接管」。
-    /// </summary>
+    /// <summary>判断要不要拦截这条导航。命中就把授权码交给回调（在 UI 线程调用），并返回 true 表示「已接管」。</summary>
     public static bool ShouldIntercept(string targetUrl, string redirectPrefix)
     {
         if (string.IsNullOrEmpty(targetUrl) || string.IsNullOrEmpty(redirectPrefix)) return false;

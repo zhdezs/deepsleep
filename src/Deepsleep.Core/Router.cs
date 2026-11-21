@@ -32,7 +32,7 @@ public sealed class RouteDecision
     {
         var sb = new StringBuilder();
         sb.Append(Path == RoutePath.Slow ? "慢路径（拆分并行）" : "快路径（单个助手直做）");
-        if (Path == RoutePath.Slow && Workers > 0) sb.Append("，规划 " + Workers + " 路 Worker");
+        if (Path == RoutePath.Slow && Workers > 0) sb.Append("，规划 " + Workers + "路 Worker");
         sb.Append("，置信度 ").Append(Confidence.ToString("0.00"));
         if (Reasons.Count > 0)
         {
@@ -44,13 +44,7 @@ public sealed class RouteDecision
     }
 }
 
-/// <summary>
-/// Router 持有的共享上下文（对应 SuperAgent 架构里 Router 的「共享上下文」职责）。
-/// <para>
-/// 只放**可以共享**的东西：全局目标、权限边界、约束、同批角色、已产出的产物路径、上一轮的组织记忆。
-/// Worker 的私有对话历史绝不进这里 —— Worker 之间靠这份摘要协作，而不是互相偷看上下文。
-/// </para>
-/// </summary>
+/// <summary>Router 持有的共享上下文（对应 SuperAgent 架构里 Router 的「共享上下文」职责）。</summary>
 public sealed class SharedContext
 {
     public string Goal { get; set; } = "";
@@ -107,15 +101,7 @@ public sealed class SharedContext
     }
 }
 
-/// <summary>
-/// 第 2 期：Router（共享上下文 + 路由决策）。
-/// <para>
-/// 判定是**确定性规则**，不额外花一次模型调用 —— 路由本身要在毫秒级出结果，
-/// 而且规则可解释（用户能看见"为什么拆成 3 路"），失败时也有确定的回退（不拆）。
-/// 真正需要语义理解的部分仍然交给主助手：它自己调「拆分任务」时，Router 只负责
-/// 分配 Worker 会话、下发共享上下文、收口结果与状态。
-/// </para>
-/// </summary>
+/// <summary>Router：共享上下文与路由决策。判定是确定性规则，不额外调模型。</summary>
 public static class AgentRouter
 {
     /// <summary>一次最多几路（与「拆分任务」执行器的上限一致）。</summary>
@@ -137,9 +123,7 @@ public static class AgentRouter
         ("数据", "数据"), ("统计", "数据"), ("分析", "数据"), ("报表", "数据"),
     };
 
-    /// <summary>
-    /// 给一个任务文本做路由判定。mode 参与判定：chat 模式下会稍保守（只读任务拆分收益低）。
-    /// </summary>
+    /// <summary>给一个任务文本做路由判定。mode 参与判定：chat 模式下会稍保守（只读任务拆分收益低）。</summary>
     public static RouteDecision Decide(string task, string mode = "work", int minWorkers = 2)
     {
         var d = new RouteDecision();
@@ -158,7 +142,7 @@ public static class AgentRouter
         if (numbered >= 2)
         {
             score += 1.5;
-            d.Reasons.Add("任务里有 " + numbered + " 条并列步骤");
+            d.Reasons.Add("任务里有 " + numbered + "条并列步骤");
         }
 
         // ② 并列信号词
@@ -166,7 +150,7 @@ public static class AgentRouter
         if (signals >= 1)
         {
             score += 0.8 + Math.Min(0.6, (signals - 1) * 0.3);
-            d.Reasons.Add("出现并列/顺序信号词（" + signals + " 处）");
+            d.Reasons.Add("出现并列/顺序信号词（" + signals + "处）");
         }
 
         // ③ 跨领域：不同角色才值得并行
@@ -174,14 +158,14 @@ public static class AgentRouter
         if (roles.Count >= 2)
         {
             score += 0.9 + Math.Min(1.2, (roles.Count - 2) * 0.4);
-            d.Reasons.Add("涉及 " + roles.Count + " 个不同领域：" + string.Join(" / ", roles));
+            d.Reasons.Add("涉及 " + roles.Count + "个不同领域：" + string.Join(" / ", roles));
         }
 
         // ④ 体量：长任务通常包含多个子目标
         if (t.Length >= 240)
         {
             score += 0.6;
-            d.Reasons.Add("任务描述较长（" + t.Length + " 字），大概率含多个子目标");
+            d.Reasons.Add("任务描述较长（" + t.Length + "字），大概率含多个子目标");
         }
 
         // ⑤ 明确要求并行 / 分工

@@ -6,10 +6,7 @@ using System.Text.Json;
 
 namespace TrollWrangler;
 
-/// <summary>
-/// 长期记忆：跨会话保存关于用户/任务的关键事实与偏好，
-/// 持久化到 data\memory.json，AI 助手与 Agent 集群共用。
-/// </summary>
+/// <summary>长期记忆：跨会话保存用户画像、稳定偏好与明确要求记住的事实， 持久化到 data\memory.json，AI 助手与 Agent 集群共用。</summary>
 public sealed class MemoryStore
 {
     private readonly string _path;
@@ -41,13 +38,20 @@ public sealed class MemoryStore
     public string AllText()
         => _entries.Count == 0
             ? ""
-            : string.Join("\n", _entries.Select((e, i) => $"{i + 1}. {e}"));
+            : string.Join("\n", _entries.Select((e, i) => new { Entry = e, Index = i + 1 })
+                .Where(e => !e.Entry.StartsWith("对话摘要（", StringComparison.Ordinal) &&
+                            !e.Entry.StartsWith("更早纪要：", StringComparison.Ordinal))
+                .Select(e => $"{e.Index}. {e.Entry}"));
 
     /// <summary>新增一条记忆。</summary>
     public void Add(string content)
     {
         if (string.IsNullOrWhiteSpace(content)) return;
-        _entries.Add(content.Trim());
+        string entry = content.Trim();
+        if (entry.StartsWith("对话摘要（", StringComparison.Ordinal) ||
+            entry.StartsWith("更早纪要：", StringComparison.Ordinal) ||
+            _entries.Contains(entry, StringComparer.Ordinal)) return;
+        _entries.Add(entry);
         Save();
     }
 
@@ -93,49 +97,6 @@ public sealed class MemoryStore
         if (_entries.Count <= max) return;
         _entries.RemoveRange(0, _entries.Count - max);
         Save();
-    }
-
-    /// <summary>
-    /// 超出字数上限时自动压缩：把最旧的「对话摘要」逐条压短并并入「更早纪要」，
-    /// 尽量保留全部信息而不删除；压缩完仍超限则截断纪要。
-    /// </summary>
-    public void CompressIfOver(int maxChars)
-    {
-        if (maxChars <= 0) { Clear(); return; }
-        if (_entries.Sum(e => e.Length) <= maxChars) return;
-        while (_entries.Sum(e => e.Length) > maxChars)
-        {
-            int idx = -1;
-            for (int i = 0; i < _entries.Count; i++)
-                if (_entries[i].StartsWith("对话摘要", StringComparison.Ordinal)) { idx = i; break; }
-            if (idx < 0) break;   // 只剩纪要/事实，无法再压
-            string s = _entries[idx];
-            _entries.RemoveAt(idx);
-            string shortS = ShortenSummary(s);
-            int gi = _entries.FindIndex(e => e.StartsWith("更早纪要", StringComparison.Ordinal));
-            if (gi < 0) _entries.Insert(0, "更早纪要：" + shortS + "；");
-            else _entries[gi] += shortS + "；";
-        }
-        if (_entries.Sum(e => e.Length) > maxChars)
-        {
-            int ti = _entries.FindIndex(e => e.StartsWith("更早纪要", StringComparison.Ordinal));
-            if (ti >= 0) _entries[ti] = _entries[ti][..maxChars];
-        }
-        Save();
-    }
-
-    /// <summary>把一条对话摘要压短：问题保留前 30 字，回答保留前 24 字。</summary>
-    private static string ShortenSummary(string s)
-    {
-        int q = s.IndexOf("问「", StringComparison.Ordinal);
-        int a = s.IndexOf("答「", StringComparison.Ordinal);
-        if (q < 0 || a < 0) return s.Length <= 60 ? s : s[..60] + "…";
-        string head = s[..q];
-        string qText = s[(q + 2)..a];
-        string aText = s[(a + 2)..];
-        string qShort = qText.Length > 30 ? qText[..30] + "…" : qText;
-        string aShort = aText.Length > 24 ? aText[..24] + "…" : aText;
-        return head + "问「" + qShort + "」答「" + aShort;
     }
 
     private void Save()

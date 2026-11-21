@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -7,9 +7,7 @@ using System.Threading.Tasks;
 
 namespace TrollWrangler.Core;
 
-/// <summary>
-/// 内核：AI 助手（会话状态、流式输出、思考占位、三态按钮、模式开关、权限确认）。
-/// </summary>
+/// <summary>内核：AI 助手（会话状态、流式输出、思考占位、三态按钮、模式开关、权限确认）。</summary>
 public sealed partial class Kernel
 {
     private sealed class AskResult
@@ -18,9 +16,7 @@ public sealed partial class Kernel
         public bool Remember;
     }
 
-    // ------------------------------------------------------------------
     // 会话状态
-    // ------------------------------------------------------------------
 
     private RunState GetAgentState(int sid)
         => _agentStates.TryGetValue(sid, out var s) ? s : RunState.Idle;
@@ -33,10 +29,7 @@ public sealed partial class Kernel
         EmitStatus(0);
     }
 
-    /// <summary>
-    /// 输入框下面那行临时提示（例如「模型 30 秒无响应，已暂停并自动恢复（1/3）」）。
-    /// 只在本次运行期间有效，跑完 / 停止就清空。
-    /// </summary>
+    /// <summary>输入框下面那行临时提示（例如「模型 30 秒无响应，已暂停并自动恢复（1/3）」）。</summary>
     private string _agentNote = "";
 
     private void OnAgentStatusNote(int sid, string text)
@@ -69,17 +62,17 @@ public sealed partial class Kernel
         };
         string runMode = _agent.RunMode switch
         {
-            "chat" => "chat · 聊天（可用网络搜索 / 深度研究）",
+            "chat" => "chat · 聊天（可用非本地操作工具）",
             "boom" => "boom · 全自动（命令免确认）",
-            _ => "work · 命令需确认",
+            _ => "work · 文件与命令按类授权 1 小时",
         };
         string tools = _agent.RunMode == "chat"
-            ? "工具：网络搜索 / 深度研究"
+            ? "工具：搜索 / 研究 / 网页 / GitHub / 记忆 / 知识库 / 拆分任务"
             : "工具：命令 / Python / 生成图片 / 看图 / 抓取网页 / 网络搜索 / 深度研究 / 读写文件";
-        string search = _agent.WebSearchEnabled ? "🌐 网络搜索开" : "网络搜索关";
-        string fast = _agent.FastMode ? "⚡ 极速" : "";
+        string search = _agent.WebSearchEnabled ? "网络搜索开" : "网络搜索关";
+        string fast = _agent.FastMode ? "极速" : "";
         string note = _agentNote.Length > 0 ? "　" + _agentNote : "";
-        return $"模式：{runMode}　后端：{backend}　{search}　🧠 记忆开　{fast}　{tools}{note}";
+        return $"模式：{runMode}　后端：{backend}　{search}　 记忆开 {fast}　{tools}{note}";
     }
 
     /// <summary>推一条状态事件（kind 0 = AI 助手 / 2 = 集群）。</summary>
@@ -101,9 +94,7 @@ public sealed partial class Kernel
         });
     }
 
-    // ------------------------------------------------------------------
     // 开关
-    // ------------------------------------------------------------------
 
     private void SetAgentMode(string mode)
     {
@@ -150,9 +141,7 @@ public sealed partial class Kernel
         EmitStatus(2);
     }
 
-    // ------------------------------------------------------------------
     // Agent 事件
-    // ------------------------------------------------------------------
 
     private void OnAgentMessage(int sid, AgentMessage m)
     {
@@ -174,9 +163,6 @@ public sealed partial class Kernel
             bool isUser = m.Role == "user";
             bool isTool = m.Role == "tool";
             // 「调用了工具「X」」这句本身不再显示（调了什么下面卡片里写着，说了是重复刷屏）；
-            // 但模型**在调用前说的那几句人话**（m.Say）要显示成一个正常 AI 气泡。
-            // 以前这里无条件 return，把整条消息连同那句人话一起丢了 ——
-            // 用户看到的就只有一张工具卡片，不知道 AI 为什么要调它。
             bool isToolCallSay = !isUser && !isTool &&
                                  m.Meta.StartsWith("调用了工具", StringComparison.Ordinal);
             if (isToolCallSay && string.IsNullOrWhiteSpace(m.Say)) return;
@@ -335,10 +321,7 @@ public sealed partial class Kernel
         }
     }
 
-    /// <summary>
-    /// 工具结果卡折叠时显示的一句话：搜到几篇 / 第一行是什么。
-    /// 展开后的明细就是工具原始返回，所以折叠态必须短、能一眼看出干了什么。
-    /// </summary>
+    /// <summary>工具结果卡折叠时显示的一句话：搜到几篇 / 第一行是什么。 展开后的明细就是工具原始返回，所以折叠态必须短、能一眼看出干了什么。</summary>
     /// <summary>工具大类：界面把同一轮里连续的 cmd / file 合并成一张卡片。</summary>
     internal static string ToolKindOf(string tool) => tool switch
     {
@@ -370,10 +353,7 @@ public sealed partial class Kernel
         return first.Length > 0 ? first : $"已执行「{tool}」";
     }
 
-    /// <summary>
-    /// 技能调用链：技能被自动匹配 / 补救启用时，在对应会话里落一张**可折叠卡片**
-    /// （和「编辑的文件」「运行的命令」同一套样式，默认收起 —— 调用链细节不该糊在对话里）。
-    /// </summary>
+    /// <summary>技能调用链：技能被自动匹配 / 补救启用时，在对应会话里落一张可折叠卡片 （和「编辑的文件」「运行的命令」同一套样式，默认收起 —— 调用链细节不该糊在对话里）。</summary>
     private void OnSkillUsed(int sid, string name, string reason)
     {
         lock (_gate)
@@ -442,9 +422,24 @@ public sealed partial class Kernel
         return sb.ToString();
     }
 
-    // ------------------------------------------------------------------
     // 会话内小助手
-    // ------------------------------------------------------------------
+
+    /// <summary>上下文自动压缩完成：插一条系统消息说明「压了多少、现在多少」， 顺手刷新用量环 —— 不然环还停在 90% 会让人以为没生效。</summary>
+    private void OnAgentCompacted(int sid, string note, long before, long after)
+    {
+        AddAgentSys(sid, " " + note);
+        EmitCtxUsage();
+        Emit(new { ev = "ctxCompacted", sid, before, after, note });
+        Toast(" " + note, "info");
+        ScheduleSave();
+    }
+
+    private void OnClusterCompacted(int sid, string note, long before, long after)
+    {
+        AddClusterSys(sid, " " + note);
+        Emit(new { ev = "ctxCompacted", sid, before, after, note });
+        Toast(" " + note, "info");
+    }
 
     private void AddAgentSys(int sid, string text)
     {
@@ -489,11 +484,7 @@ public sealed partial class Kernel
         _agentThinking.Remove(sid);
     }
 
-    /// <summary>
-    /// 模型吐出思考 / 推理内容（reasoning_content / Responses 的 reasoning 条目）。
-    /// 这些内容以前被当成正文拼进回答，用户就看见「AI 突然说了一大段英文」；
-    /// 现在只挂在气泡上折叠展示，绝不进正文。
-    /// </summary>
+    /// <summary>模型吐出思考 / 推理内容（reasoning_content / Responses 的 reasoning 条目）。</summary>
     private void OnAgentReasoning(int sid, string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
@@ -528,11 +519,7 @@ public sealed partial class Kernel
         }
     }
 
-    /// <summary>
-    /// 思考内容的流式推送。和 <see cref="OnAgentReasoning"/> 的差别是：
-    /// 思考往往在正文之前就开始产出，这时候流式气泡还不存在 —— 必须先把它建出来，
-    /// 否则思考内容没有落脚点，用户还是得等正文开始才能看到（那就不叫流式了）。
-    /// </summary>
+    /// <summary>思考内容的流式推送。和 的差别是： 思考往往在正文之前就开始产出，这时候流式气泡还不存在 —— 必须先把它建出来， 否则思考内容没有落脚点，用户还是得等正文开始才能看到（那就不叫流式了）。</summary>
     private void OnAgentReasoningStreaming(int sid, string text)
     {
         if (string.IsNullOrWhiteSpace(text)) return;
@@ -621,49 +608,85 @@ public sealed partial class Kernel
         Emit(new { ev = "msgRemove", kind = conv.Kind, conv = conv.Sid, id = item.Id });
     }
 
-    // ------------------------------------------------------------------
     // 权限确认（work 模式执行命令前）
-    // ------------------------------------------------------------------
 
-    private async Task<bool> ConfirmCommandAsync(int sid, string detail)
+    private readonly SemaphoreSlim _capabilityAskGate = new(1, 1);
+
+    private Task<bool> ConfirmCommandAsync(int sid, string detail)
     {
-        var conv = _agentConvs.FirstOrDefault(c => c.Sid == sid);
-        if (conv?.AutoApprove == true) return true;   // 已提权：本对话内直接放行
-
-        string askId = Guid.NewGuid().ToString("N")[..8];
-        var tcs = new TaskCompletionSource<AskResult>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _asks[askId] = tcs;
-        Emit(new
+        string capability = Agent.CapabilityCommand;
+        if (detail.StartsWith("[capability:", StringComparison.Ordinal))
         {
-            ev = "ask",
-            askId,
-            conv = sid,
-            title = "允许执行命令？",
-            detail,
-            check = "本次对话内始终允许执行命令/脚本（提高权限）",
-            yes = "允许",
-            no = "拒绝",
-        });
-        AskResult res;
-        try { res = await tcs.Task.ConfigureAwait(false); }
-        finally { _asks.Remove(askId); }
-        if (res.Yes && res.Remember && conv != null)
-        {
-            conv.AutoApprove = true;
-            ScheduleSave();
+            int end = detail.IndexOf(']');
+            if (end > 12)
+            {
+                capability = detail[12..end];
+                detail = detail[(end + 1)..].TrimStart();
+            }
         }
-        return res.Yes;
+        var ct = _agentCts.TryGetValue(sid, out var cts) ? cts.Token : CancellationToken.None;
+        return ConfirmCapabilityAsync(sid, capability, detail, ct);
+    }
+
+    private async Task<bool> ConfirmCapabilityAsync(int sid, string capability, string detail, CancellationToken ct)
+    {
+        string label = capability switch
+        {
+            Agent.CapabilityRead => "读取本地文件",
+            Agent.CapabilityWrite => "写入本地文件（含自动保存、生成物和扩展）",
+            Agent.CapabilityOpen => "打开本地文件",
+            Agent.CapabilityCommand => "执行命令或脚本",
+            Agent.CapabilityComputer => "操作电脑",
+            _ => "",
+        };
+        if (label.Length == 0) return false;
+        await _capabilityAskGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var conv = _agentConvs.FirstOrDefault(c => c.Sid == sid)
+                ?? _clusterConvs.FirstOrDefault(c => c.Sid == sid);
+            if (conv == null) return false;
+            var now = DateTimeOffset.UtcNow;
+            lock (_gate)
+                if (conv.CapabilityGrants.TryGetValue(capability, out var until) &&
+                    until > now && until <= now.AddHours(1)) return true;
+
+            string askId = Guid.NewGuid().ToString("N")[..8];
+            var tcs = new TaskCompletionSource<AskResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+            lock (_gate) _asks[askId] = tcs;
+            try
+            {
+                Emit(new
+                {
+                    ev = "ask", askId, conv = sid,
+                    title = $"允许{label}？（本类权限有效 1 小时）",
+                    detail, capability, durationSeconds = 3600,
+                    check = "", yes = "允许 1 小时", no = "拒绝",
+                });
+                var res = await tcs.Task.WaitAsync(ct).ConfigureAwait(false);
+                ct.ThrowIfCancellationRequested();
+                if (!res.Yes) return false;
+                lock (_gate) conv.CapabilityGrants[capability] = DateTimeOffset.UtcNow.AddHours(1);
+                ScheduleSave();
+                return true;
+            }
+            finally
+            {
+                lock (_gate) _asks.Remove(askId);
+                Emit(new { ev = "askClose", askId });
+            }
+        }
+        finally { _capabilityAskGate.Release(); }
     }
 
     private void Answer(string askId, bool yes, bool remember)
     {
-        if (_asks.TryGetValue(askId, out var tcs))
-            tcs.TrySetResult(new AskResult { Yes = yes, Remember = remember });
+        lock (_gate)
+            if (_asks.TryGetValue(askId, out var tcs))
+                tcs.TrySetResult(new AskResult { Yes = yes, Remember = remember });
         Emit(new { ev = "askClose", askId });
     }
-    // ------------------------------------------------------------------
     // 发送 / 停止 / 恢复 / 重新生成
-    // ------------------------------------------------------------------
 
     /// <summary>发送（三态）：空闲=发送，运行中=停止，已停止=没输入则恢复、有输入则当新一轮。</summary>
     private async Task SendAsync(int kind, string text, string target)
@@ -705,14 +728,15 @@ public sealed partial class Kernel
                 {
                     SetAgentState(sid, RunState.Idle);
                     _agent.TruncateToLastUser(sid);   // 清掉被中止轮的残留上下文
-                    await RunAgentAsync(sid, text).ConfigureAwait(false);
+                    await RouteAndRunAsync(sid, text).ConfigureAwait(false);
                     return;
                 }
                 await ResumeAgentAsync(sid).ConfigureAwait(false);
                 return;
             default:
                 if (text.Length == 0) return;
-                await RunAgentAsync(sid, text).ConfigureAwait(false);
+                // 发送 = 交给常驻 Router：判定直做还是派活
+                await RouteAndRunAsync(sid, text).ConfigureAwait(false);
                 return;
         }
     }
@@ -806,7 +830,7 @@ public sealed partial class Kernel
             else
             {
                 SetAgentState(sid, RunState.Idle);
-                AddAgentSys(sid, "✅ 已从断点完成。");
+                AddAgentSys(sid, "已从断点完成。");
             }
         }
         catch (OperationCanceledException)

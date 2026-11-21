@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -9,16 +9,12 @@ using System.Threading.Tasks;
 
 namespace TrollWrangler.Core;
 
-/// <summary>
-/// 内核：对话管理 / 记忆 / 技能 / 设置 / 上传 / 桌宠开关。
-/// </summary>
+/// <summary>内核：对话管理 / 记忆 / 技能 / 设置 / 上传 / 桌宠开关。 ///</summary>
 public sealed partial class Kernel
 {
     private string _convSearch = "";
 
-    // ------------------------------------------------------------------
     // 标签页
-    // ------------------------------------------------------------------
 
     private void SetTab(int tab)
     {
@@ -36,9 +32,7 @@ public sealed partial class Kernel
         });
     }
 
-    // ------------------------------------------------------------------
     // 对话
-    // ------------------------------------------------------------------
 
     private List<Conversation> ListOf(int kind) => kind == 1 ? _counterConvs : kind == 2 ? _clusterConvs : _agentConvs;
 
@@ -216,9 +210,7 @@ public sealed partial class Kernel
         string t = MarkdownRenderer.ToPlainText(text).Trim();
         conv.Title = t.Length <= 16 ? t : t[..16] + "…";
     }
-    // ------------------------------------------------------------------
     // 持久化
-    // ------------------------------------------------------------------
 
     private void LoadConversations()
     {
@@ -248,7 +240,8 @@ public sealed partial class Kernel
             Title = string.IsNullOrWhiteSpace(dto.Title) ? $"对话 {_nextConvNo++}" : dto.Title,
             Sid = dto.Sid,
             Created = dto.Created,
-            AutoApprove = dto.AutoApprove,
+            AutoApprove = false,
+            CapabilityGrants = dto.CapabilityGrants ?? new(),
             IsPinned = dto.IsPinned,
         };
         if (kind == 0) _agent.NewSession(conv.Sid);
@@ -281,10 +274,8 @@ public sealed partial class Kernel
                 ToolDetail = m.ToolDetail,
                 ToolKind = m.ToolKind,
             };
-            // 兼容旧版 conversations.json（version 2 没存工具字段）：从「【工具「X」调用结果】」
-            // 前缀反推工具身份，让老对话重开后仍然是折叠卡片，而不是一段裸文本。
-            // ⚠ 旧版把工具结果存成了 IsSys=true 的系统消息，所以这里**不能**用 !IsSys 过滤，
-            //   真正的判据是「正文有工具结果前缀」——用户自己发的消息不会带这个前缀。
+            // 兼容旧版 conversations.json（version 2 没存工具字段）：从「【工具「X」调用结果】」前缀反推工具身份，让老对话重开后仍然是折叠卡片，
+            // 而不是一段裸文本。
             bool looksLikeToolResult = (item.Text ?? "").StartsWith(ToolResultPrefix, StringComparison.Ordinal);
             if (string.IsNullOrEmpty(item.ToolName) && !item.IsSelf && looksLikeToolResult)
             {
@@ -330,7 +321,8 @@ public sealed partial class Kernel
         Title = c.Title,
         Sid = c.Sid,
         Created = c.Created,
-        AutoApprove = c.AutoApprove,
+        AutoApprove = false,
+        CapabilityGrants = new(c.CapabilityGrants),
         IsPinned = c.IsPinned,
         Messages = c.Items.Select(m => new ChatMessageDto
         {
@@ -464,9 +456,7 @@ public sealed partial class Kernel
             _clusterStates[kv.Key] = RunState.Stopped;
         if (st.AgentStates.Count > 0 || st.ClusterRuns.Count > 0) ScheduleSave();
     }
-    // ------------------------------------------------------------------
     // 记忆
-    // ------------------------------------------------------------------
 
     private void EmitMemory() => Emit(new
     {
@@ -479,19 +469,17 @@ public sealed partial class Kernel
     {
         _memory?.ReplaceAll(text);
         if (_memory != null) _clusterAgent.Memory = _memory;
-        Toast($"🧠 已保存 {_memory?.Entries.Count ?? 0} 条长期记忆。");
+        Toast($"已保存 {_memory?.Entries.Count ?? 0} 条长期记忆。");
     }
 
     private void ClearMemory()
     {
         _memory?.Clear();
         if (_memory != null) _clusterAgent.Memory = _memory;
-        Toast("🧠 长期记忆已清空。");
+        Toast("长期记忆已清空。");
     }
 
-    // ------------------------------------------------------------------
     // 技能
-    // ------------------------------------------------------------------
 
     private void ReloadSkills()
     {
@@ -541,26 +529,20 @@ public sealed partial class Kernel
         catch (Exception ex) { Toast("删除失败：" + ex.Message, "error"); }
     }
 
-    // ------------------------------------------------------------------
-    // 设置
-    // ------------------------------------------------------------------
-
-    // ------------------------------------------------------------------
-    // 初始提示词（AGENT.md）：所有对话共享，会话里不可改，只有 ⚙ 设置里能改
-    // ------------------------------------------------------------------
+    // 设置初始提示词（AGENT.md）：所有对话共享，会话里不可改，只有设置里能改
 
     /// <summary>初始提示词文件：data\AGENT.md。</summary>
     public string AgentMdPath => Path.Combine(_dataDir, "AGENT.md");
 
     private const string DefaultAgentMd =
 @"<!--
-AGENT.md · deepsleep 初始提示词（所有对话共享；只有 ⚙ 设置里能改）
+AGENT.md · deepsleep 初始提示词（所有对话共享；只有设置里能改）
 ======================================================================
 
 写在本文件里的内容，会作为「初始提示词」插入【所有对话】系统提示的最前面：
 AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不了。
 
-· 只有 ⚙ 设置 → 初始提示词（AGENT.md） 里能改；也可以直接编辑本文件（改完重启生效）。
+· 只有设置 → 初始提示词（AGENT.md） 里能改；也可以直接编辑本文件（改完重启生效）。
 · 被 HTML 注释包住的文字（例如本段）只是说明，不会发给模型，随便写。
 · 想让 AI 遵守什么，就把规则写成普通文字，例如：
 
@@ -645,6 +627,23 @@ AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不�
         _config.VideoPollUrl = Str("videoPollUrl", _config.VideoPollUrl);
         _config.VideoApiKey = Str("videoApiKey", _config.VideoApiKey);
         _config.VideoModel = Str("videoModel", _config.VideoModel);
+        _config.BlenderPath = Str("blenderPath", _config.BlenderPath);
+        _config.GitHubClientId = Str("githubClientId", _config.GitHubClientId);
+        if (a.TryGetProperty("routerAuto", out var ra2) && (ra2.ValueKind == JsonValueKind.True || ra2.ValueKind == JsonValueKind.False))
+            _config.RouterAuto = ra2.GetBoolean();
+        if (a.TryGetProperty("watchdogMinutes", out var wd2) && wd2.ValueKind == JsonValueKind.Number && wd2.TryGetInt32(out int wdv2))
+            _config.WatchdogMinutes = Math.Clamp(wdv2, 0, 240);
+        // Router / Worker 的独立模型绑定：前端传嵌套对象，缺字段就保留原值
+        if (a.TryGetProperty("router", out var rb))
+        {
+            var nb = AppConfig.ReadBinding(rb);
+            if (nb != null) _config.Router = nb;
+        }
+        if (a.TryGetProperty("worker", out var wb))
+        {
+            var nb = AppConfig.ReadBinding(wb);
+            if (nb != null) _config.Worker = nb;
+        }
         if (a.TryGetProperty("useFreeKey", out _)) _config.UseFreeKey = GetBool(a, "useFreeKey");
         if (a.TryGetProperty("multimodalMain", out _)) _config.MultimodalMain = GetBool(a, "multimodalMain");
         if (a.TryGetProperty("useOllama", out _)) _config.UseOllama = GetBool(a, "useOllama");
@@ -670,13 +669,20 @@ AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不�
             StoreProfile(prevUrl, prevKey, prevModel, prevFormat, "");
         // 再把当前这套记进它自己的档案（下次切回来就能一键恢复）
         StoreProfile(_config.ApiUrl, _config.ApiKey, _config.ApiModel, _config.ApiFormat, PlatformLabelFor(_config.ApiUrl));
+        // Router / Worker 单独指定的那家也记住：以后想切回同一个网关，下拉里就有
+        foreach (var b in new[] { _config.Router, _config.Worker })
+        {
+            if (b == null || !b.Configured) continue;
+            StoreProfile(b.ApiUrl, string.IsNullOrWhiteSpace(b.ApiKey) ? _config.ApiKey : b.ApiKey,
+                        b.ApiModel, b.ApiFormat, PlatformLabelFor(b.ApiUrl));
+        }
         _config.Save();
         // 初始提示词（AGENT.md）：设置弹窗里一起提交，保存后立即对所有对话生效
         string? agentMd = GetStr(a, "agentMd");
         if (agentMd != null) SaveAgentMd(agentMd);
 
         _engine.ApplyConfig(_config);
-        _agent.ApplyConfig(_config);
+        _agent.ApplyConfig(RouterCfg);
         _clusterAgent.ApplyConfig(_config);
         string backend = _config.UseOllama ? "llm" : "auto";
         _agent.Backend = backend;
@@ -693,10 +699,7 @@ AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不�
         Emit(new { ev = "pet", enabled = _config.PetEnabled });
     }
 
-    /// <summary>
-    /// 把一套 API 配置写进「按供应商」的档案。空 Key 不会覆盖已有的 Key ——
-    /// 用户可能只是改了模型名就保存，不该把之前存好的 Key 清掉。
-    /// </summary>
+    /// <summary>把一套 API 配置写进「按供应商」的档案。空 Key 不会覆盖已有的 Key —— 用户可能只是改了模型名就保存，不该把之前存好的 Key 清掉。</summary>
     private void StoreProfile(string url, string key, string model, string format, string label)
     {
         if (string.IsNullOrWhiteSpace(url)) return;
@@ -720,14 +723,11 @@ AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不�
         return "";
     }
 
-    /// <summary>
-    /// 一键恢复某个供应商的配置：把档案里的 Key / 模型 / 协议写回当前配置并保存。
-    /// 由内核直接落盘，界面上不需要拿到其它供应商的 Key。
-    /// </summary>
+    /// <summary>一键恢复某个供应商的配置：把档案里的 Key / 模型 / 协议写回当前配置并保存。</summary>
     private void RestoreProfile(string url)
     {
         url = (url ?? "").Trim();
-        if (url.Length == 0) { Toast("⚠ 没指定要恢复哪个供应商。", "error"); return; }
+        if (url.Length == 0) { Toast("没指定要恢复哪个供应商。", "error"); return; }
         if (!_config.ApiProfiles.TryGetValue(url, out var p) || p == null)
         {
             Toast("这个供应商还没有保存过配置 —— 先填好 Key 保存一次。", "error");
@@ -739,7 +739,7 @@ AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不�
         if (!string.IsNullOrWhiteSpace(p.ApiFormat)) _config.ApiFormat = p.ApiFormat;
         _config.Save();
         _engine.ApplyConfig(_config);
-        _agent.ApplyConfig(_config);
+        _agent.ApplyConfig(RouterCfg);
         _clusterAgent.ApplyConfig(_config);
 
         string label = string.IsNullOrWhiteSpace(p.Label) ? url : p.Label;
@@ -749,22 +749,19 @@ AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不�
         Toast($"↩ 已恢复「{label}」的配置（Key 尾号 {(p.ApiKey.Length > 4 ? p.ApiKey[^4..] : "—")}，模型 {_config.ApiModel}）。", "info");
     }
 
-    /// <summary>
-    /// 直接在对话界面里换模型（顶部「🧠 模型」按钮）。顺手把这家供应商的档案也更新，
-    /// 下次切走再切回来，恢复到的就是你最后用的那个模型。
-    /// </summary>
+    /// <summary>直接在对话界面里换模型（顶部「 模型」按钮）。顺手把这家供应商的档案也更新， 下次切走再切回来，恢复到的就是你最后用的那个模型。</summary>
     private void SetApiModel(string model)
     {
         model = (model ?? "").Trim();
-        if (model.Length == 0) { Toast("⚠ 模型名为空。", "error"); return; }
+        if (model.Length == 0) { Toast("模型名为空。", "error"); return; }
         _config.ApiModel = model;
         StoreProfile(_config.ApiUrl, _config.ApiKey, _config.ApiModel, _config.ApiFormat, PlatformLabelFor(_config.ApiUrl));
         _config.Save();
         _engine.ApplyConfig(_config);
-        _agent.ApplyConfig(_config);
+        _agent.ApplyConfig(RouterCfg);
         _clusterAgent.ApplyConfig(_config);
         EmitSettings();
-        Toast($"🧠 已切换到「{model}」。", "info");
+        Toast($"已切换到「{model}」。", "info");
     }
 
     private void SaveToken(string token)
@@ -776,17 +773,40 @@ AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不�
             TokenVault.Save(token, Updater.TokenPath);
             string read = Updater.LoadToken();
             bool ok = string.Equals(read, token, StringComparison.Ordinal);
-            Toast(ok ? "🔑 令牌已多层加密保存。" : "⚠ 保存了但读回不一致，请重试。", ok ? "info" : "error");
+            Toast(ok ? "令牌已多层加密保存。" : "保存了但读回不一致，请重试。", ok ? "info" : "error");
             EmitSettings();
         }
         catch (Exception ex) { Toast("保存失败：" + ex.Message, "error"); }
+    }
+
+/// <summary>思考强度档位：off / low / medium / high。</summary>
+    private void SetReasoningLevel(string level)
+    {
+        string lv = (level ?? "").Trim().ToLowerInvariant();
+        if (lv != "off" && lv != "low" && lv != "medium" && lv != "high") lv = "high";
+        _config.ApiThinking = lv != "off";
+        _config.ReasoningEffort = lv == "off" ? "" : lv;
+        _config.Save();
+        _engine.ApplyConfig(_config);
+        _agent.ApplyConfig(RouterCfg);
+        _clusterAgent.ApplyConfig(_config);
+        EmitSettings();
+        EmitStatus(0);
+        string name = lv switch
+        {
+            "off" => "关（不请求思考）",
+            "low" => "低（快，适合闲聊/改错别字）",
+            "medium" => "中（默认，日常任务）",
+            _ => "高（慢，适合推理/写代码）",
+        };
+        Toast("思考强度：" + name, "info");
     }
 
     private void SetTheme(string theme)
     {
         _config.Theme = theme == "dark" ? "dark" : "light";
         _config.Save();
-        // 两套主题 CSS 是前端按 <link disabled> 即时启停的，跟 activeSkin 无关：
+        // 两套主题 CSS 是前端按 <link disabled>即时启停的，跟 activeSkin 无关：
         // 用户自己装的第三方皮肤继续叠加在当前模式上，不因为切主题被换掉。
         Emit(new { ev = "theme", theme = _config.Theme });
     }
@@ -804,9 +824,7 @@ AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不�
         _config.Save();
         Emit(new { ev = "pet", enabled = on });
     }
-    // ------------------------------------------------------------------
     // 上传文件 / 打开路径
-    // ------------------------------------------------------------------
 
     /// <summary>外壳用文件选择器拿到路径后交给内核：复制进 data\uploads 并注入上下文。</summary>
     private void AttachFile(int kind, string path)
@@ -827,7 +845,7 @@ AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不�
             {
                 IsSelf = true,
                 CanAccept = false,
-                Text = $"📎 上传文件：{dest}（{kb} KB）",
+                Text = $"上传文件：{dest}（{kb} KB）",
                 Meta = "上传",
                 ImagePath = isImage ? dest : null,
                 AttachmentName = name,
@@ -869,32 +887,47 @@ AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不�
         }
         catch (Exception ex) { Toast("打开失败：" + ex.Message, "error"); }
     }
-    // ------------------------------------------------------------------
+    /// <summary>用系统默认浏览器打开一个网址（设备码登录要用户去浏览器点授权）。</summary>
+    private void OpenUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return;
+        if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+            !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            Toast("只支持打开 http/https 链接", "error");
+            return;
+        }
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+        }
+        catch (Exception ex) { Toast("打开浏览器失败：" + ex.Message + "（手动访问 " + url + "吧）", "error"); }
+    }
+
     // 一键安装 Ollama
-    // ------------------------------------------------------------------
 
     private async Task InstallOllamaAsync()
     {
-        AddAgentSys(_agentCur.Sid, "⬇️ 开始一键安装 Ollama + 大模型…");
+        AddAgentSys(_agentCur.Sid, "开始一键安装 Ollama + 大模型…");
         try
         {
             if (!IsOllamaInstalled())
             {
                 if (!Platform.IsWindows)
                 {
-                    AddAgentSys(_agentCur.Sid, "⬇️ 正在用 Ollama 官方脚本安装…");
+                    AddAgentSys(_agentCur.Sid, "正在用 Ollama 官方脚本安装…");
                     await RunInstallCmdAsync("curl -fsSL " + OllamaInstallUrl + " | sh").ConfigureAwait(false);
                 }
                 else
                 {
                     string setup = Path.Combine(Path.GetTempPath(), "OllamaSetup.exe");
-                    AddAgentSys(_agentCur.Sid, "⬇️ 正在下载 Ollama 安装包（约 200MB）…");
+                    AddAgentSys(_agentCur.Sid, "正在下载 Ollama 安装包（约 200MB）…");
                     using (var hc = new HttpClient { Timeout = TimeSpan.FromMinutes(10) })
                     {
                         byte[] bytes = await hc.GetByteArrayAsync(OllamaSetupUrl).ConfigureAwait(false);
                         await File.WriteAllBytesAsync(setup, bytes).ConfigureAwait(false);
                     }
-                    AddAgentSys(_agentCur.Sid, "⬇️ 安装包下载完成，正在静默安装…");
+                    AddAgentSys(_agentCur.Sid, "安装包下载完成，正在静默安装…");
                     Process.Start(new ProcessStartInfo(setup) { UseShellExecute = true });
                     for (int i = 0; i < 90; i++)
                     {
@@ -905,10 +938,10 @@ AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不�
             }
             if (!IsOllamaInstalled())
             {
-                AddAgentSys(_agentCur.Sid, "❌ Ollama 安装失败，请手动到 ollama.com/download 安装后重试。");
+                AddAgentSys(_agentCur.Sid, " Ollama 安装失败，请手动到 ollama.com/download 安装后重试。");
                 return;
             }
-            AddAgentSys(_agentCur.Sid, "✅ Ollama 已就绪。正在下载大模型 qwen3:4b 与 qwen2.5:1.5b（首次下载需几分钟）…");
+            AddAgentSys(_agentCur.Sid, " Ollama 已就绪。正在下载大模型 qwen3:4b 与 qwen2.5:1.5b（首次下载需几分钟）…");
             await RunInstallCmdAsync("ollama pull qwen3:4b").ConfigureAwait(false);
             await RunInstallCmdAsync("ollama pull qwen2.5:1.5b").ConfigureAwait(false);
             _config.OllamaModel = "qwen2.5:1.5b";
@@ -917,15 +950,15 @@ AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不�
             _config.Save();
             _agent.Backend = "llm";
             _clusterAgent.Backend = "llm";
-            _agent.ApplyConfig(_config);
+            _agent.ApplyConfig(RouterCfg);
             _clusterAgent.ApplyConfig(_config);
-            AddAgentSys(_agentCur.Sid, "🎉 Ollama + 大模型安装完成，已切换到本地模型（不花 API 额度）。");
+            AddAgentSys(_agentCur.Sid, " Ollama + 大模型安装完成，已切换到本地模型（不花 API 额度）。");
             EmitStatus(0);
             EmitSettings();
         }
         catch (Exception ex)
         {
-            AddAgentSys(_agentCur.Sid, "❌ 一键安装失败：" + ex.Message);
+            AddAgentSys(_agentCur.Sid, "一键安装失败：" + ex.Message);
         }
     }
     /// <summary>Ollama 官方安装包地址（拆开拼接，避免被当成可疑下载链接）。</summary>

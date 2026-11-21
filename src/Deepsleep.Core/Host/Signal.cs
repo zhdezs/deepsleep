@@ -3,11 +3,7 @@ using System.Text.Json;
 
 namespace TrollWrangler.CoreHost;
 
-/// <summary>
-/// 超级连接的公共信令通道（ntfy.sh —— 免费、免注册、纯 HTTP）。
-/// 只用来交换「配对码 → 地址」这类几 KB 的握手消息；连上之后数据走直连或隧道，不经过第三方。
-/// 实测：订阅（/json NDJSON 长连接）和发布（POST）在国内可直连。
-/// </summary>
+/// <summary>超级连接的公共信令通道（ntfy.sh）。</summary>
 public static class Signal
 {
     /// <summary>信令服务器地址；想自建 ntfy（或走代理）就设环境变量 DEEPSLEEP_SIGNAL_BASE。</summary>
@@ -35,7 +31,7 @@ public static class Signal
                                           string since = "5m")
     {
         // 注意：ntfy 的 since 只认 all / 时长（5m、1h）/ 时间戳 / 消息 id，
-        // 写 "now" 会被判 400（invalid since parameter）——踩过一次。
+        // 写 "now"会被判 400（invalid since parameter）——踩过一次。
         await SubscribeOnceAsync(topic, onMessage, ct, since);
     }
 

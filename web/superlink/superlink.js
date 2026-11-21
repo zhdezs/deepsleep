@@ -64,7 +64,7 @@
 
   function showDone(base, token, p2p, peer) {
     // 令牌放 # 片段：隧道商（serveo 免费版）会给浏览器导航插一个警告页，
-    // 它的「Continue」是按 action="" 做 GET 提交 —— 会整条顶掉 ?查询串，令牌就丢了。
+    // 它的「Continue」是按 action=""做 GET 提交 —— 会整条顶掉 ?查询串，令牌就丢了。
     var rdBase = base.replace(/\/+$/, '');
     // 把对端地址也塞进 # 里：从 GitHub Pages 的 rd.html 打开时，页面才知道该连谁的 /api/rd/*
     var rd = rdBase + '/web/core/rd.html#u=' + encodeURIComponent(rdBase) + '&t=' + encodeURIComponent(token);
@@ -74,7 +74,7 @@
     $('#modeHint').textContent = (p2p
       ? '点对点直连，延迟最低。'
       : '通过对方的内置隧道连接（对方在别的网络时会走这条）。') +
-      (serveo ? ' ⚠ Serveo 免费隧道第一次打开会先显示一个英文的「Serveo Browser Warning」页，点 Continue to Site 就能进来。' : '');
+      (serveo ? '  Serveo 免费隧道第一次打开会先显示一个英文的「Serveo Browser Warning」页，点 Continue to Site 就能进来。' : '');
     $('#linkRd').href = rd;
     $('#linkFull').href = full;
     $('#pairBox').classList.add('hidden');

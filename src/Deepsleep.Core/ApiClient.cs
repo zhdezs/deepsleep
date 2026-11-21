@@ -8,10 +8,7 @@ using System.Threading.Tasks;
 
 namespace TrollWrangler;
 
-/// <summary>
-/// 外部 API 客户端（OpenAI 兼容 chat/completions 接口，如 DeepSeek）。
-/// 零第三方依赖，仅用 System.Net.Http + System.Text.Json。
-/// </summary>
+/// <summary>外部 API 客户端（OpenAI 兼容 chat/completions 接口，如 DeepSeek）。</summary>
 public sealed class ApiClient : IDisposable
 {
     private readonly HttpClient _http = new();
@@ -25,10 +22,7 @@ public sealed class ApiClient : IDisposable
     /// <summary>思考强度：low / medium / high（配合 Thinking 使用）。</summary>
     public string ReasoningEffort { get; set; } = "high";
 
-    /// <summary>
-    /// 最近一次调用里模型吐出的思考 / 推理内容（reasoning_content / reasoning / Responses 的 reasoning 条目）。
-    /// 界面把它折叠展示，**绝不混进正文** —— 以前 Responses 的非流式回退会把这段英文思考当答案拼进去。
-    /// </summary>
+    /// <summary>最近一次调用里模型吐出的思考 / 推理内容（reasoning_content / reasoning / Responses 的 reasoning 条目）。</summary>
     public string Reasoning { get; private set; } = "";
 
     private readonly StringBuilder _reasonLog = new();
@@ -51,23 +45,13 @@ public sealed class ApiClient : IDisposable
     /// <summary>最近一次调用失败的原因（用于界面诊断）。</summary>
     public string? LastError { get; private set; }
 
-    /// <summary>
-    /// 最近一次回复是不是被输出长度上限截断了（finish_reason=length）。
-    /// 上层据此自动续写，用户不用自己敲「继续」。
-    /// </summary>
+    /// <summary>最近一次回复是不是被输出长度上限截断了（finish_reason=length）。</summary>
     public bool LastTruncated { get; internal set; }
 
-    /// <summary>
-    /// 规范化后的请求地址。用户容易只填主机名（例如 https://api.deepseek.com/），
-    /// 直接 POST 根地址会 404，所以这里按协议自动补全路径。
-    /// </summary>
+    /// <summary>规范化后的请求地址。用户容易只填主机名（例如 https://api.deepseek.com/）， 直接 POST 根地址会 404，所以这里按协议自动补全路径。</summary>
     public string Endpoint => NormalizeUrl(Url, EffectiveFormat);
 
-    /// <summary>
-    /// 实际使用的协议：按地址自动纠正明显不匹配的格式。
-    /// 例如格式还留在「OpenAI 兼容」但地址已经写了 /v1/responses（OpenAI Responses API），
-    /// 或者地址写了 /v1/messages（Claude）、:generateContent（Gemini）。
-    /// </summary>
+    /// <summary>实际使用的协议：按地址自动纠正明显不匹配的格式。</summary>
     public string EffectiveFormat
     {
         get
@@ -124,9 +108,7 @@ public sealed class ApiClient : IDisposable
         return $"HTTP {(int)resp.StatusCode}{hint}";
     }
 
-    /// <summary>
-    /// 调用外部 API 生成回怼。失败（无 key / 网络 / 超时 / 解析错误）返回 null。
-    /// </summary>
+    /// <summary>调用外部 API 生成回怼。失败（无 key / 网络 / 超时 / 解析错误）返回 null。</summary>
     public async Task<string?> ChatAsync(string system, string user,
         int timeoutSeconds = 300, CancellationToken ct = default)
         => await ChatAsync(system, new[] { (Role: "user", Content: user) }, timeoutSeconds, ct);
@@ -140,78 +122,9 @@ public sealed class ApiClient : IDisposable
             LastError = "未配置 API Key";
             return null;
         }
-        try
-        {
-        LastTruncated = false;
-        ResetReasoning();
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
-
-            if (EffectiveFormat == "anthropic")
-                return await ChatAnthropicAsync(system, messages, cts.Token, stream: false, onDelta: null);
-            if (EffectiveFormat == "gemini")
-                return await ChatGeminiAsync(system, messages, cts.Token, stream: false, onDelta: null);
-            if (EffectiveFormat == "responses")
-                return await ChatResponsesAsync(system, messages, cts.Token, stream: false, onDelta: null);
-
-            var msgs = new List<object> { new { role = "system", content = system } };
-            foreach (var (role, content) in messages)
-                msgs.Add(new { role = MapRole(role), content = BuildContent(content) });
-
-            var payload = new Dictionary<string, object?>
-            {
-                ["model"] = Model,
-                ["messages"] = msgs,
-                ["temperature"] = 0.9,
-                ["max_tokens"] = 8192,
-                ["stream"] = false,
-            };
-            if (Thinking)
-            {
-                payload["thinking"] = new { type = "enabled" };
-                if (!string.IsNullOrWhiteSpace(ReasoningEffort))
-                    payload["reasoning_effort"] = ReasoningEffort;
-            }
-            string json = JsonSerializer.Serialize(payload);
-            using var req = new HttpRequestMessage(HttpMethod.Post, Endpoint);
-            req.Content = new StringContent(json, Encoding.UTF8, "application/json");
-            req.Headers.TryAddWithoutValidation("Authorization", "Bearer " + ApiKey.Trim());
-
-            using var resp = await _http.SendAsync(req, cts.Token).ConfigureAwait(false);
-            if (!resp.IsSuccessStatusCode)
-            {
-                LastError = HttpError(resp);
-                try
-                {
-                    string errBody = await resp.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
-                    if (errBody.Length > 200) errBody = errBody[..200];
-                    LastError += " " + errBody;
-                }
-                catch { /* 读取错误体失败则只保留状态码 */ }
-                return null;
-            }
-            string body = await resp.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
-            using var doc = JsonDocument.Parse(body);
-            var choices = doc.RootElement.GetProperty("choices");
-            if (choices.GetArrayLength() == 0)
-            {
-                LastError = "响应中没有 choices";
-                return null;
-            }
-            if (choices[0].GetProperty("message").TryGetProperty("reasoning_content", out var rc0) &&
-                rc0.ValueKind == JsonValueKind.String)
-                AddReasoning(rc0.GetString());
-            string? text = choices[0].GetProperty("message").GetProperty("content").GetString();
-            if (choices[0].TryGetProperty("finish_reason", out var fr) && fr.ValueKind == JsonValueKind.String)
-                LastTruncated = fr.GetString() == "length";
-            LastError = null;
-            return text;
-        }
-        catch (Exception ex)
-        {
-            LastError = ex.Message;
-            return null;
-        }
+        // 一律走流式。非流式要等服务端生成完才回第一个字节，长回答几分钟不动，看起来像卡死。
+        return await ChatStreamAsync(system, messages, onDelta: null,
+            timeoutSeconds: timeoutSeconds, ct: ct).ConfigureAwait(false);
     }
 
     private static string MapRole(string role) => role switch
@@ -255,22 +168,10 @@ public sealed class ApiClient : IDisposable
     /// <summary>一次流式请求的结局：正常结束 / 长时间无响应被掐 / 用户取消 / 出错。</summary>
     private enum StreamOutcome { Done, Idle, Cancelled, Failed }
 
-    /// <summary>
-    /// 最近一次流式调用是否被「长时间没有任何增量」的看门狗掐断过。
-    /// 上层据此判断还要不要再补一次普通请求（已经自动重试过的就别再等了）。
-    /// </summary>
+    /// <summary>最近一次流式调用是否被「长时间没有任何增量」的看门狗掐断过。 上层据此判断还要不要再补一次普通请求（已经自动重试过的就别再等了）。</summary>
     public bool IdleAborted { get; private set; }
 
-    /// <summary>
-    /// 流式版本：逐段回调增量内容，返回完整文本（供真·流式输出）。
-    /// <paramref name="onReasoning"/> 收的是**累积到当前的思考全文**（不是增量），
-    /// 界面直接整段替换即可 —— 这样思考内容和正文一样是边生成边显示的。
-    ///
-    /// 看门狗：<paramref name="idleSeconds"/> 秒内一个字节都没来（连响应头都没回），
-    /// 就把这次请求掐掉，已经收到的内容留着，然后自动重发「接着写」——
-    /// 用户看到的是暂停一下又继续，而不是干等十分钟最后弹个超时。
-    /// 连续 <paramref name="maxResumes"/> 次都救不回来才如实报错。
-    /// </summary>
+    /// <summary>流式版本：逐段回调增量内容，返回完整文本（供真·流式输出）。 收的是累积到当前的思考全文（不是增量）， 界面直接整段替换即可 —— 这样思考内容和正文一样是边生成边显示的。</summary>
     public async Task<string?> ChatStreamAsync(string system,
         IReadOnlyList<(string Role, string Content)> messages,
         Action<string>? onDelta = null, int timeoutSeconds = 600, CancellationToken ct = default,
@@ -290,9 +191,9 @@ public sealed class ApiClient : IDisposable
             cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
             if (EffectiveFormat == "anthropic")
-                return await ChatAnthropicAsync(system, messages, cts.Token, stream: false, onDelta: null);
+                return await ChatAnthropicAsync(system, messages, cts.Token, stream: true, onDelta: onDelta);
             if (EffectiveFormat == "gemini")
-                return await ChatGeminiAsync(system, messages, cts.Token, stream: false, onDelta: null);
+                return await ChatGeminiAsync(system, messages, cts.Token, stream: true, onDelta: onDelta);
             if (EffectiveFormat == "responses")
                 return await ChatResponsesAsync(system, messages, cts.Token, stream: true, onDelta: onDelta);
 
@@ -305,9 +206,7 @@ public sealed class ApiClient : IDisposable
                 string already = sb.ToString();
                 var round = resumes == 0 ? messages : WithContinuation(messages, already);
 
-                // 续写轮先攒一小段再往外发：不是所有模型都老实「接着写」，
-                // 有的会把整段从头背一遍。攒够一点才判断得出它是不是在重写，
-                // 判定完就恢复逐字流式，用户不会觉得卡。
+                // 续写轮先攒一小段再往外发：不是所有模型都老实「接着写」，有的会把整段从头背一遍。
                 var pending = new StringBuilder();
                 bool flushed = false;
                 void Sink(string chunk)
@@ -361,10 +260,7 @@ public sealed class ApiClient : IDisposable
         }
     }
 
-    /// <summary>
-    /// 续写去重：模型如果没听招呼、把已经写过的开头又背了一遍，就把重复的那截剪掉。
-    /// 只认「整段复述」和「≥4 字的重合」，免得把正常要写的短句（叠词、重复标点）也剪了。
-    /// </summary>
+    /// <summary>续写去重：模型如果没听招呼、把已经写过的开头又背了一遍，就把重复的那截剪掉。 只认「整段复述」和「≥4 字的重合」，免得把正常要写的短句（叠词、重复标点）也剪了。</summary>
     private static string TrimReplay(string already, string more)
     {
         if (already.Length == 0 || more.Length == 0) return more;
@@ -392,10 +288,7 @@ public sealed class ApiClient : IDisposable
         return list;
     }
 
-    /// <summary>
-    /// 真正发一次 SSE 请求，把增量回调出去；返回结局，重试逻辑交给调用方。
-    /// idleSeconds：从发请求开始计时，每收到一行数据重新计时；总时长另外受 timeoutSeconds 约束。
-    /// </summary>
+/// <summary>发一次 SSE 请求，把增量回调出去，重试交给调用方。</summary>
     private async Task<StreamOutcome> StreamOnceAsync(string system,
         IReadOnlyList<(string Role, string Content)> messages,
         Action<string> onDelta, CancellationToken outerCt, Action<string>? onReasoning,
@@ -455,7 +348,7 @@ public sealed class ApiClient : IDisposable
             using var reader = new StreamReader(stream, Encoding.UTF8);
             while (true)
             {
-                // ⚠ 这里必须用带看门狗的 token。以前传的是外层 ct，CancelAfter 压根管不到这句，
+                //  这里必须用带看门狗的 token。以前传的是外层 ct，CancelAfter 压根管不到这句，
                 //   服务端一声不吭挂住时就能一直等下去（用户看到的是「转圈转到天荒地老」）。
                 string? line = await reader.ReadLineAsync(cts.Token).ConfigureAwait(false);
                 if (line == null) break;
@@ -514,11 +407,7 @@ public sealed class ApiClient : IDisposable
 
     public void Dispose() => _http.Dispose();
 
-    // ------------------------------------------------------------------
-    // OpenAI Responses API（POST /v1/responses）
-    // 与 chat/completions 的差异：系统提示走 instructions、对话走 input、
-    // 结果在 output[].content[].text，流式事件为 response.output_text.delta。
-    // ------------------------------------------------------------------
+    // Responses API：系统提示走 instructions，对话走 input，结果在 output。
     private async Task<string?> ChatResponsesAsync(string system,
         IReadOnlyList<(string Role, string Content)> messages, CancellationToken ct,
         bool stream, Action<string>? onDelta, int maxOut = 8192)
@@ -611,7 +500,7 @@ public sealed class ApiClient : IDisposable
             if (string.IsNullOrEmpty(text))
             {
                 ResetReasoning();
-                return await ChatResponsesAsync(system, messages, ct, false, null, maxOut);
+                return await ChatResponsesAsync(system, messages, ct, true, null, maxOut);
             }
             LastError = null;
             return text;
@@ -636,7 +525,7 @@ public sealed class ApiClient : IDisposable
         if (status == "incomplete" && reason.Contains("max_output_tokens", StringComparison.OrdinalIgnoreCase) &&
             maxOut < 32768)
         {
-            return await ChatResponsesAsync(system, messages, ct, false, null, Math.Min(32768, maxOut * 2))
+            return await ChatResponsesAsync(system, messages, ct, true, null, Math.Min(32768, maxOut * 2))
                 .ConfigureAwait(false);
         }
 
@@ -657,13 +546,7 @@ public sealed class ApiClient : IDisposable
                (rs.GetString() ?? "").Contains("max_output_tokens", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// 宽容解析 Responses API 的返回：output_text / output[].content[].text / output[].text 都认，
-    /// 不再要求 content 的 type 一定等于 output_text（各家实现不一致），
-    /// 并顺带带回 status 与 incomplete_details.reason，方便把「为什么没有文本」说清楚。
-    /// type 含 reasoning 的条目是模型的思考过程（常常是一大段英文），单独走 reasoning 返回，
-    /// **不算正文** —— 以前这里会把思考当答案拼进去，用户就看见「AI 突然说了一大段英文」。
-    /// </summary>
+/// <summary>宽容解析 Responses API 的返回。</summary>
     private static string ExtractResponsesText(JsonElement root, out string status, out string reason,
                                                out string reasoning)
     {
@@ -732,9 +615,7 @@ public sealed class ApiClient : IDisposable
         };
     }
 
-    // ------------------------------------------------------------------
     // Anthropic Claude（POST /v1/messages）
-    // ------------------------------------------------------------------
     private async Task<string?> ChatAnthropicAsync(string system,
         IReadOnlyList<(string Role, string Content)> messages, CancellationToken ct,
         bool stream, Action<string>? onDelta, int maxOut = 8192)
@@ -796,9 +677,7 @@ public sealed class ApiClient : IDisposable
             });
     }
 
-    // ------------------------------------------------------------------
     // Google Gemini（generateContent / streamGenerateContent）
-    // ------------------------------------------------------------------
     private async Task<string?> ChatGeminiAsync(string system,
         IReadOnlyList<(string Role, string Content)> messages, CancellationToken ct,
         bool stream, Action<string>? onDelta, int maxOut = 8192)

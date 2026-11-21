@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -11,15 +11,7 @@ using System.Threading.Tasks;
 
 namespace TrollWrangler.Core;
 
-/// <summary>
-/// deepsleep 内核：所有状态与逻辑都在这里，完全不含任何界面类型。
-///
-/// 前后端协议（与 HTML 界面之间只走 JSON 字符串）：
-///   前端 → 内核：InvokeAsync("{\"id\":1,\"cmd\":\"send\",\"kind\":0,\"text\":\"你好\"}")
-///   内核 → 前端：Push 事件（JsonSerializer 序列化后由外壳 PostWebMessageAsJson 交给 WebView2）
-/// 事件 ev 取值：boot/convs/conv/add/delta/msgUpdate/msgRemove/status/toast/ask/theme/tab/
-///   memory/skills/settings/update/updateLatest/updateProgress/updateStatus/insert/restarting/pet
-/// </summary>
+/// <summary>deepsleep 内核：所有状态与逻辑都在这里，完全不含任何界面类型。</summary>
 public sealed partial class Kernel
 {
     /// <summary>界面文件通过这个虚拟主机名访问（外壳把 ui\ 目录映射到 app.local）。</summary>
@@ -42,6 +34,10 @@ public sealed partial class Kernel
     private readonly Agent _agent;
     private readonly Agent _clusterAgent;
     private AppConfig _config = new();
+
+/// <summary>Router 与 Worker 各自的接口配置，默认跟随主模型。</summary>
+    private AppConfig RouterCfg => _config.WithBinding(_config.Router);
+    private AppConfig WorkerCfg => _config.WithBinding(_config.Worker);
     private string _dataDir = "";
     /// <summary>Session 数据库：每个会话一个独立文件 + 可查询索引，供 Router / Watchdog 后续使用。</summary>
     internal SessionStore Sessions { get; private set; } = null!;
@@ -60,7 +56,7 @@ public sealed partial class Kernel
     private int _nextClusterSid = 500001;
     /// <summary>Router 会话 id 段（550001+）：与集群会话(500001+)、Worker(600001+) 都不重叠，避免串号。</summary>
     private int _nextRouterSid = 550001;
-    /// <summary>Worker 会话 id 段（600001+）：第 2 期起子智能体各占一个隔离会话。</summary>
+    /// <summary>Worker 会话 id 段（600001+）：子智能体各占一个隔离会话。</summary>
     private int _nextWorkerSid = 600001;
     private string _agentBackendBefore = "auto";
     private bool _llmOnline;
@@ -118,9 +114,7 @@ public sealed partial class Kernel
     public Conversation CurrentAgentConv => _agentCur;
     public Conversation CurrentClusterConv => _clusterCur;
 
-    // ------------------------------------------------------------------
     // 启动
-    // ------------------------------------------------------------------
 
     /// <summary>初始化内核：加载配置、记忆、技能、历史对话，并开始后台探测。</summary>
     public void Init(string dataDir)
@@ -132,20 +126,38 @@ public sealed partial class Kernel
         _engine.SetModelDir(_dataDir);
         _config = AppConfig.Load(_dataDir);
         _engine.ApplyConfig(_config);
-        // 亮/暗模式各自一整套固有 CSS 在 ui/theme-dark.css + theme-light.css，
-        // 由前端按主题启停，不经过皮肤系统。这里只清掉旧版本灌进 data\skins 的
-        // 「伪内置皮肤」，免得它们还挂在扩展列表里让人以为要手动点「使用」。
+        // 亮/暗模式各自一整套固有 CSS 在 ui/theme-dark.css + theme-light.css，由前端按主题启停，不经过皮肤系统。
         try { ExtensionStore.PurgeBuiltins(_dataDir); } catch { }
+        // 内置皮肤随程序分发，复制到 data\skins。首启用 ArkUI 那套并切成亮色，它按亮色设计。
+        bool firstRun = !File.Exists(Path.Combine(_dataDir, "extensions.json"));
+        try
+        {
+            ExtensionStore.SeedBuiltins(_dataDir, Path.Combine(AppContext.BaseDirectory, "assets", "skins"));
+        }
+        catch { }
+        if (firstRun)
+        {
+            try
+            {
+                if (ExtensionStore.SetActiveSkin(_dataDir, "openharmony-arkui") &&
+                    !string.Equals(_config.Theme, "light", StringComparison.OrdinalIgnoreCase))
+                {
+                    _config.Theme = "light";
+                    _config.Save();
+                }
+            }
+            catch { }
+        }
 
         _agent.DataDir = _dataDir;
         _memory = new MemoryStore(_dataDir);
         _memory.Load();
         _agent.Memory = _memory;
-        _agent.ApplyConfig(_config);
+        _agent.ApplyConfig(RouterCfg);
         if (_config.UseOllama) _agent.Backend = "llm";
         _agent.MultimodalMain = _config.MultimodalMain;
         _agent.WebSearchEnabled = _config.WebSearch;
-        // 初始提示词（data\AGENT.md）：所有对话共享，会话里不可改，只有 ⚙ 设置里能改
+        // 初始提示词（data\AGENT.md）：所有对话共享，会话里不可改，只有设置里能改
         _agentMd = LoadAgentMd();
         _agent.CustomPrompt = _agentMd;
         _agent.MessageAdded += OnAgentMessage;
@@ -156,6 +168,7 @@ public sealed partial class Kernel
         _agent.StatusNote += OnAgentStatusNote;
         _agent.ConfirmRequested += ConfirmCommandAsync;
         _agent.SkillUsed += OnSkillUsed;
+        _agent.ContextCompacted += OnAgentCompacted;
 
         _skills = SkillStore.Load(_dataDir);
         _agent.Skills = _skills;
@@ -180,6 +193,48 @@ public sealed partial class Kernel
         _clusterAgent.ReasoningAdded += OnClusterReasoning;
         _clusterAgent.ReasoningStreaming += OnClusterReasoningStreaming;
         _clusterAgent.StatusNote += OnAgentStatusNote;
+        _clusterAgent.ContextCompacted += OnClusterCompacted;
+
+        // 连接器：磁盘上连过哪个账号，就给 Agent 装上对应工具
+        RefreshConnectors();
+        // Blender 连接器：第一次启动自动连一次（探测到 exe 并验版本，写进 connectors.json）。
+        // 以前只把路径写进配置、工具照样能调，等于"连不连无所谓"；现在没连上工具就不出现。
+        if (ConnectorStore.Token(_dataDir, "blender").Length == 0)
+        {
+            try
+            {
+                string hint = string.IsNullOrWhiteSpace(_config.BlenderPath) ? null : _config.BlenderPath;
+                string? found = BlenderConnector.Detect(hint);
+                if (!string.IsNullOrWhiteSpace(found))
+                {
+                    // 探测结果可能带混合斜杠：存盘前归一化，免得以后当命令行参数被引号/反斜杠坑到
+                    string exe = found;
+                    try { exe = Path.GetFullPath(found); } catch { }
+                    var probe = new BlenderConnector { Path = exe };
+                    // 用 Task.Run 包一层：Init 在 UI 线程上跑，直接同步等 async 会撞上同步上下文死锁
+                    var (ok, _, ver) = Task.Run(() => probe.ValidateAsync()).GetAwaiter().GetResult();
+                    probe.Dispose();
+                    _config.BlenderPath = exe;
+                    _config.Save();
+                    if (ok) ConnectorStore.Save(_dataDir, "blender", exe, ver);
+                    RefreshConnectors();
+                }
+            }
+            catch { /* 找不到就留空，等用户在设置里连 */ }
+        }
+        // Worker 名单：第一次跑就种一份常用角色，之后完全由用户增删（workers.json）
+        LoadSeats();
+        if (SeatsJson().Count == 0)
+        {
+            foreach (var (role, note) in new[]
+                     {
+                         ("前端", "界面、样式、交互"),
+                         ("后端", "接口、数据、内核逻辑"),
+                         ("文档", "README、帮助文档、发布说明"),
+                         ("调研", "查资料、对比方案、给结论"),
+                     })
+                WorkerAdd(role, note);
+        }
         _clusterAgent.ToolStarted += OnClusterToolStarted;
         _clusterAgent.Skills = _skills;
         string workspace = Path.Combine(_dataDir, "cluster_workspace");
@@ -192,6 +247,13 @@ public sealed partial class Kernel
         _ = ProbeLlmAsync();
         _llmTimer = new Timer(_ => _ = ProbeLlmAsync(), null, 30000, 30000);
         _ = AutoCheckUpdateAsync();
+
+        // 先清掉上次遗留的僵尸 Worker，再开看门狗盯着本轮的
+        ReapOrphanWorkers();
+        StartWatchdog();
+        // 触发器（定时 / 文件变化）—— 到点就把一句话交给 Router
+        LoadTriggers();
+        StartTriggerLoop();
     }
 
     /// <summary>界面加载完成后调用：把全部初始状态一次性推过去。</summary>
@@ -249,11 +311,11 @@ public sealed partial class Kernel
         try { SaveAll(); } catch { }
         try { _llmTimer?.Dispose(); } catch { }
         try { _saveTimer?.Dispose(); } catch { }
+        StopWatchdog();
+        StopTriggerLoop();
     }
 
-    // ------------------------------------------------------------------
     // 前后端协议
-    // ------------------------------------------------------------------
 
     /// <summary>处理一条前端命令，返回 JSON 结果（{"id":1,"ok":true}）。</summary>
     public async Task<string> InvokeAsync(string json)
@@ -302,9 +364,11 @@ public sealed partial class Kernel
             case "setLocal": SetLocal(GetBool(a, "on")); break;
             case "setSearch": SetSearch(GetBool(a, "on")); break;
             case "setTheme": SetTheme(GetStr(a, "theme") ?? "light"); break;
+            case "setReasoning": SetReasoningLevel(GetStr(a, "level") ?? "high"); break;
             case "setAutoCheck": SetAutoCheck(GetBool(a, "on")); break;
             case "attach": AttachFile(GetInt(a, "kind", TabKind), GetStr(a, "path") ?? ""); break;
             case "openPath": OpenPath(GetStr(a, "path") ?? ""); break;
+            case "openUrl": OpenUrl(GetStr(a, "url") ?? ""); break;
 
             case "memoryGet": EmitMemory(); break;
             case "memorySave": SaveMemory(GetStr(a, "text") ?? ""); break;
@@ -329,7 +393,7 @@ public sealed partial class Kernel
             // Session 数据库：列表 / 单条详情，供设置页与后续 Router、Watchdog 使用
             case "sessionList": EmitSessions(GetStr(a, "kind"), GetStr(a, "state")); break;
             case "sessionGet": EmitSession(GetInt(a, "sid", 0)); break;
-            // 第 2 期：Router / Worker 会话树 + 路由诊断（界面「设置 → SuperAgent 架构」）
+            // Router / Worker 会话树 + 路由诊断（界面「设置 → SuperAgent 架构」）
             case "sessionTree": EmitSessionTree(); break;
             case "routeDecide": EmitRouteDecision(GetStr(a, "text")); break;
             // 输入框右侧的上下文用量环
@@ -352,6 +416,25 @@ public sealed partial class Kernel
             case "installOllama": await InstallOllamaAsync().ConfigureAwait(false); break;
             case "setToken": SaveToken(GetStr(a, "token") ?? ""); break;
 
+            // 连接器：把外部账号接进来（目前支持 GitHub），连上后 Agent 多一个同名工具
+            case "connectorConnect": await ConnectorConnectAsync(a).ConfigureAwait(false); break;
+            // 设备码登录（GitHub）：用户只在浏览器点一次授权，不用碰令牌
+            case "connectorLogin": await ConnectorLoginAsync(a).ConfigureAwait(false); break;
+            case "connectorLoginCancel": ConnectorLoginCancel(); break;
+            case "connectorDisconnect": ConnectorDisconnect(a); break;
+            case "connectorList": EmitConnectors(); break;
+
+            // 触发器：定时 / 每天 / 文件变动 → 一句话交给 Router
+            case "triggerList": EmitTriggers(); break;
+            case "triggerAdd": TriggerAdd(a); break;
+            case "triggerRemove": TriggerRemove(GetStr(a, "trigger") ?? GetStr(a, "triggerId") ?? ""); break;
+            case "triggerToggle": TriggerToggle(GetStr(a, "trigger") ?? "", GetBool(a, "on")); break;
+
+            // Worker 名单（可增可删，Router 按角色挑选复用）
+            case "workerList": EmitWorkers(); break;
+            case "workerAdd": WorkerAdd(GetStr(a, "role") ?? GetStr(a, "name") ?? "", GetStr(a, "note") ?? ""); break;
+            case "workerRemove": WorkerRemove(GetStr(a, "worker") ?? GetStr(a, "role") ?? ""); break;
+
             case "answer": Answer(GetStr(a, "askId") ?? "", GetBool(a, "yes"), GetBool(a, "remember")); break;
             case "clusterTemplate": await RunClusterTemplateAsync(GetInt(a, "index", -1)).ConfigureAwait(false); break;
 
@@ -367,9 +450,7 @@ public sealed partial class Kernel
         }
     }
 
-    // ------------------------------------------------------------------
     // 事件推送
-    // ------------------------------------------------------------------
 
     private void Emit(object payload)
     {
@@ -380,9 +461,8 @@ public sealed partial class Kernel
 
     private static string? GetStr(JsonElement a, string name)
     {
-        // 防一手 default(JsonElement)：它的 ValueKind 是 Undefined，对它调 TryGetProperty
-        // 会抛 InvalidOperationException。以前内核内部有调用方直接传 default，
-        // 结果「一键绑定成功后拉模型列表」那一步反而抛异常，把成功报成了失败。
+        // 防一手 default(JsonElement)：它的 ValueKind 是 Undefined，
+        // 对它调 TryGetProperty会抛 InvalidOperationException。
         if (a.ValueKind != JsonValueKind.Object) return null;
         return a.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
     }
@@ -406,9 +486,7 @@ public sealed partial class Kernel
         };
     }
 
-    // ------------------------------------------------------------------
     // JSON 构造
-    // ------------------------------------------------------------------
 
     private int TabKind => _tab == 1 ? 2 : 0;
 
@@ -555,7 +633,31 @@ public sealed partial class Kernel
         ["updateSource"] = _config.UpdateSource,
         ["petEnabled"] = _config.PetEnabled,
         ["agentMd"] = ReadAgentMdFile(),
+        ["blenderPath"] = _config.BlenderPath,
+        ["githubClientId"] = _config.GitHubClientId,
+        // SuperAgent 的两个开关：入口自动路由 / 僵尸会话看门狗
+        ["routerAuto"] = _config.RouterAuto,
+        ["watchdogMinutes"] = _config.WatchdogMinutes,
+        // Router / Worker 各自的模型绑定（前端设置里三选一：跟随主模型 / 单独指定）
+        ["router"] = BindingJson(_config.Router),
+        ["worker"] = BindingJson(_config.Worker),
+        // Worker 名单（设置里可增删；Router 按角色复用它）
+        ["workers"] = SeatsJson(),
+        // 常驻 Router 的运行状态（主会话就是 Router，sid 即主会话 id）
+        ["routerLive"] = new
+        {
+            sid = _agentCur?.Sid ?? 0,
+            persistent = true,
+            workers = SeatsJson().Count,
+            model = RouterCfg.ApiModel,
+            workerModel = WorkerCfg.ApiModel,
+        },
+        ["connectors"] = ConnectorsJson(),
         ["theme"] = _config.Theme,
+        // 思考强度档位：off / low / medium / high（界面输入框的 ＋ 菜单里切换）
+        ["reasoning"] = _config.ApiThinking
+            ? (string.IsNullOrWhiteSpace(_config.ReasoningEffort) ? "high" : _config.ReasoningEffort)
+            : "off",
         ["mode"] = _agent.RunMode,
         ["fast"] = _agent.FastMode,
         ["search"] = _agent.WebSearchEnabled,
@@ -581,8 +683,6 @@ public sealed partial class Kernel
             })
             .ToList(),
         // 支持「一键绑定」的平台（真 OAuth 授权，点一次同意就自动拿到 Key）。
-        // 没在这里面的平台只能按引导手动建 Key —— 各家对第三方 OAuth 的开放程度不一样，
-        // 不能因为界面上少一个按钮就让用户点了个必然报错的入口。
         ["oauthProviders"] = OAuthFlow.Providers
             .Select(p => new { id = p.Id, name = p.Name, apiUrl = p.ApiUrl, format = p.Format, quota = p.Quota })
             .ToList(),
@@ -605,9 +705,7 @@ public sealed partial class Kernel
         ["tokenSaved"] = Updater.HasToken,
     };
 
-    // ------------------------------------------------------------------
     // 小工具
-    // ------------------------------------------------------------------
 
     private string Now() => DateTime.Now.ToString("HH:mm");
 
@@ -633,9 +731,7 @@ public sealed partial class Kernel
     private void Toast(string text, string level = "info")
         => Emit(new { ev = "toast", level, text });
 
-    // ------------------------------------------------------------------
     // 防抖保存
-    // ------------------------------------------------------------------
 
     private void ScheduleSave()
     {

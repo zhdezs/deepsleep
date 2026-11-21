@@ -8,13 +8,7 @@ namespace TrollWrangler;
 
 using TrollWrangler.CoreHost;
 
-/// <summary>
-/// 「操作电脑」的执行端：把模型给的动作翻译成真实的鼠标键盘事件，
-/// 每一步之后截一张图存到 data\shots\，交给调用方去解读。
-///
-/// 只做「执行 + 截图」，不做判断 —— 决策留给模型（它看截图）。
-/// 坐标支持两种：像素（相对整个屏幕左上角）或 0~1 相对坐标（跨分辨率更稳，推荐）。
-/// </summary>
+/// <summary>「操作电脑」的执行端：把模型给的动作翻译成真实的鼠标键盘事件， 每一步之后截一张图存到 data\shots\，交给调用方去解读。</summary>
 public static class ComputerUse
 {
     public static string ShotsDir(string dataDir)
@@ -94,7 +88,7 @@ public static class ComputerUse
         return (file, w, h);
     }
 
-    // ------------------------------------------------------------------ 鼠标
+    // ---- 鼠标 ----
 
     private static void MoveTo(double x, double y, bool relative)
     {
@@ -121,7 +115,7 @@ public static class ComputerUse
 
     private static string Fmt(double x, double y, bool rel) => rel ? $"{x:0.###}, {y:0.###}（相对）" : $"{x:0}, {y:0} 像素";
 
-    // ------------------------------------------------------------------ 键盘
+    // ---- 键盘 ----
 
     private static readonly Dictionary<string, int> Vk = new(StringComparer.OrdinalIgnoreCase)
     {

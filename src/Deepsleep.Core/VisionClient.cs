@@ -8,10 +8,7 @@ using System.Threading.Tasks;
 
 namespace TrollWrangler;
 
-/// <summary>
-/// 多模态看图客户端：调用智谱 GLM-4.6V-Flash（OpenAI 兼容 chat/completions）。
-/// 把本地图片 base64 后与问题一起发给模型，返回文字识别/描述结果。
-/// </summary>
+/// <summary>多模态看图客户端：调用智谱 GLM-4.6V-Flash（OpenAI 兼容 chat/completions）。</summary>
 public sealed class VisionClient : IDisposable
 {
     private readonly HttpClient _http = new();

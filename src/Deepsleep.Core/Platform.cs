@@ -7,26 +7,13 @@ using System.Text;
 
 namespace TrollWrangler;
 
-/// <summary>
-/// 跨平台差异集中在这里：命令壳、默认数据目录、打开文件管理器、机器绑定、文件权限。
-/// Windows 分支与改造前逐字一致（行为不变）；Linux / macOS 走各自的原生方式。
-/// </summary>
+/// <summary>跨平台差异集中在这里：命令壳、默认数据目录、打开文件管理器、机器绑定、文件权限。</summary>
 public static class Platform
 {
     public static bool IsWindows { get; } = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
     public static bool IsMacOS { get; } = RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
 
-    /// <summary>
-    /// 鸿蒙（HarmonyOS）。
-    /// ⚠ 注意：鸿蒙的 libc 是 musl 兼容的，.NET 在那边
-    /// <c>IsOSPlatform(Linux)</c> 会返回 true —— **光看 IsLinux 分不出来**。
-    /// 所以优先认壳（NAPI 层）设的环境变量，其次才看鸿蒙特有的系统文件。
-    /// <para>
-    /// <see cref="IsLinux"/> 故意**不排除**鸿蒙：鸿蒙能跑大部分 Linux 分支代码
-    /// （chmod、/proc 读取、socket 那一套），排除掉反而要多写一遍。需要区分的地方
-    /// （远程桌面走 X11 / 隧道要靠 ssh / OTA）各自再判一次 <see cref="IsHarmony"/>。
-    /// </para>
-    /// </summary>
+    /// <summary>鸿蒙（HarmonyOS）。 注意：鸿蒙的 libc 是 musl 兼容的，.NET 在那边 IsOSPlatform(Linux)会返回 true —— 光看 IsLinux 分不出来。</summary>
     public static bool IsHarmony { get; } = DetectHarmony();
 
     public static bool IsLinux { get; } = !IsWindows && !IsMacOS;
@@ -50,10 +37,7 @@ public static class Platform
     /// <summary>命令壳的名字（提示词 / 报错文案用）。</summary>
     public static string ShellName => IsWindows ? "PowerShell" : "shell";
 
-    /// <summary>
-    /// 本机平台 + 架构的 RIP 后缀（OTA 挑包用），例如 win-x64 / linux-x64 / linux-arm64 / osx-arm64。
-    /// Unix 上按 <see cref="RuntimeInformation.OSArchitecture"/> 算，免得 arm64 机器下到 x64 的包。
-    /// </summary>
+    /// <summary>本机平台 + 架构的 RIP 后缀（OTA 挑包用），例如 win-x64 / linux-x64 / linux-arm64 / osx-arm64。</summary>
     public static string Rid
     {
         get
@@ -80,11 +64,7 @@ public static class Platform
     /// <summary>宿主可执行文件名（Windows 是 deepsleep.exe，Unix 是 deepsleep-core）。</summary>
     public static string HostExeName => IsWindows ? "deepsleep.exe" : "deepsleep-core";
 
-    /// <summary>
-    /// Linux 用户级自更新目录（不需要 root）：$XDG_DATA_HOME/deepsleep/app 或 ~/.local/share/deepsleep/app。
-    /// deb / rpm 把程序装到 /opt/deepsleep（root 所有），普通用户写不进去 —— OTA 只能落到这里，
-    /// 再由 deepsleep.sh / 用户级 .desktop 优先拉起这份新版本，全程静默、不用输密码。
-    /// </summary>
+    /// <summary>Linux 用户级自更新目录（不需要 root）：$XDG_DATA_HOME/deepsleep/app 或 ~/.local/share/deepsleep/app。</summary>
     public static string LinuxAppsDir
     {
         get
@@ -113,15 +93,9 @@ public static class Platform
         catch { return false; }
     }
 
-    // ------------------------------------------------------------------
     // 命令执行
-    // ------------------------------------------------------------------
 
-    /// <summary>
-    /// 把一条命令包成可直接启动的进程信息。
-    /// Windows：powershell.exe（-NoProfile -NonInteractive -ExecutionPolicy Bypass），并先设 UTF-8 输出；
-    /// Unix：/bin/bash -lc（登录 shell，PATH 与用户环境一致）。
-    /// </summary>
+    /// <summary>把一条命令包成可直接启动的进程信息。</summary>
     public static ProcessStartInfo ShellStartInfo(string cmd, string? workDir)
     {
         ProcessStartInfo psi;
@@ -155,13 +129,7 @@ public static class Platform
         try { Encoding.RegisterProvider(CodePagesEncodingProvider.Instance); } catch { /* 拿不到就算了，下面有兜底 */ }
     }
 
-    /// <summary>
-    /// 读子进程输出（按原始字节解码）。
-    /// 我们给 ProcessStartInfo 设了 StandardOutputEncoding=UTF8 —— 这对 PowerShell 自己的输出是对的，
-    /// 但老式 Windows 程序（nvidia-smi、7z、部分国产软件）根本不理它，照样按系统 ANSI 代码页
-    /// （简体中文是 GBK/936）把字节直接写进管道。按 UTF-8 硬解就成了「…\��������.exe」这种乱码。
-    /// 所以这里拿原始字节：先按严格 UTF-8 解（解不通会抛），失败再按本机 ANSI / GBK 解。
-    /// </summary>
+    /// <summary>读子进程输出（按原始字节解码）。</summary>
     public static async Task<string> ReadProcessOutputAsync(StreamReader reader, CancellationToken ct = default)
     {
         using var ms = new MemoryStream();
@@ -250,8 +218,6 @@ public static class Platform
         }
 
         // Linux：桌面环境用 xdg-open；GNOME 那边一定还有 gio（glib），xdg-open 没装也能顶上；
-        // 两个都没有（纯 SSH / 没装 xdg-utils）就静默放弃 —— 以前只试 xdg-open，
-        // 缺了它「远程桌面」按钮就等于没反应。
         string target = path;
         if (revealInFolder)
         {
@@ -277,16 +243,9 @@ public static class Platform
         }
     }
 
-    // ------------------------------------------------------------------
     // 数据目录
-    // ------------------------------------------------------------------
 
-    /// <summary>
-    /// 默认数据目录。
-    /// Windows 沿用安装目录（%LocalAppData%\Programs\deepsleep\data）；
-    /// Linux 用 XDG（$XDG_DATA_HOME/deepsleep 或 ~/.local/share/deepsleep）；
-    /// macOS 用 ~/Library/Application Support/deepsleep。
-    /// </summary>
+/// <summary>默认数据目录。</summary>
     public static string DefaultDataDir()
     {
         if (IsWindows)
@@ -312,15 +271,9 @@ public static class Platform
         return Path.Combine(xdg, "deepsleep");
     }
 
-    // ------------------------------------------------------------------
     // 机器绑定 & 文件权限
-    // ------------------------------------------------------------------
 
-    /// <summary>
-    /// 机器 + 用户绑定串（作为 PBKDF2 口令 / AES-GCM 的 AAD）。
-    /// Windows：MachineGuid + 用户 SID + 机器名；
-    /// Unix：/etc/machine-id（或 dbus 的） + 用户名 + 机器名。
-    /// </summary>
+    /// <summary>机器 + 用户绑定串（作为 PBKDF2 口令 / AES-GCM 的 AAD）。</summary>
     public static string MachineBinding()
     {
         string guid = "";
@@ -365,10 +318,7 @@ public static class Platform
         return guid + "|" + sid + "|" + Environment.MachineName;
     }
 
-    /// <summary>
-    /// ④ 文件层：把文件权限收紧到"只有当前用户"。
-    /// Windows 用 icacls 断开继承；Unix 直接 chmod 600。
-    /// </summary>
+    /// <summary>④ 文件层：把文件权限收紧到"只有当前用户"。 Windows 用 icacls 断开继承；</summary>
     public static void LockDownFile(string path)
     {
         try

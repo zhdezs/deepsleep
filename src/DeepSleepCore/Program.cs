@@ -4,11 +4,7 @@ using TrollWrangler.Core;
 
 namespace TrollWrangler.CoreHost;
 
-/// <summary>
-/// deepsleep 内核版（Core）：本机跑一个内核，浏览器里的网页版连上来就能用完整能力
-/// （工具 / 文件 / 命令 / 记忆 / 技能 / 网络搜索 / 深度研究）。
-/// 服务端（HTTP + 内网穿透）都在 Deepsleep.Core 的 CoreServer 里 —— 桌面客户端用的是同一份实现。
-/// </summary>
+/// <summary>deepsleep 内核版（Core）：本机跑一个内核，浏览器里的网页版连上来就能用完整能力 （工具 / 文件 / 命令 / 记忆 / 技能 / 网络搜索 / 深度研究）。</summary>
 internal static partial class Program
 {
     private static Kernel _kernel = null!;
@@ -91,7 +87,7 @@ internal static partial class Program
         // 内核版就是「服务 + CMD」：桌面窗口由桌面版（Windows = deepsleep.exe；
         // Linux / macOS = deepsleep 桌面版）负责，内核自己不开窗，服务器 / SSH 上也一样用。
         if (!args.Contains("--headless"))
-            Console.WriteLine("  浏览器打开上面的网址就能用（桌面窗口请用桌面版；这里是内核版）。");
+            Console.WriteLine("浏览器打开上面的网址就能用（桌面窗口请用桌面版；这里是内核版）。");
         System.Threading.Thread.Sleep(System.Threading.Timeout.Infinite);
         return 0;
     }
@@ -105,20 +101,14 @@ internal static partial class Program
         Environment.Exit(0);
     }
 
-    /// <summary>
-    /// 内核版**默认就进 CMD 对话**（双击打开就能直接发消息），不用再记 --cli。
-    /// 两个例外：
-    ///   · --headless —— 明确说「只跑服务」，交给浏览器用；
-    ///   · stdin 被重定向（被服务/计划任务/脚本拉起，或没有终端）—— 这时读不到输入，
-    ///     进了 CLI 会立刻 EOF 退出，等于把刚起来的服务带走，所以退回纯服务模式。
-    /// </summary>
+    /// <summary>默认进 CMD 对话。--headless 或输入被重定向时只跑服务。</summary>
     private static bool DefaultCli(string[] args)
         => !args.Contains("--headless") && !Console.IsInputRedirected;
 
     private static void Banner(string[] args)
     {
         // 用 CoreServer.Port 而不是命令行里的 _port：端口起不来时内核会自动换成别的端口，
-        // 这里必须打印**实际**在用的那个，否则用户照着网址打开是拒绝连接。
+        // 这里必须打印实际在用的那个，否则用户照着网址打开是拒绝连接。
         int port = CoreServer.Port > 0 ? CoreServer.Port : _port;
         string link = CoreServer.PublicBound
             ? "http://" + LanHint() + ":" + port + "/web/core/#t=" + _token
@@ -127,38 +117,38 @@ internal static partial class Program
         Console.WriteLine("┌──────────────────────────────────────────────────────────────┐");
         Console.WriteLine("│  deepsleep 内核版（Core）已启动                              │");
         Console.WriteLine("└──────────────────────────────────────────────────────────────┘");
-        Console.WriteLine("  本机地址   http://127.0.0.1:" + port + "/" +
-                          (port != _port ? "　（端口 " + _port + " 被系统保留，已自动换到这个）" : ""));
-        Console.WriteLine("  配对令牌   " + _token);
-        Console.WriteLine("  数据目录   " + _dataDir);
+        Console.WriteLine("本机地址   http://127.0.0.1:" + port + "/" +
+                          (port != _port ? "　（端口 " + _port + "被系统保留，已自动换到这个）" : ""));
+        Console.WriteLine("配对令牌   " + _token);
+        Console.WriteLine("数据目录   " + _dataDir);
         Console.WriteLine();
-        Console.WriteLine("  用法一（本机）：浏览器打开 http://127.0.0.1:" + port + "/ ，点「内核版网页」");
-        Console.WriteLine("  用法二（外网）：打开下面的网址，端口和令牌自动填好（这条链接别外传）：");
+        Console.WriteLine("用法一（本机）：浏览器打开 http://127.0.0.1:" + port + "/ ，点「内核版网页」");
+        Console.WriteLine("用法二（外网）：打开下面的网址，端口和令牌自动填好（这条链接别外传）：");
         Console.WriteLine("      " + link);
         if (CoreServer.PublicBound)
         {
-            Console.WriteLine("      已监听所有网卡（--public / --host），上面的地址局域网内就能打开。");
-            Console.WriteLine("      要跨网络超远程提问，加 --tunnel 让内核自动建公网隧道并打印配对链接。");
+            Console.WriteLine("已监听所有网卡（--public / --host），上面的地址局域网内就能打开。");
+            Console.WriteLine("要跨网络超远程提问，加 --tunnel 让内核自动建公网隧道并打印配对链接。");
         }
         else
         {
-            Console.WriteLine("      默认只监听本机，所以这条链接只有这台电脑能用。手机在外网提问：");
-            Console.WriteLine("      加 --tunnel 重启即可（内置免注册隧道，启动后会打印手机收藏用的配对链接）。");
+            Console.WriteLine("默认只监听本机，所以这条链接只有这台电脑能用。手机在外网提问：");
+            Console.WriteLine("加 --tunnel 重启即可（内置免注册隧道，启动后会打印手机收藏用的配对链接）。");
         }
         Console.WriteLine();
-        Console.WriteLine("  超远程  --tunnel 内置隧道 ｜ --tunnel-cmd \"自备穿透命令\" ｜ --public 监听所有网卡");
+        Console.WriteLine("超远程  --tunnel 内置隧道 ｜ --tunnel-cmd \"自备穿透命令\" ｜ --public 监听所有网卡");
         Console.WriteLine();
-        Console.WriteLine("  退出 Ctrl+C ｜ 只跑服务 --headless ｜ 换端口 --port 8757 ｜ 换令牌 --new-token ｜ 换数据目录 --data 路径");
+        Console.WriteLine("退出 Ctrl+C ｜ 只跑服务 --headless ｜ 换端口 --port 8757 ｜ 换令牌 --new-token ｜ 换数据目录 --data 路径");
 #if !WINDOWS
         if (args.Contains("--headless"))
-            Console.WriteLine("  只跑服务    内核版不开桌面窗口，用上面的网址在浏览器里打开");
+            Console.WriteLine("只跑服务内核版不开桌面窗口，用上面的网址在浏览器里打开");
         else
-            Console.WriteLine("  桌面窗口    请用桌面版（Windows 的 deepsleep.exe / Linux · macOS 的 deepsleep）");
+            Console.WriteLine("桌面窗口请用桌面版（Windows 的 deepsleep.exe / Linux · macOS 的 deepsleep）");
 #endif
         if (_cliMode)
         {
             Console.WriteLine();
-            Console.WriteLine("  CMD 模式   直接在这里发消息（默认开启；要只跑服务加 --headless / --say 发一句即退）");
+            Console.WriteLine("  CMD 模式直接在这里发消息（默认开启；要只跑服务加 --headless / --say 发一句即退）");
         }
         Console.WriteLine();
     }

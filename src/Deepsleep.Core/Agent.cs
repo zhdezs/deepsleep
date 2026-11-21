@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -19,26 +19,18 @@ public sealed class AgentMessage
     public string Role { get; set; } = "user";
     public string Content { get; set; } = "";
     public string Meta { get; set; } = "";
-    /// <summary>可选：界面卡片用的明细（写文件时是路径 + 内容）。
-    /// 只给界面看，不会饱给模型（避免把上下文撞爆）。</summary>
+    /// <summary>可选：界面卡片用的明细（写文件时是路径 + 内容）。 /// 只给界面看，不会饱给模型（避免把上下文撞爆）。</summary>
     public string Detail { get; set; } = "";
     /// <summary>可选：本消息附带一张本地图片（生成图片工具的结果）。</summary>
     public string? ImagePath { get; set; }
     /// <summary>可选：本消息附带一段本地视频（生成视频工具的结果）。</summary>
     public string? VideoPath { get; set; }
-    /// <summary>
-    /// 可选：这条消息里**给用户看的那句话**。
-    /// 工具调用轮的 Content 是「人话 + 工具 JSON」的原文（模型上下文要这个），
-    /// 界面只该显示剥掉 JSON 后的那部分 —— 否则要么整条被藏掉（用户看不见 AI 说了什么），
-    /// 要么把一串 {"tool":...} 糊在脸上。
-    /// </summary>
+    /// <summary>可选：这条消息里给用户看的那句话。</summary>
     public string Say { get; set; } = "";
+    public bool Archived { get; set; }
 }
 
-/// <summary>
-/// AI 助手核心：类似 Codex / Claude Code 的智能体循环。
-/// 通过 JSON 工具调用协议驱动，兼容 DeepSeek API 与本地 Ollama。
-/// </summary>
+/// <summary>AI 助手核心：类似 Codex / Claude Code 的智能体循环。 通过 JSON 工具调用协议驱动，兼容 DeepSeek API 与本地 Ollama。</summary>
 public sealed class Agent
 {
     public const string ToolCounter = "以理服人";
@@ -46,6 +38,9 @@ public sealed class Agent
     public const string ToolPython = "运行Python脚本";
     public const string ToolImage = "生成图片";
     public const string ToolVideo = "生成视频";
+    /// <summary>Blender 工具。它属于「Blender 连接器」：没连上本机 Blender 时这个工具的执行器是空的， 模型看不到、也调不动（而不是先调一次再被拒）。</summary>
+    public const string ToolBlender = "Blender";
+    public const string ToolGitHub = "GitHub";
     public const string ToolInstallExt = "安装扩展";
     public const string ToolMakeExt = "制作扩展";
     public const string ToolComputer = "操作电脑";
@@ -53,6 +48,8 @@ public sealed class Agent
     public const string ToolSearch = "网络搜索";
     public const string ToolResearch = "深度研究";
     public const string ToolFetch = "抓取网页";
+    /// <summary>本地渲染：用本机 Chrome/Edge 无头模式把网页或一段 HTML 画成 PNG。</summary>
+    public const string ToolRender = "渲染图片";
     public const string ToolOpenFile = "打开文件";
     public const string ToolReadFile = "读取文件";
     public const string ToolWriteFile = "写入文件";
@@ -60,10 +57,7 @@ public sealed class Agent
     public const string ToolForget = "删除记忆";
     /// <summary>技能不是模型调用的「工具」，但界面上按同一套卡片展示（调用链默认折叠）。</summary>
     public const string ToolSkill = "技能";
-    /// <summary>
-    /// 拆分任务：把一个复杂任务拆成若干子任务，交给独立的子智能体各自执行，最后汇总。
-    /// 以前这能力只存在于「Agent 集群」标签页里、要用户手动配团队；现在由主助手自己决定拆不拆。
-    /// </summary>
+/// <summary>拆分任务：把复杂任务拆给独立子智能体执行，最后汇总。</summary>
     public const string ToolSplit = "拆分任务";
     /// <summary>查 deepsleep 知识库。极速模式刻意不开放：多一次往返 + 长文本会拖慢响应。</summary>
     public const string ToolKnowledge = "查知识库";
@@ -97,6 +91,7 @@ public sealed class Agent
     private readonly VisionClient _vision = new();
     private readonly Engine _counter;
     private readonly Dictionary<int, List<AgentMessage>> _sessions = new();
+    private readonly Dictionary<int, List<AgentMessage>> _archives = new();
     private int _counterSid = 900001;
     /// <summary>已启用的 .dslt 自定义工具（由 Kernel 在启动/安装后灌进来）。</summary>
     private List<CustomTool> _customTools = new();
@@ -119,14 +114,32 @@ public sealed class Agent
     /// <summary>运行模式：chat（纯聊天，禁用工具）/ work（工作，执行命令需确认）/ boom（爆破，全自动）。</summary>
     public string RunMode { get; set; } = "work";
 
-    /// <summary>初始提示词（来自 data\AGENT.md）：所有对话共享，会话里不可改，只能在 ⚙ 设置里改。</summary>
+    /// <summary>初始提示词（来自 data\AGENT.md）：所有对话共享，会话里不可改，只能在设置里改。</summary>
     public string CustomPrompt { get; set; } = "";
 
-    /// <summary>是否启用网络搜索 / 深度研究工具（界面上的 🌐 开关控制）。</summary>
+    /// <summary>是否启用网络搜索 / 深度研究工具（界面上的开关控制）。</summary>
     public bool WebSearchEnabled { get; set; } = true;
 
     /// <summary>是否启用真·流式输出（逐 token 实时显示）。</summary>
     public bool Streaming { get; set; } = true;
+
+    /// <summary>Blender 可执行文件路径（只作探测提示；真正的连接状态在 Blender 连接器里）。</summary>
+    public string BlenderPath { get; set; } = "";
+
+    /// <summary>「GitHub」工具的执行器（由内核注入）：参数是 (操作, 参数 JSON, ct)，返回给模型看的文本。</summary>
+    public Func<string, string, CancellationToken, Task<string>>? GitHubRunner;
+
+    /// <summary>「Blender」工具的执行器（由内核注入，属于 Blender 连接器）。 空 = 没连 Blender，工具不出现在可用列表里。</summary>
+    public Func<string, string, CancellationToken, Task<string>>? BlenderRunner;
+
+    /// <summary>当前模型的上下文窗口（token）。内核按模型名推断（或用户手填）后写进来， 自动压缩的阈值就按它算 —— 窗口估小了会压缩得太频繁，估大了会先撞爆再压。</summary>
+    public int ContextWindow { get; set; } = 128000;
+
+    /// <summary>历史消息占到窗口多少比例就自动压缩（0.9 = 90%）。</summary>
+    public double CompactAt { get; set; } = 0.9;
+
+    /// <summary>自动压缩完成：(会话 id、给用户看的说明、压缩前 token、压缩后 token)。</summary>
+    public event Action<int, string, long, long>? ContextCompacted;
 
     /// <summary>极速模式：用更短的提示词与更小的输出预算换取响应速度。</summary>
     public bool FastMode { get; set; } = false;
@@ -140,10 +153,7 @@ public sealed class Agent
     /// <summary>已安装技能（用户提到技能名时，把对应 SKILL.md 说明注入系统提示词）。</summary>
     public List<SkillInfo> Skills { get; set; } = new();
 
-    /// <summary>
-    /// deepsleep 知识库条目（内置 + 用户自建）。只在**非极速模式的决策阶段**注入目录索引，
-    /// 细节由「查知识库」工具按需取回。极速模式下这份清单完全不进提示词。
-    /// </summary>
+    /// <summary>deepsleep 知识库条目（内置 + 用户自建）。只在非极速模式的决策阶段注入目录索引， 细节由「查知识库」工具按需取回。</summary>
     public List<KnowledgeBase.Entry> Knowledge { get; set; } = new();
 
     /// <summary>长期记忆（跨会话）：内容会注入系统提示词，模型可用「记住/删除记忆」工具维护。</summary>
@@ -158,13 +168,19 @@ public sealed class Agent
     /// <summary>work 模式执行命令/脚本前触发确认（参数：会话 id、命令详情；返回 true 才执行）。</summary>
     public event Func<int, string, Task<bool>>? ConfirmRequested;
 
+    /// <summary>参数：会话、能力类别、操作详情、取消令牌；未接入确认时拒绝受限操作。</summary>
+    public event Func<int, string, string, CancellationToken, Task<bool>>? CapabilityConfirmRequested;
+
+    public const string CapabilityRead = "file.read";
+    public const string CapabilityWrite = "file.write";
+    public const string CapabilityOpen = "file.open";
+    public const string CapabilityCommand = "command.execute";
+    public const string CapabilityComputer = "computer.control";
+
     /// <summary>产生新消息时触发（UI 订阅，追加到对应会话的对话列表）。参数：会话 id、消息。</summary>
     public event Action<int, AgentMessage>? MessageAdded;
 
-    /// <summary>
-    /// 技能被自动匹配 / 补救启用时触发（参数：会话 id、技能名、触发方式），
-    /// 用于 UI 显示技能调用链。触发方式取值：自动匹配 / 补救启用 / 相关补强。
-    /// </summary>
+    /// <summary>技能被自动匹配 / 补救启用时触发（参数：会话 id、技能名、触发方式）， 用于 UI 显示技能调用链。</summary>
     public event Action<int, string, string>? SkillUsed;
 
     /// <summary>流式增量内容（参数：会话 id、增量文本），用于真·流式输出。</summary>
@@ -173,26 +189,17 @@ public sealed class Agent
     /// <summary>工具开始执行时触发（参数：会话 id、工具名），UI 显示「正在…」状态。</summary>
     public event Action<int, string>? ToolStarted;
 
-    /// <summary>
-    /// 模型吐出的思考 / 推理内容（会话 id, 思考全文）。界面把它折叠在正文上方展示，
-    /// 绝不混进正文 —— 以前 Responses 接口的英文思考会被当答案拼进去。
-    /// </summary>
+    /// <summary>模型吐出的思考 / 推理内容（会话 id, 思考全文）。界面把它折叠在正文上方展示， 绝不混进正文 —— 以前 Responses 接口的英文思考会被当答案拼进去。</summary>
     public event Action<int, string>? ReasoningAdded;
 
-    /// <summary>
-    /// 思考内容的**流式**版本（会话 id, 累积到当前的思考全文）。
-    /// 和 <see cref="ReasoningAdded"/> 的区别：那个只在整轮结束时抛一次，这个边生成边抛。
-    /// </summary>
+    /// <summary>思考内容的流式版本（会话 id, 累积到当前的思考全文）。 和 的区别：那个只在整轮结束时抛一次，这个边生成边抛。</summary>
     public event Action<int, string>? ReasoningStreaming;
 
-    /// <summary>
-    /// 临时状态提示（会话 id, 文案），例如「模型 30 秒无响应，已暂停并自动恢复（1/3）」。
-    /// 界面把它显示在输入框下面那行状态里 —— 网络卡住时用户得知道是软件在自救，
-    /// 而不是以为界面卡死了。
-    /// </summary>
+    /// <summary>临时状态提示（会话 id, 文案），例如「模型 30 秒无响应，已暂停并自动恢复（1/3）」。</summary>
     public event Action<int, string>? StatusNote;
 
-    private int _currentSid;
+    private readonly AsyncLocal<int> _sessionContext = new();
+    private int _currentSid { get => _sessionContext.Value; set => _sessionContext.Value = value; }
 
     public Agent(Engine counter) => _counter = counter;
 
@@ -214,6 +221,7 @@ public sealed class Agent
         _api.Format = cfg.ApiFormat;
         _api.Thinking = cfg.ApiThinking;
         _api.ReasoningEffort = cfg.ReasoningEffort;
+        BlenderPath = cfg.BlenderPath ?? "";
         _counterLlm.Url = cfg.CounterApiUrl;
         _counterLlm.ApiKey = cfg.CounterApiKey;
         _counterLlm.Model = cfg.CounterModel;
@@ -227,13 +235,11 @@ public sealed class Agent
         _image.SaveDir = string.IsNullOrWhiteSpace(DataDir)
             ? ""
             : System.IO.Path.Combine(DataDir, "images");
-        // 视频：Key 留空就**复用图像那套**（同属智谱，不用为同一个 Key 填两遍）；
+        // 视频：Key 留空就复用图像那套（同属智谱，不用为同一个 Key 填两遍）；
         // 地址不能跟着图像走（那个是 images/generations），留空只用视频自己的默认地址。
         _video.Url = string.IsNullOrWhiteSpace(cfg.VideoApiUrl)
             ? "https://open.bigmodel.cn/api/paas/v4/videos/generations" : cfg.VideoApiUrl.Trim();
-        // 视频 Key 的优先级：自己的视频 Key → 自己的图像 Key（同属智谱时通常通用）→ 空。
-        // ⚠ **绝不用内置免费 Key**：那把只覆盖聊天/看图/画图，视频接口对它一直回 1305
-        //   （访问量过大 = 没额度）。硬塞过去只会让用户等十几秒再收到一句莫名其妙的报错。
+        // 视频 Key：自己的视频 Key → 自己的图像 Key → 空。不用内置免费 Key，视频接口对它没额度。
         _video.ApiKey = !string.IsNullOrWhiteSpace(cfg.VideoApiKey) ? cfg.VideoApiKey.Trim()
                       : !string.IsNullOrWhiteSpace(cfg.ImageApiKey) ? cfg.ImageApiKey.Trim()
                       : "";
@@ -265,14 +271,18 @@ public sealed class Agent
 
     public bool ApiConfigured => _api.Configured;
 
-    public void NewSession(int sid) => _sessions[sid] = new List<AgentMessage>();
+    public void NewSession(int sid)
+    {
+        _sessions[sid] = new List<AgentMessage>();
+        _archives[sid] = new List<AgentMessage>();
+    }
 
-    /// <summary>从磁盘恢复会话历史（跨重启断点恢复用），自动限长。</summary>
+    /// <summary>恢复完整历史，归档消息不重复送入活跃上下文。</summary>
     public void RestoreSession(int sid, IEnumerable<AgentMessage> messages)
     {
-        var list = messages.Where(m => m != null && !string.IsNullOrWhiteSpace(m.Content)).ToList();
-        if (list.Count > 30) list.RemoveRange(0, list.Count - 30);
-        _sessions[sid] = list;
+        var list = messages.Where(m => m != null).ToList();
+        _archives[sid] = list.Where(m => m.Archived).ToList();
+        _sessions[sid] = list.Where(m => !m.Archived).ToList();
     }
 
     /// <summary>向会话追加一条历史（断点标记用）。</summary>
@@ -280,19 +290,23 @@ public sealed class Agent
     {
         if (!_sessions.TryGetValue(sid, out var history)) return;
         history.Add(m);
-        TrimHistory(history);
     }
 
     /// <summary>导出全部会话快照（供持久化）。</summary>
     public IEnumerable<KeyValuePair<int, List<AgentMessage>>> SnapshotSessions()
     {
         foreach (var kv in _sessions)
-            yield return new KeyValuePair<int, List<AgentMessage>>(kv.Key, kv.Value.ToList());
+        {
+            var messages = _archives.TryGetValue(kv.Key, out var archive)
+                ? archive.Concat(kv.Value).ToList() : kv.Value.ToList();
+            yield return new KeyValuePair<int, List<AgentMessage>>(kv.Key, messages);
+        }
     }
 
     public void ResetSession(int sid)
     {
         if (_sessions.TryGetValue(sid, out var history)) history.Clear();
+        _archives.Remove(sid);
     }
 
     /// <summary>截断到最后一个用户消息之后：清掉被中止轮的残留（assistant/tool 尾巴），保留历史对话。</summary>
@@ -331,11 +345,14 @@ public sealed class Agent
             system += "\n\n这个集群的名册是整场对话共享的，能复用就复用（复用成员会保留它之前的工作记忆），别重复造人：\n" +
                       roster +
                       "\n规则：① 确实缺角色才新增；② 复用名册里的某位成员时，「角色」就写它的名字并加 \"复用\":true" +
-                      "（也可以写 \"成员\":\"名字\" 明确指定）；③ 本轮用不上的成员不要列进来，他们待命就行。";
+                      "（也可以写 \"成员\":\"名字\"明确指定）；③ 本轮用不上的成员不要列进来，他们待命就行。";
         string content = instruction;
         if (!string.IsNullOrWhiteSpace(feedback))
             content += "\n\n" + feedback;
-        var msgs = new List<(string Role, string Content)> { ("user", content) };
+        var msgs = new List<(string Role, string Content)>
+        {
+            ("user", content.StartsWith("IMG|", StringComparison.Ordinal) ? " " + content : content),
+        };
         try
         {
             if (Backend == "api" || (Backend == "auto" && _api.Configured))
@@ -364,33 +381,7 @@ public sealed class Agent
         else if (_extHoldTurns > 0) _extHoldTurns--;
         MessageAdded?.Invoke(sid, history[^1]);
         if (AutoRemember) AutoRememberFromUser(userText);
-        string result = await RunLoopAsync(sid, history, ct);
-        CompressAndRemember(userText, result);
-        return result;
-    }
-
-    /// <summary>
-    /// 自动压缩对话存入长期记忆：每轮「问→答」结束后，把双方内容压成一条摘要写入记忆。
-    /// 全部摘要都保留；总字数超 1000 时自动把最旧的摘要再压短并入「更早纪要」，不删除内容。
-    /// 失败/停止/报错轮不存。
-    /// </summary>
-    private void CompressAndRemember(string userText, string? finalReply)
-    {
-        if (!AutoRemember || Memory == null || string.IsNullOrWhiteSpace(finalReply)) return;
-        if (finalReply.Contains("已停止", StringComparison.Ordinal) ||
-            finalReply.StartsWith("LLM 后端不可用", StringComparison.Ordinal) ||
-            finalReply.Length < 4)
-            return;
-        string q = Compact(userText, 80);
-        string a = Compact(finalReply, 130);
-        if (string.IsNullOrWhiteSpace(q) && string.IsNullOrWhiteSpace(a)) return;
-        string entry = $"对话摘要（{DateTime.Now:MM-dd HH:mm}）：问「{q}」答「{a}」";
-        if (Memory.Entries.Any(e => e.Contains(q, StringComparison.Ordinal) &&
-                                    e.Contains(a, StringComparison.Ordinal)))
-            return;   // 同样的问答已存过
-        Memory.Add(entry);
-        Memory.CompressIfOver(1000);   // 超出 1000 字自动压缩旧摘要，不删除
-        Log($"对话已压缩入记忆：{entry}");
+        return await RunLoopAsync(sid, history, ct);
     }
 
     /// <summary>把长文本压缩成单行（去 Markdown 标记、折叠空白、限长）。</summary>
@@ -402,10 +393,7 @@ public sealed class Agent
         return s.Length <= max ? s : s[..max] + "…";
     }
 
-    /// <summary>
-    /// 强制记忆：自动从用户话里提取「我叫/我喜欢/我不喜欢/我习惯/记住/以后都」等关键事实，
-    /// 写入长期记忆（去重、限量），让 AI 跨会话记住用户，不依赖模型自觉。
-    /// </summary>
+    /// <summary>强制记忆：自动从用户话里提取「我叫/我喜欢/我不喜欢/我习惯/记住/以后都」等关键事实， 写入长期记忆（去重、限量），让 AI 跨会话记住用户，不依赖模型自觉。</summary>
     private void AutoRememberFromUser(string userText)
     {
         if (Memory == null || string.IsNullOrWhiteSpace(userText) || userText.Length > 500) return;
@@ -431,7 +419,7 @@ public sealed class Agent
             Add("用户不喜欢：", m, 60);
         foreach (Match m in Regex.Matches(userText, @"我习惯(.{2,60}?)(?:[，。！!？?；;]|$)"))
             Add("用户习惯：", m, 60);
-        foreach (Match m in Regex.Matches(userText, @"(?:以后|每次|请)(?:都|要|尽量|记得|别|不要)?(.{2,60}?)(?:[。！!？?]|$)"))
+        foreach (Match m in Regex.Matches(userText, @"(?:以后都|每次都)(.{2,60}?)(?:[。！!？?]|$)"))
         {
             string v = m.Groups[1].Value.Trim().Trim('，', '。', ',', '.', '！', '!', '？', '?');
             if (v.Length >= 2 && v.Length <= 60 && !v.StartsWith("帮我", StringComparison.Ordinal) && !v.StartsWith("不要", StringComparison.Ordinal))
@@ -478,10 +466,8 @@ public sealed class Agent
         // 搜索 / 研究意图在所有模式下都要认（深度研究不是 chat 模式的专属）
         bool userWantsSearch = history.Any(m => m.Role == "user" &&
             (IsSearchIntent(m.Content) || WantsResearch(m.Content)));
-        string lastUserText = history.LastOrDefault(m => m.Role == "user")?.Content ?? "";
-        // chat（纯聊天）默认不用工具；只有这一句带搜索/研究意图时才开一个只读工具通道
-        bool chatToolTurn = RunMode == "chat" && WantsSearchOrResearch(lastUserText);
-        bool useDecision = RunMode != "chat" || chatToolTurn;
+        // 所有模式走相同决策通道，能力分类在执行入口限制本地操作。
+        bool useDecision = true;
         for (int turn = 0; turn < MaxTurns; turn++)
         {
             if (ct.IsCancellationRequested)
@@ -492,8 +478,7 @@ public sealed class Agent
 
             // 本地自训练模式（非 chat）：用启发式识别工具指令并直接执行，让模型也能真正干活
             if (Backend == "local" && history.Count > 0 && history[^1].Role == "user" &&
-                TryLocalToolCall(history[^1].Content, out string ltool, out JsonElement largs) &&
-                (RunMode != "chat" || ltool is ToolSearch or ToolResearch))
+                TryLocalToolCall(history[^1].Content, out string ltool, out JsonElement largs))
             {
                 ToolStarted?.Invoke(sid, ltool);
                 string lresult = await ExecuteToolAsync(ltool, largs, sid, ct);
@@ -504,7 +489,6 @@ public sealed class Agent
                 }
                 if (ltool is ToolSearch or ToolResearch) searched = true;
                 history.Add(new AgentMessage { Role = "tool", Content = lresult, Meta = ltool });
-                TrimHistory(history);
                 MessageAdded?.Invoke(sid, history[^1]);
                 string final = LocalToolSummary(ltool, lresult);
                 history.Add(new AgentMessage { Role = "assistant", Content = final });
@@ -524,7 +508,7 @@ public sealed class Agent
                     streamBuffer.Append(d);
                     if (suppressToolStream) return;   // 已判定为工具调用，后续全部不显示
                     string t = streamBuffer.ToString();
-                    // 疑似工具调用（出现 "tool" 键）→ 停止流式显示，交给工具提示
+                    // 疑似工具调用（出现 "tool"键）→ 停止流式显示，交给工具提示
                     if ((t.Contains("\"tool\"", StringComparison.Ordinal) &&
                          (t.Contains('{') || t.Contains('['))) ||
                         t.Contains("DSML", StringComparison.Ordinal) ||
@@ -539,8 +523,9 @@ public sealed class Agent
                     DeltaAdded?.Invoke(sid, d);
                 };
             }
-            // 工具决策阶段：软件先发请求，模型这一轮只准输出 JSON（或用「完成」给最终回答），
-            // 不流式、不进气泡；软件解析 → 执行工具 → 结果塞回上下文 → 让模型继续决策。
+            // 决策阶段：模型只输出 JSON 或「完成」，不流式。
+            TryCompact(sid, history);
+
             _chatToolMode = useDecision && RunMode == "chat";
             string? reply = useDecision
                 ? await CallLlmForDecisionAsync(history, ct, injectedSkills)
@@ -561,10 +546,10 @@ public sealed class Agent
                 // 看门狗已经自动掐断 + 续写过几轮还是没动静：这不是配置写错，是链路卡死，
                 // 给「检查地址/模型名」的建议只会把用户带偏。
                 string advice = _api.IdleAborted
-                    ? "模型 30 秒内没有任何响应，已自动暂停并恢复 3 次仍失败：多半是网络/代理不通或服务端排队，稍后重试，或在 ⚙ 设置换一个模型/线路。"
+                    ? "模型 30 秒内没有任何响应，已自动暂停并恢复 3 次仍失败：多半是网络/代理不通或服务端排队，稍后重试，或在设置换一个模型/线路。"
                     : rateLimited
                     ? "API 限流（模型访问量过大），已自动重试仍失败：可稍后重试，或把 AI 助手模式切到「本地（自训练）」/「大模型 1.5B」走本地。"
-                    : "请在 ⚙ 设置检查 API 地址/模型名/API Key：OpenAI 兼容地址一般要写到 /chat/completions（例如 https://api.deepseek.com/chat/completions），模型名要和账号可用模型一致。";
+                    : "请在设置检查 API 地址/模型名/API Key：OpenAI 兼容地址一般要写到 /chat/completions（例如 https://api.deepseek.com/chat/completions），模型名要和账号可用模型一致。";
                 string msg = $"LLM 后端不可用{detail}。{advice}";
                 history.Add(new AgentMessage { Role = "assistant", Content = msg });
                 MessageAdded?.Invoke(sid, history[^1]);
@@ -575,8 +560,8 @@ public sealed class Agent
             JsonElement args = default;
             bool isToolCall = useDecision && TryParseToolCall(reply, out tool, out args);
             if (isToolCall) tool = NormalizeToolName(tool);
-            // chat 模式只准用网络搜索 / 深度研究：别的工具直接当成"该直接回答"处理
-            bool blockedToolInChat = isToolCall && !ToolAllowedInMode(tool);
+            // 决策与执行入口使用同一能力分类。
+            bool blockedToolInChat = isToolCall && !ToolAllowedInMode(tool, args);
             if (blockedToolInChat) isToolCall = false;
             // 决策阶段判定「不需要工具 / 已完成」→ 进入【生成最终回复】阶段：
             // 工具结果已经在上下文里，这一轮让模型用自然语言回答（流式），决策用的 JSON 不进历史也不进气泡。
@@ -602,7 +587,7 @@ public sealed class Agent
                     if (!string.IsNullOrWhiteSpace(_ollama.LastError)) errs2.Add($"Ollama：{_ollama.LastError}");
                     string msg2 = "生成最终回复失败" +
                         (errs2.Count > 0 ? "（" + string.Join("；", errs2) + "）" : "") +
-                        "。请在 ⚙ 设置检查模型配置。";
+                        "。请在设置检查模型配置。";
                     history.Add(new AgentMessage { Role = "assistant", Content = msg2 });
                     MessageAdded?.Invoke(sid, history[^1]);
                     return msg2;
@@ -613,17 +598,14 @@ public sealed class Agent
             // 工具调用标记（我们的 JSON，或模型自家的 DSML）没解析成功 → 这是格式问题，不能当最终回答
             bool looksLikeToolMarkup = LooksLikeToolAttempt(reply);
             bool malformedCall = useDecision && !isToolCall && !decisionDone && looksLikeToolMarkup;
-            // 最终回答里含代码块 → 顺手落盘（保证 LLM 随口给的代码也有对应文件）；
-            // chat（纯聊天）模式是「不改动电脑」，不落盘。
-            // 关键：提示并进正文，绝不替换正文——以前是拿"已写入…"当整条回复返回，
-            // 用户就只看到"写入了文件 + 一段被截断的代码"，看起来像 AI 突然停了。
+            // 最终回答里含代码块 → 顺手落盘（保证 LLM 随口给的代码也有对应文件）；chat（纯聊天）模式是「不改动电脑」，不落盘。
             bool codeSaved = false;
             if (!isToolCall && !malformedCall && RunMode != "chat" && !LooksLikeJson(reply))
             {
-                string? note = TrySaveCodeBlock(sid, reply, history);
+                string? note = await TrySaveCodeBlockAsync(sid, reply, history, ct);
                 if (note != null)
                 {
-                    reply = reply.TrimEnd() + "\n\n> 💾 " + note;
+                    reply = reply.TrimEnd() + "\n\n>  " + note;
                     codeSaved = true;
                 }
             }
@@ -636,14 +618,11 @@ public sealed class Agent
                 Meta = isToolCall ? $"调用了工具「{tool}」"
                      : malformedCall ? "工具调用格式修正中…" : "",
                 // 模型在工具调用前写的那句人话（"我先看看这个文件…"）要显示出来 ——
-                // 以前界面把整条带 "调用了工具" 的消息直接丢弃，用户只看得到工具卡片。
+                // 以前界面把整条带 "调用了工具"的消息直接丢弃，用户只看得到工具卡片。
                 Say = isToolCall ? ExtractToolProse(reply) : "",
             };
             history.Add(assistantMsg);
-            // 格式错的内容要重发一次：把流式已经刷到界面上的原文覆盖掉
-            // 格式错的内容要重发一次：把流式已经刷到界面上的原文覆盖掉；
-            // 存过代码的也要重发一次：上面那张"编辑的文件"卡片会把流式气泡顶掉，
-            // 不补一条正文，用户就只剩一张文件卡片、正文整段消失（就是他说的"突然变成编辑了文件"）。
+            // 格式错或存过代码时补发一条正文，覆盖流式气泡。
             if (!streamed || malformedCall || codeSaved) MessageAdded?.Invoke(sid, assistantMsg);
 
             // 形似工具调用但解析失败 → 注入格式修正并重试，保证"调用了就一定会执行"
@@ -687,7 +666,7 @@ public sealed class Agent
                 {
                     Role = "tool",
                     Meta = "工具纠正",
-                    Content = $"⚠️ 用户要求的是搜索/查资料，必须用「网络搜索」或「深度研究」工具，而不是「{tool}」。请立即调用 {{\"tool\":\"网络搜索\",\"args\":{{\"关键词\":\"用户要查的内容\"}}}}（需要多轮调研、写报告时用 {{\"tool\":\"深度研究\",\"args\":{{\"主题\":\"...\"}}}}）；如果提示已关闭，请提醒用户打开 🌐 开关。",
+                    Content = $"用户要求的是搜索/查资料，必须用「网络搜索」或「深度研究」工具，而不是「{tool}」。请立即调用 {{\"tool\":\"网络搜索\",\"args\":{{\"关键词\":\"用户要查的内容\"}}}}（需要多轮调研、写报告时用 {{\"tool\":\"深度研究\",\"args\":{{\"主题\":\"...\"}}}}）；如果提示已关闭，请提醒用户打开开关。",
                 };
                 history.Add(corr);
                 MessageAdded?.Invoke(sid, corr);
@@ -707,7 +686,6 @@ public sealed class Agent
             {
                 // 被终止：把"未完成"记进上下文，恢复时可从断点继续
                 history.Add(new AgentMessage { Role = "tool", Meta = tool, Content = "（执行被用户停止，未完成，可在恢复后继续）" });
-                TrimHistory(history);
                 MessageAdded?.Invoke(sid, history[^1]);
                 LastRunStopped = true;
                 return "（已停止）";
@@ -728,7 +706,6 @@ public sealed class Agent
                 ImagePath = tool == ToolImage ? _lastImagePath : null,
                 VideoPath = tool == ToolVideo ? _lastVideoPath : null,
             });
-            TrimHistory(history);
             MessageAdded?.Invoke(sid, history[^1]);
             continue;
         }
@@ -739,33 +716,104 @@ public sealed class Agent
         return limit;
     }
 
-    /// <summary>控制上下文长度：只保留最近 30 条消息，避免长任务把 token 打爆（更快更省）。</summary>
-    private static void TrimHistory(List<AgentMessage> history)
+    /// <summary>估算一批消息会占多少 token（与内核 EmitCtxUsage 同一套折算：中文 1 字≈1 token， 其它字符 4 个≈1 token）。</summary>
+    private static long EstimateTokens(IEnumerable<AgentMessage> items)
     {
-        if (history.Count <= 30) return;
-        history.RemoveRange(0, history.Count - 30);
+        long chars = 0, cjk = 0;
+        foreach (var it in items)
+        {
+            string t = (it.Content ?? "") + "\n" + (it.Detail ?? "");
+            chars += t.Length;
+            foreach (char c in t) if (c >= 0x2E80) cjk++;
+        }
+        return cjk + (chars - cjk) / 4;
     }
 
-    // ------------------------------------------------------------------
+    private static long EstimateTokens(AgentMessage it) => EstimateTokens(new[] { it });
+
+    /// <summary>某个会话当前真正会发给模型的 token 估算（压缩后就变小）。 界面用量环用它，而不是「会话里所有气泡的总和」—— 压缩过之后气泡还在， 按气泡算会一直停在 90%，看起来像压缩没生效。</summary>
+    public long HistoryTokens(int sid)
+        => _sessions.TryGetValue(sid, out var h) ? EstimateTokens(h) : 0;
+
+    /// <summary>上下文占用到阈值（默认 90%）时自动压缩：把更早的消息压成一条摘要， 最近几轮原文保留 —— 用户不会感觉到「AI 突然忘了刚才说的话」， 但 token 占用会明显掉下来，长任务不用手动开新对话。</summary>
+    private bool TryCompact(int sid, List<AgentMessage> history)
+    {
+        int window = Math.Max(4096, ContextWindow);
+        long before = EstimateTokens(history);
+        double pct = before * 100.0 / window;
+        if (pct < CompactAt * 100) return false;
+        if (history.Count < 6) return false;
+
+        // 尾部预算：窗口的 35%。从这里往回累计，切点尽量落在一轮问答的开头（user 消息）。
+        long keepBudget = (long)(window * 0.35);
+        long acc = 0;
+        int cut = history.Count;
+        for (int i = history.Count - 1; i >= 0; i--)
+        {
+            acc += EstimateTokens(history[i]);
+            cut = i;
+            if (acc >= keepBudget) break;
+        }
+        // 至少留最近 4 条，否则压缩完还是可能超；再往后挪到下一个 user 消息，别把一轮问答劈开
+        cut = Math.Min(cut, Math.Max(0, history.Count - 4));
+        while (cut < history.Count && history[cut].Role != "user") cut++;
+        if (cut <= 1) return false;
+
+        var old = history.GetRange(0, cut);
+        var sb = new StringBuilder();
+        foreach (var m in old)
+        {
+            string who = m.Role == "assistant" ? "助手" :
+                         m.Role == "tool" ? "工具(" + (string.IsNullOrWhiteSpace(m.Meta) ? "结果" : m.Meta) + ")" : "用户";
+            sb.Append("- ").Append(who).Append("：").Append(Compact(m.Content, 120)).Append('\n');
+            if (sb.Length > 2000) { sb.Append("- ……（更早的内容已省略）\n"); break; }
+        }
+        var summary = new AgentMessage
+        {
+            Role = "user",
+            Meta = "上下文压缩",
+            Content = $"【上下文已自动压缩】以下是本次对话更早的 {old.Count} 条消息的摘要，" +
+                      "细节原文仍保存在本地会话归档里：\n" + sb.ToString().TrimEnd(),
+        };
+        if (!_archives.TryGetValue(sid, out var archive))
+            _archives[sid] = archive = new List<AgentMessage>();
+        foreach (var message in old)
+        {
+            message.Archived = true;
+            archive.Add(message);
+        }
+        history.RemoveRange(0, cut);
+        history.Insert(0, summary);
+        long after = EstimateTokens(history);
+
+        string note = $"上下文占用 {pct:F0}%，已自动压缩 {old.Count} 条早期消息为摘要（约 {before} → {after} tokens）";
+        ContextCompacted?.Invoke(sid, note, before, after);
+        Log("上下文自动压缩：" + note);
+        return true;
+    }
+
+
     // LLM 调用
-    // ------------------------------------------------------------------
 
     private static readonly string SystemPrompt =
-        "你是一个运行在 " + Platform.DisplayName + " 电脑上的 AI 助手，能力类似 Claude Code / Codex。\n" +
+        "你是一个运行在 " + Platform.DisplayName + "电脑上的 AI 助手，能力类似 Claude Code / Codex。\n" +
         "你可以调用工具完成实际任务。当你需要工具时，**只输出一行 JSON**，不要输出任何解释，格式：\n" +
         "{\"tool\":\"工具名\",\"args\":{...}}\n\n" +
         "可用工具：\n" +
-        "- 运行命令：参数 {\"命令\":\"要执行的 " + Platform.ShellName + " 命令\"}。在用户电脑上执行命令并返回输出（最长 10 分钟）。\n" +
+        "- 运行命令：参数 {\"命令\":\"要执行的 " + Platform.ShellName + "命令\"}。在用户电脑上执行命令并返回输出（最长 10 分钟）。\n" +
         "- 运行Python脚本：参数 {\"代码\":\"Python 3 源码\",\"工作目录\":\"可选\"}。自动选择 Python 3 解释器，写入临时脚本并运行，返回输出与报错。\n" +
         "- 生成图片：参数 {\"提示词\":\"详细的画面描述\",\"尺寸\":\"可选 1024x1024 / 768x1344 / 1344x768\"}。调用 CogView-3-Flash 生成图片并保存到本地，返回本地图片路径。用户要求画图/生成图片/配图时使用。\n" +
         "- 生成视频：参数 {\"提示词\":\"详细的画面描述\",\"尺寸\":\"可选 1920x1080 / 1280x960 / 1024x1024\"}。调用 CogVideoX-Flash 生成一段短视频（异步任务，通常 30~120 秒），保存到本地并返回路径。用户要求生成视频/动画/动态画面时使用。\n" +
+        "- Blender：参数 {\"代码\":\"Blender Python(bpy) 脚本\",\"输出\":\"可选，保存到的 .blend / .glb / .obj 路径\",\"工作目录\":\"可选\"}。后台跑 Blender 建模、改模型、批量处理、渲染、导出。做 3D 模型/场景/渲染/GLB 导出时使用。它属于 Blender 连接器：没连上时工具不可用（让用户去设置 →  连接器 连一下）。\n" +
+        "- GitHub：参数 {\"操作\":\"me / repos / issues / issue / search / create_issue\",\"仓库\":\"owner/name\",\"编号\":\"issue 号\",\"查询\":\"搜索词\",\"标题\":\"新 issue 标题\",\"内容\":\"正文\"}。代表用户操作他的 GitHub 账号（读仓库 / 看 issue / 搜索 / 建 issue）。\n" +
         "- 安装扩展：参数 {\"路径\":\"本地 .dslt / .dslp 文件绝对路径\"}。把用户下载的扩展包装进 deepsleep（工具包进 data\\tools，皮肤包进 data\\skins）。\n" +
         "- 制作扩展：参数 {\"类型\":\"tool 或 skin\",\"目录\":\"放清单和文件的绝对路径\",\"输出\":\"要生成的 .dslt / .dslp 绝对路径\"}。把目录打成可分发的扩展包。\n" +
         "- 操作电脑：参数 {\"动作\":\"截图|移动|点击|双击|右键|输入|按键|滚动|等待\",\"x\":0.42,\"y\":0.31,\"relative\":true,\"text\":\"要输入的文字\",\"key\":\"enter 或 ctrl+c\",\"amount\":3}。执行完自动截图并读屏，返回界面描述与可点元素坐标，用来看一步走一步（网页点按钮、操作别的软件、填表单）。\n" +
         "- 看图：参数 {\"图片路径\":\"本地图片绝对路径\",\"问题\":\"可选，要问的问题\"}。调用 GLM-4.6V-Flash 多模态模型识别/分析图片（描述内容、读图、检查截图、审查生成的图片等）。\n" +
         "- 网络搜索：参数 {\"关键词\":\"搜索词\"}。用内置爬虫直接抓取搜索结果页（Bing → 搜狗 → 360 → DuckDuckGo 依次尝试），返回标题/链接/摘要，无需 API Key；搜索/查价格/查资料/找最新信息时用它。\n" +
         "- 深度研究：参数 {\"主题\":\"研究主题\",\"深度\":1-3}。多轮子查询搜索 + 抓取多个网页正文 + 汇总成一份带来源的 Markdown 研究报告（自动保存到本地，返回文件路径）；用户说「深度研究 / 调研 / 全面了解 / 整理一份报告」时用它。\n" +
-        "- 抓取网页：参数 {\"网址\":\"https://...\"}。用内置爬虫下载网页并提取正文文本（自动去标签、限长），用于阅读搜索结果指向的文章、新闻、价格页等。\n" +
+        "- 抓取网页：参数 {\"网址\":\"https://...\"}。用内置爬虫下载网页并提取正文文本（自动去标签、限长），同时渲染一张页面截图，用于阅读搜索结果指向的文章、新闻、价格页等。\n" +
+        "- 渲染图片：参数 {\"网址\":\"https://...\"} 或 {\"HTML\":\"<html>…\"}，可选 {\"宽度\":1280,\"高度\":1600,\"输出\":\"路径\"}。用本机浏览器无头渲染成 PNG，返回图片路径；页面是靠 JS 画出来的（图表、Canvas、单页应用）时用它，再用「看图」读内容。\n" +
         "- 打开文件：参数 {\"路径\":\"绝对路径\"}。用系统默认程序打开本地文件（文档/图片/网页/媒体等）；" +
         "可执行文件/脚本也能打开（等于把它运行起来），work 模式下系统会先找用户确认，别自作主张反复调用。\n" +
         "- 读取文件：参数 {\"路径\":\"绝对路径\"}。读取文本文件内容。\n" +
@@ -789,16 +837,13 @@ public sealed class Agent
         "8. 写代码 / 做网页 / 做项目时需要图片素材（图标、Logo、横幅、占位图、插图、配图等）时，用「生成图片」工具生成真实图片并引用本地路径，不要跳过、不要用手写 SVG 或纯色占位代替。\n" +
         "9. 工具执行失败、超时或被停止时：如实告知用户发生了什么并询问下一步；严禁调用无关工具、严禁假装任务已完成、严禁用「好的，我明白了」之类的通用话术敷衍。\n" +
         "10. 用户要求搜索、查价格、查资料、找最新信息时，必须用「网络搜索」工具（需要系统调研、写报告时用「深度研究」）；搜到链接后如需原文，用「抓取网页」读取；严禁用 curl / wget / Invoke-WebRequest 等命令行代替（会触发拦截并导致失败）。\n" +
-        "11. 工具选择指南：搜索/查价格/查资料/找最新信息→「网络搜索」；要系统调研/写报告→「深度研究」；阅读搜索结果的具体页面→「抓取网页」；执行命令/系统操作→「运行命令」；写代码跑脚本→「运行Python脚本」或「写入文件」；生成图片→「生成图片」；生成视频/动画→「生成视频」；看图片→「看图」；读写文件→「读取文件/写入文件」；用默认程序打开文件→「打开文件」；任务可以拆成几块互相独立的活→「拆分任务」。\n" +
+        "11. 工具选择指南：搜索/查价格/查资料/找最新信息→「网络搜索」；要系统调研/写报告→「深度研究」；阅读搜索结果的具体页面→「抓取网页」；执行命令/系统操作→「运行命令」；写代码跑脚本→「运行Python脚本」或「写入文件」；生成图片→「生成图片」；生成视频/动画→「生成视频」；做 3D 模型/导出 GLB→「Blender」；看 GitHub 仓库或 issue→「GitHub」；看图片→「看图」；读写文件→「读取文件/写入文件」；用默认程序打开文件→「打开文件」；任务可以拆成几块互相独立的活→「拆分任务」。\n" +
         "12. 最终回答必须是纯文本中文，禁止输出任何 JSON、代码块或结构化片段。\n" +
         "13. 用户提到重要事实、偏好、要求（比如称呼、习惯、项目约定、不想要什么）时，用「记住」工具保存；保存后告知用户已记住。\n" +
         "14. 当【已安装技能】里出现与你任务匹配的技能时，必须真正执行技能：按说明调用「运行Python脚本」「写入文件」「运行命令」「生成图片」等工具，把产物（PPT/文档/网页/脚本等）真实生成到磁盘，并在最终回复里给出完整本地路径；严禁只讲解步骤、只描述怎么做、或假装已完成。" +
         "15. 思考 / 推理过程也必须用简体中文，禁止用英文思考；思考内容界面会单独折叠展示，不要写进正文。";
 
-    /// <summary>
-    /// 工具决策阶段的协议：软件先发这条指令，模型这一轮**只准输出 JSON**，
-    /// 正文放到「完成」的 回答 字段里；由软件解析、执行工具、把结果塞回上下文，再让模型继续干活。
-    /// </summary>
+    /// <summary>工具决策阶段的协议：软件先发这条指令，模型这一轮只准输出 JSON， 正文放到「完成」的 回答 字段里；</summary>
     /// <summary>用户是不是要做扩展（工具/皮肤）。命中就把完整格式规范灌进系统提示词。</summary>
     private static readonly Regex ExtensionIntent = new(
         // .dslt/.dslp 直呼其名；或者「做一个…工具/皮肤」这类意图（光写"工具"太宽，会误伤"工具调用"）
@@ -809,29 +854,26 @@ public sealed class Agent
     private static bool WantsExtension(string? text)
         => !string.IsNullOrWhiteSpace(text) && ExtensionIntent.IsMatch(text!);
 
-    /// <summary>
-    /// 扩展创作规范。模型不可能凭空知道 .dslt / .dslp 里该写什么，
-    /// 所以用户一提「做个工具 / 换皮肤」，这段就整段灌进去（保持若干轮，避免说「继续」就丢）。
-    /// </summary>
+    /// <summary>扩展创作规范。模型不可能凭空知道 .dslt / .dslp 里该写什么， 所以用户一提「做个工具 / 换皮肤」，这段就整段灌进去（保持若干轮，避免说「继续」就丢）。</summary>
     private const string ExtensionsPrompt =
 
         "\n\n【扩展制作规范 · 本软件支持两种扩展，都是 zip 包，根目录放清单】\n" +
         "A) .dslt 自定义工具（装好后你能直接调用它）\n" +
         "   manifest.json 必填：id（小写字母/数字/-/_）、name、entry（入口脚本相对路径）、runtime（python|cmd|powershell|node）；\n" +
-        "   可选：version、author、description（description 会展示给用户，也进你的工具清单）。\n" +
-        "   脚本约定：在包目录里运行；输入 = 第 1 个命令行参数，同时也放在环境变量 DEEPSLEEP_TOOL_INPUT；\n" +
+        "可选：version、author、description（description 会展示给用户，也进你的工具清单）。\n" +
+        "脚本约定：在包目录里运行；输入 = 第 1 个命令行参数，同时也放在环境变量 DEEPSLEEP_TOOL_INPUT；\n" +
         "   stdout 原样作为结果返回；退出码非 0 视为失败；超时 5 分钟；DEEPSLEEP_DATA 指向 data 目录。\n" +
-        "   示例 manifest.json：{\"id\":\"sci-calc\",\"name\":\"科学计算器\",\"version\":\"1.0.0\",\"author\":\"me\",\"description\":\"算数学表达式\",\"entry\":\"main.py\",\"runtime\":\"python\"}\n" +
+        "示例 manifest.json：{\"id\":\"sci-calc\",\"name\":\"科学计算器\",\"version\":\"1.0.0\",\"author\":\"me\",\"description\":\"算数学表达式\",\"entry\":\"main.py\",\"runtime\":\"python\"}\n" +
         "B) .dslp 皮肤（只改外观，不执行代码）\n" +
         "   theme.json：id、name、base（light|dark，只是建议搭配的模式，不会强制切主题）、vars（CSS 变量表）、css（可选，相对路径）、wallpaper（可选）、version、author、description。\n" +
-        "   注意：亮/暗模式各有一套固有 CSS（ui/theme-dark.css 与 theme-light.css），皮肤只是叠加层，不会替换它们；不要写 defaultFor / builtin 字段（已废弃）。\n" +
-        "   可覆盖变量：--bg --panel --side --text --muted --border --bubble --self --self-text --input --hover --sel --card --code --shadow --chipbg --chipon --ring --radius\n" +
-        "   变量必须挂在 body.skin-on 作用域下才能压过主题类；css 会被原样注入页面，动效写 @keyframes 再挂到：.row .bubble .bubble.tool .bubble.thinking .avatar .row.self .composer\n" +
+        "注意：亮/暗模式各有一套固有 CSS（ui/theme-dark.css 与 theme-light.css），皮肤只是叠加层，不会替换它们；不要写 defaultFor / builtin 字段（已废弃）。\n" +
+        "可覆盖变量：--bg --panel --side --text --muted --border --bubble --self --self-text --input --hover --sel --card --code --shadow --chipbg --chipon --ring --radius\n" +
+        "变量必须挂在 body.skin-on 作用域下才能压过主题类；css 会被原样注入页面，动效写 @keyframes 再挂到：.row .bubble .bubble.tool .bubble.thinking .avatar .row.self .composer\n" +
         "做法（必须按这三步，不要只把内容贴在聊天里）：\n" +
         "1) 「写入文件」把清单和脚本写到同一个目录（例如 D:\\ds\\my-tool\\manifest.json 与 main.py）\n" +
         "2) 「制作扩展」{\"类型\":\"tool\",\"目录\":\"D:\\ds\\my-tool\",\"输出\":\"D:\\ds\\my-tool.dslt\"}（皮肤类型写 skin，扩展名 .dslp）\n" +
         "3) 「安装扩展」{\"路径\":\"D:\\ds\\my-tool.dslt\"}，装完让用户重新开一个对话即可使用\n" +
-        "完成后告诉用户：⚙ 设置 → 🧩 扩展 里能看到并启用；工具装好后你能直接按名字调用。\n" +
+        "完成后告诉用户： 设置 →  扩展 里能看到并启用；工具装好后你能直接按名字调用。\n" +
         "安全：工具是本机脚本，别写删除/上传私人文件之类的危险操作；皮肤只能改 CSS。\n";
 
     private const string ToolDecisionPrompt =
@@ -860,14 +902,12 @@ public sealed class Agent
 
     /// <summary>chat 模式下这一轮带搜索/研究意图时的提示词：只放开「网络搜索 / 深度研究」两个只读工具。</summary>
     private const string ChatToolSystemPrompt =
-        "你是一个运行在 Windows 电脑上的 AI 助手（聊天模式）。这一轮你有两个只读工具可用：\n" +
-        "- 网络搜索：参数 {\"关键词\":\"搜索词\"}。抓取搜索引擎结果页（Bing → 搜狗 → 360 → DuckDuckGo），返回标题/链接/摘要，快；适合查最新消息、价格、事实核对。\n" +
-        "- 深度研究：参数 {\"主题\":\"研究主题\",\"深度\":1-3}。多轮搜索 + 抓取多个网页正文 + 汇总结论，最后产出一份带来源的 Markdown 研究报告并保存到本地；适合「研究一下 / 调研 / 全面了解」类请求。\n" +
-        "输出规则：\n" +
-        "1. 需要工具时**只输出一行 JSON**：{\"tool_call\":{\"name\":\"网络搜索\",\"arguments\":{\"关键词\":\"...\"}}}；不要解释、不要用代码块包住 JSON。\n" +
-        "2. 不需要工具（闲聊、常识、创作、翻译、写代码等）时只输出：{\"tool_call\":null}，随后软件会请你用自然语言回答。\n" +
-        "3. 涉及最新消息、实时数据、价格、人物近况时必须先调工具，不许凭记忆编造。\n" +
-        "4. 这一轮只输出 JSON 本身，不要写正文。";
+        "你是中文 AI 助手（chat 模式）。允许所有不涉及本地文件操作和命令执行的工具：\n" +
+        "- 网络搜索：{\"关键词\":\"搜索词\"}；深度研究：{\"主题\":\"主题\",\"深度\":1-3}，报告只返回正文，不保存文件。\n" +
+        "- 抓取网页：{\"网址\":\"https://...\"}；渲染图片：{\"网址\":\"…\"} 或 {\"HTML\":\"…\"}；GitHub：{\"操作\":\"me/repos/issues/issue/search/create_issue\",\"仓库\":\"owner/name\"}。\n" +
+        "- 记住：{\"内容\":\"长期用户画像、偏好或明确要求记住的事实\"}；删除记忆：{\"序号\":1}。禁止把每轮问答摘要写入记忆。\n" +
+        "- 查知识库：{\"关键词\":\"问题\"}；拆分任务：{\"tasks\":[{\"role\":\"角色\",\"task\":\"任务\"}]}，子任务同样遵守 chat 权限。\n" +
+        "禁止读写、打开本地文件、生成本地媒体、操作电脑、运行脚本或自定义工具。无需工具时输出 {\"tool_call\":null}。";
 
     /// <summary>系统提示词 = 初始提示词（AGENT.md，放最前面）+ 各模式自己的提示词。</summary>
     /// <param name="phase">decision=工具决策阶段 / final=最终回复阶段 / 空=普通对话。
@@ -877,18 +917,12 @@ public sealed class Agent
         string prompt = BuildModePrompt(phase);
         string custom = (CustomPrompt ?? "").Trim();
         if (custom.Length > 0)
-            prompt = "【初始提示词 · AGENT.md（所有对话共享，只能在 ⚙ 设置里修改，优先级最高）】\n" +
+            prompt = "【初始提示词 · AGENT.md（所有对话共享，只能在设置里修改，优先级最高）】\n" +
                      custom + "\n\n" + prompt;
         return prompt;
     }
 
-    /// <summary>
-    /// 极速模式只压缩「人设与行为约束」，**不压缩能力**。
-    /// 工具参数、自定义工具清单、扩展规范、长期记忆统一由 <see cref="CommonTail"/> 追加。
-    /// 早期版本在这里提前 return，把参数格式全砍了，模型不知道 arguments 该填什么，
-    /// 干脆输出 {"tool_call":null} 用文字敷衍 —— 表现就是「极速模式不会调用工具」。
-    /// 也不再自己规定输出格式：格式一律交给 ToolDecisionPrompt，避免两条规则打架。
-    /// </summary>
+    /// <summary>极速模式只压缩「人设与行为约束」，不压缩能力。 工具参数、自定义工具清单、扩展规范、长期记忆统一由 追加。</summary>
     private static string FastModePrompt(string phase)
     {
         if (phase == "final")
@@ -905,7 +939,7 @@ public sealed class Agent
             "用户安装的自定义工具按下面清单直接按名字调用。\n" +
             "失败/超时/停止时如实说明，禁止假装完成、乱调无关工具或用通用话术敷衍。\n" +
             "用户提供重要事实/偏好时用「记住」保存，用户要求删除某条记忆时用「删除记忆」。\n" +
-            "极速模式不查阅知识库：关于 deepsleep 自身规格的问题，按当前提示词里已有的信息作答；需要完整规范时提示用户关闭 ⚡ 极速模式。";
+            "极速模式不查阅知识库：关于 deepsleep 自身规格的问题，按当前提示词里已有的信息作答；需要完整规范时提示用户关闭极速模式。";
     }
 
     private string BuildModePrompt(string phase)
@@ -916,7 +950,7 @@ public sealed class Agent
             {
                 "chat" => _chatToolMode ? ChatToolSystemPrompt : ChatSystemPrompt,
                 "boom" => SystemPrompt + "\n\n当前是 boom（爆破）模式：你可以直接执行任何命令和文件操作，无需请求用户确认。",
-                _ => SystemPrompt + "\n\n当前是 work（工作）模式：执行「运行命令」前系统会自动请求用户确认，确认结果会以工具结果返回给你；其余工具可直接使用。",
+                _ => SystemPrompt + "\n\n当前是 work 模式：所有本地文件读写、打开、自动保存、生成物、扩展、脚本和命令都按能力类别请求授权，批准后该会话内该类权限有效 1 小时。未批准不可执行。",
             };
         return prompt + CommonTail(phase);
     }
@@ -930,7 +964,7 @@ public sealed class Agent
         var sb = new StringBuilder();
         if (RunMode != "chat" && !slimFinal)
         {
-            sb.Append("\n- 网络搜索：参数 {\"关键词\":\"搜索词\"}。由内置爬虫脚本直接抓取搜索结果页（Bing → 搜狗 → 360 → DuckDuckGo 依次尝试），返回标题/链接/摘要，无需 API Key。用户要求搜索、查价格、查资料、找最新信息时优先使用；若工具提示已关闭，请提醒用户打开 🌐 开关，不要用命令行代替。");
+            sb.Append("\n- 网络搜索：参数 {\"关键词\":\"搜索词\"}。由内置爬虫脚本直接抓取搜索结果页（Bing → 搜狗 → 360 → DuckDuckGo 依次尝试），返回标题/链接/摘要，无需 API Key。用户要求搜索、查价格、查资料、找最新信息时优先使用；若工具提示已关闭，请提醒用户打开开关，不要用命令行代替。");
             sb.Append("\n- 深度研究：参数 {\"主题\":\"研究主题\",\"深度\":1-3}。多轮子查询搜索 + 抓取多篇网页正文 + 汇总成一份 Markdown 研究报告，自动保存到本地并返回路径；深度越大查得越广（1 快 / 2 标准 / 3 全面）。适合「研究一下 / 调研 / 全面了解 / 整理一份资料」。跑得比较久，开始前可先跟用户说一句预计要花点时间。");
             sb.Append("\n- 抓取网页：参数 {\"网址\":\"https://...\"}。用内置爬虫抓取网页正文（自动去标签、限长 8000 字）。搜索得到链接后需要看原文时使用；若网页抓不到正文，如实说明，不要假装成功。");
             sb.Append("\n- 打开文件：参数 {\"路径\":\"绝对路径\"}。用系统默认程序打开本地文件；" +
@@ -941,7 +975,7 @@ public sealed class Agent
         if (!slimFinal)
         {
             // 用户装的 .dslt 自定义工具：模型得知道有这些工具、怎么调，否则永远用不上
-            if (_customTools.Count > 0)
+            if (RunMode != "chat" && _customTools.Count > 0)
             {
                 sb.Append("\n\n【自定义工具（用户安装的，和内置工具一样直接调）】\n");
                 foreach (var t in _customTools) sb.AppendLine(t.PromptLine);
@@ -950,14 +984,14 @@ public sealed class Agent
             }
             // 扩展创作：用户要做工具/皮肤时把格式规范整段灌进去 ——
             // 模型不可能凭空知道 .dslt 里该写什么，不灌就只能瞎编字段。
-            if (_extHoldTurns > 0)
+            if (RunMode != "chat" && _extHoldTurns > 0)
                 sb.Append(ExtensionsPrompt);
             else
                 sb.Append("\n\n【扩展】本软件支持 .dslt 自定义工具与 .dslp 皮肤包；用户要做这类东西时，会收到完整格式规范。");
 
-            // 知识库：**极速模式不挂**（多一次往返 + 长章节会拖慢，就不极速了），
-            // 最终回复阶段也不挂（那时已不该再调工具），chat 纯聊天模式不挂。
-            if (!FastMode && phase != "final" && RunMode != "chat" && Knowledge.Count > 0)
+            // 知识库：极速模式不挂（多一次往返 + 长章节会拖慢，就不极速了），
+            // 最终回复阶段也不挂（那时已不该再调工具）。
+            if (!FastMode && phase != "final" && Knowledge.Count > 0)
                 sb.Append(KnowledgeBase.Index(Knowledge));
         }
 
@@ -967,13 +1001,11 @@ public sealed class Agent
         if (!string.IsNullOrWhiteSpace(mem))
             sb.Append("\n\n【长期记忆】以下是你跨会话保存的关于用户/任务的事实与偏好（序号即「删除记忆」工具的序号）：\n" +
                       mem +
-                      "\n\n规则：回答与这些记忆相关时直接使用；用户提供了新的重要事实/偏好时调用「记住」保存；用户说某条不再需要时调用「删除记忆」。");
+                      "\n\n规则：记忆主要保存长期用户画像、偏好和明确要求记住的事实；禁止保存每轮问答摘要或临时任务流水。相关时直接使用，用户要求遗忘时删除。");
         return sb.ToString();
     }
 
-    /// <summary>
-    /// 阶段一：工具决策。把模型这一轮的输出当控制通道——只收 JSON，不流式、不进气泡。
-    /// </summary>
+    /// <summary>阶段一：工具决策。把模型这一轮的输出当控制通道——只收 JSON，不流式、不进气泡。</summary>
     private async Task<string?> CallLlmForDecisionAsync(List<AgentMessage> history, CancellationToken ct,
                                                         HashSet<string>? injectedSkills)
     {
@@ -990,18 +1022,14 @@ public sealed class Agent
     private async Task<string?> DecisionInnerAsync(List<AgentMessage> history, CancellationToken ct,
                                                    HashSet<string>? injectedSkills)
     {
-        var msgs = MultimodalMain
-            ? history.Select(m => (m.Role, MaybeAttachImage(m))).ToList()
-            : history.Select(m => (m.Role, m.Content)).ToList();
+        var msgs = await PrepareModelMessagesAsync(history, ct);
         string sys = SystemPromptForMode("decision") + BuildSkillsPrompt(history, injectedSkills) + ToolDecisionPrompt;
         // 决策这一轮也会被 max_tokens 截断（模型一口气把整个文件内容塞进参数里就会）：
         // 截断后 JSON 只剩半截、工具根本执行不了，所以这里同样自动续写拼回完整调用。
         return await CallOnceAutoContinueAsync(sys, msgs, ct, null, emitReasoning: true);
     }
 
-    /// <summary>
-    /// 阶段三：生成最终回复。工具结果已经在 history 里，这一轮流式产出自然语言回答。
-    /// </summary>
+    /// <summary>阶段三：生成最终回复。工具结果已经在 history 里，这一轮流式产出自然语言回答。</summary>
     private async Task<string?> CallLlmFinalAsync(List<AgentMessage> history, CancellationToken ct,
                                                   Action<string>? onDelta, HashSet<string>? injectedSkills)
     {
@@ -1018,9 +1046,7 @@ public sealed class Agent
     private async Task<string?> FinalInnerAsync(List<AgentMessage> history, CancellationToken ct,
                                                 Action<string>? onDelta, HashSet<string>? injectedSkills)
     {
-        var msgs = MultimodalMain
-            ? history.Select(m => (m.Role, MaybeAttachImage(m))).ToList()
-            : history.Select(m => (m.Role, m.Content)).ToList();
+        var msgs = await PrepareModelMessagesAsync(history, ct);
         string sys = SystemPromptForMode("final") + BuildSkillsPrompt(history, injectedSkills) + FinalAnswerPrompt;
         return await CallOnceAutoContinueAsync(sys, msgs, ct, onDelta, emitReasoning: true);
     }
@@ -1098,14 +1124,36 @@ public sealed class Agent
     private async Task<string?> CallLlmInnerAsync(List<AgentMessage> history, CancellationToken ct,
                                                   Action<string>? onDelta, HashSet<string>? injectedSkills)
     {
-        var msgs = history.Select(m => (m.Role, m.Content)).ToList();
-        if (MultimodalMain)
-            msgs = history.Select(m => (m.Role, MaybeAttachImage(m))).ToList();
+        var msgs = await PrepareModelMessagesAsync(history, ct);
         return await CallOnceAutoContinueAsync(SystemPromptForMode() + BuildSkillsPrompt(history, injectedSkills),
                                                msgs, ct, onDelta, emitReasoning: true);
     }
 
-    /// <summary>多模态模式：把用户上传的图片路径转为 IMG|路径|文本 标记，由 API 客户端内联为 image_url。</summary>
+    private async Task<List<(string Role, string Content)>> PrepareModelMessagesAsync(List<AgentMessage> history, CancellationToken ct)
+    {
+        var messages = new List<(string Role, string Content)>();
+        bool? allowImage = null;
+        foreach (var message in history)
+        {
+            // IMG 是客户端的本地文件读取协议，不能接受模型或历史原文伪造它。
+            string content = message.Content.StartsWith("IMG|", StringComparison.Ordinal)
+                ? " " + message.Content : message.Content;
+            if (MultimodalMain && message.Role == "user" &&
+                content.Contains("用户上传了文件：", StringComparison.Ordinal))
+            {
+                allowImage ??= await AuthorizeCapabilityAsync(_currentSid, CapabilityRead, "读取上传图片并发送给多模态模型", ct);
+                if (allowImage.Value)
+                {
+                    string attached = MaybeAttachImage(message);
+                    if (attached != message.Content) content = attached;
+                }
+            }
+            messages.Add((message.Role, content));
+        }
+        return messages;
+    }
+
+    /// <summary>授权后才生成客户端读图标记。</summary>
     private string MaybeAttachImage(AgentMessage m)
     {
         string c = m.Content;
@@ -1130,9 +1178,8 @@ public sealed class Agent
         bool anyContent = false;
         foreach (var s in Skills)
         {
-            // ⚠ 只在用户**明确点名**这个技能时才注入完整说明。
-            //   不再做关键词 / 词元 / 别名 / 二字重叠之类的「自动匹配」——那套经常误判，
-            //   用户根本没提也被硬塞一大段技能说明，还动不动触发「补救启用」重试，很烦。
+            // 只在用户明确点名这个技能时才注入完整说明。不再做关键词 / 词元 / 别名 / 二字重叠之类的「自动匹配」——那套经常误判，用户根本没提也被硬塞一大段技能说明，
+            // 还动不动触发「补救启用」重试，很烦。
             bool hit = (injected != null && injected.Contains(s.Name)) ||
                        (!string.IsNullOrWhiteSpace(user) &&
                         user.Contains(s.Name, StringComparison.OrdinalIgnoreCase));
@@ -1160,11 +1207,7 @@ public sealed class Agent
         "【续写】你上一条回复因为长度上限被截断了。请直接从断掉的地方接着往下写，" +
         "不要重复已经写过的内容、不要重新开头、不要加任何解释或前后缀。";
 
-    /// <summary>
-    /// 调一次 LLM；如果回复因为 max_tokens 被截断（finish_reason=length），
-    /// 自动把已写内容回灌并让它接着写，直到写完或到次数上限。
-    /// 以前被截断就停在那儿，用户得手动说「继续」——现在软件自己续。
-    /// </summary>
+    /// <summary>调一次 LLM；如果回复因为 max_tokens 被截断（finish_reason=length）， 自动把已写内容回灌并让它接着写，直到写完或到次数上限。</summary>
     private async Task<string?> CallOnceAutoContinueAsync(string system,
         List<(string Role, string Content)> msgs, CancellationToken ct, Action<string>? onDelta,
         bool emitReasoning = false)
@@ -1174,7 +1217,7 @@ public sealed class Agent
         {
             if (string.IsNullOrEmpty(text) || ct.IsCancellationRequested || !_api.LastTruncated) break;
             Log($"回复被长度上限截断，自动续写第 {i + 1} 次（已 {text.Length} 字）");
-            msgs.Add(("assistant", text));
+            msgs.Add(("assistant", text.StartsWith("IMG|", StringComparison.Ordinal) ? " " + text : text));
             msgs.Add(("user", ContinueHint));
             string? more = await CallOnceAsync(system, msgs, ct, onDelta, emitReasoning);
             if (string.IsNullOrWhiteSpace(more)) { Log("续写没有返回内容，停止续写"); break; }
@@ -1185,10 +1228,7 @@ public sealed class Agent
         return text;
     }
 
-    /// <summary>
-    /// 续写时模型有时会把上一段的结尾重复一遍，这里把重复的部分削掉再拼，避免回答里出现重复段落。
-    /// 只削「已写内容的结尾 == 续写内容的开头」这种明确重叠（至少 20 字才认）。
-    /// </summary>
+    /// <summary>续写时模型有时会把上一段的结尾重复一遍，这里把重复的部分削掉再拼，避免回答里出现重复段落。</summary>
     private static string TrimOverlap(string already, string more)
     {
         int max = Math.Min(already.Length, more.Length);
@@ -1243,8 +1283,7 @@ public sealed class Agent
                             : null,
                         idleSeconds: 30, maxResumes: 3,
                         onStatus: t => StatusNote?.Invoke(_currentSid, t));
-                    // 流式不支持/失败（非限流、非取消）→ 回退普通请求，保证能出话。
-                    // 但如果刚才已经被看门狗自动恢复过几轮，再补一次普通请求就是让用户再干等一轮，
+                    // 流式不支持/失败（非限流、非取消）→ 回退普通请求，保证能出话。但如果刚才已经被看门狗自动恢复过几轮，再补一次普通请求就是让用户再干等一轮，
                     // 这时直接把「无响应」如实报出去。
                     if (string.IsNullOrEmpty(reply) && !ct.IsCancellationRequested &&
                         !IsRateLimit(_api.LastError) && !_api.IdleAborted)
@@ -1267,9 +1306,8 @@ public sealed class Agent
                 await Task.Delay(TimeSpan.FromSeconds(3) * (attempt + 1), ct);
             }
         }
-        // API 已配置但返回的是配置类错误（4xx，限流除外）→ 不许静默降级到本地小模型，
-        // 否则用户看到的是「AI 突然不会用工具了、还胡说八道」，其实是 API 地址/模型名/key 写错了。
-        // 「30 秒无响应」同理：看门狗已经自动重试过三轮，再偷偷换成本地小模型只会让人以为模型变笨。
+        // API 已配置但返回的是配置类错误（4xx，限流除外）→ 不许静默降级到本地小模型，否则用户看到的是「AI 突然不会用工具了、还胡说八道」，
+        // 其实是 API 地址/模型名/key 写错了。
         if (_api.Configured && (_api.IdleAborted || IsClientConfigError(_api.LastError))) return null;
 
         return SanitizeOllamaReply(Streaming && onDelta != null
@@ -1281,7 +1319,10 @@ public sealed class Agent
     public async Task<string> SummarizeAsync(string system, string content,
         CancellationToken ct = default, Action<string>? onDelta = null)
     {
-        var msgs = new List<(string Role, string Content)> { ("user", content) };
+        var msgs = new List<(string Role, string Content)>
+        {
+            ("user", content.StartsWith("IMG|", StringComparison.Ordinal) ? " " + content : content),
+        };
         if (MaxConcurrentCalls > 0)
         {
             _callGate ??= new SemaphoreSlim(MaxConcurrentCalls, MaxConcurrentCalls);
@@ -1298,11 +1339,7 @@ public sealed class Agent
         return (await CallOnceAsync(system, msgs, ct, onDelta)) ?? "";
     }
 
-    /// <summary>
-    /// 是否属于「配置/网络问题」。这类失败**不许静默降级到本地小模型**——
-    /// 否则用户看到的是「AI 突然不会用工具了、还胡说八道」，其实是地址/模型名/Key 写错或根本连不上。
-    /// 限流（429）不算，那是要退避重试的。
-    /// </summary>
+    /// <summary>是否属于「配置/网络问题」。这类失败不许静默降级到本地小模型—— 否则用户看到的是「AI 突然不会用工具了、还胡说八道」，其实是地址/模型名/Key 写错或根本连不上。</summary>
     private static bool IsClientConfigError(string? err)
     {
         if (string.IsNullOrWhiteSpace(err)) return false;
@@ -1350,10 +1387,8 @@ public sealed class Agent
         return t;
     }
 
-    /// <summary>兜底落盘：LLM 直接在回答里吐代码块时，把代码写入工作区文件。
-    /// 返回一句「存到哪儿了」的提示（调用方附在正文后面），**不替换正文**——
-    /// 以前是拿它当整条回复返回，用户就只看到"写入了文件 + 一段被截断的代码"，像是突然停了。</summary>
-    private string? TrySaveCodeBlock(int sid, string reply, List<AgentMessage> history)
+    /// <summary>兜底落盘：LLM 直接在回答里吐代码块时，把代码写入工作区文件。</summary>
+    private async Task<string?> TrySaveCodeBlockAsync(int sid, string reply, List<AgentMessage> history, CancellationToken ct)
     {
         var m = Regex.Match(reply ?? "", @"```([\w+#-]*)\s*\r?\n([\s\S]*?)```");
         if (!m.Success) return null;
@@ -1361,7 +1396,6 @@ public sealed class Agent
         string code = m.Groups[2].Value.TrimEnd();
         if (code.Length == 0) return null;
         string dir = string.IsNullOrWhiteSpace(DataDir) ? Path.GetTempPath() : Path.Combine(DataDir, "cluster_workspace");
-        Directory.CreateDirectory(dir);
         string ext = lang switch
         {
             "html" or "htm" => "html",
@@ -1376,13 +1410,15 @@ public sealed class Agent
             _ => "txt",
         };
         string path = Path.Combine(dir, GuessCodeFileName(history, lang, ext));
+        if (!await AuthorizeCapabilityAsync(sid, CapabilityWrite, $"自动保存代码：{path}\n{Preview(code, 300)}", ct))
+            return "未获得文件写入授权，代码未保存。";
         string result = WriteFileTool(Obj(("路径", path), ("内容", code)));
+        if (!result.StartsWith("已写入：", StringComparison.Ordinal)) return result;
         history.Add(new AgentMessage
         {
             Role = "tool", Content = result, Meta = ToolWriteFile,
             Detail = "路径：" + path + "\n" + Truncate(code, MaxToolOutput),
         });
-        TrimHistory(history);
         MessageAdded?.Invoke(sid, history[^1]);
         return $"已把上面的代码存成文件：{path}（{code.Length} 字符）。要改的话直接说文件名。";
     }
@@ -1423,7 +1459,7 @@ public sealed class Agent
         else if (user.Contains("搜索", StringComparison.Ordinal) || user.Contains("查", StringComparison.Ordinal))
             kind = "搜索/查资料任务";
         string tail = kind.Length > 0
-            ? $"\n\n你提到的是{kind}。本地自训练模型主要用于回怼训练，做这类任务建议点掉「🧠 自训练」切回 API 或 Ollama，以获得完整可靠的结果。"
+            ? $"\n\n你提到的是{kind}。本地自训练模型主要用于回怼训练，做这类任务建议点掉「 自训练」切回 API 或 Ollama，以获得完整可靠的结果。"
             : "";
         return $"已收到你的消息：{brief}。当前使用本地自训练模型（零依赖）；需要更强能力时切回 API 或 Ollama 后端。{tail}";
     }
@@ -1447,7 +1483,6 @@ public sealed class Agent
             (t.Contains("做一个", StringComparison.Ordinal) && t.Contains("网页", StringComparison.Ordinal)))
         {
             string dir = string.IsNullOrWhiteSpace(DataDir) ? Path.GetTempPath() : Path.Combine(DataDir, "cluster_workspace");
-            Directory.CreateDirectory(dir);
             tool = ToolWriteFile;
             args = Obj(("路径", Path.Combine(dir, "todo.html")), ("内容", LocalTodoHtml()));
             return true;
@@ -1583,7 +1618,7 @@ public sealed class Agent
         "button{padding:10px 14px;border:0;border-radius:8px;background:#2f7dff;color:#fff;font-size:14px;cursor:pointer}" +
         "li{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #eee}" +
         "li.done span{text-decoration:line-through;color:#999}</style></head><body>" +
-        "<h1>✅ 待办事项</h1><div class=\"row\"><input id=\"t\" placeholder=\"输入待办…\" onkeydown=\"if(event.key==='Enter')add()\">" +
+        "<h1>待办事项</h1><div class=\"row\"><input id=\"t\" placeholder=\"输入待办…\" onkeydown=\"if(event.key==='Enter')add()\">" +
         "<button onclick=\"add()\">添加</button></div><ul id=\"list\"></ul>" +
         "<script>const k='todos';const list=document.getElementById('list');" +
         "function save(){localStorage.setItem(k,JSON.stringify(todos))}let todos=JSON.parse(localStorage.getItem(k)||'[]');" +
@@ -1640,14 +1675,9 @@ public sealed class Agent
         }
     }
 
-    // ------------------------------------------------------------------
     // 工具调用协议（JSON 解析，兼容各家模型）
-    // ------------------------------------------------------------------
 
-    /// <summary>
-    /// 把模型输出里的「工具调用 JSON / DSML 标记」剥掉，剩下的就是**调用工具前它说的那句话**。
-    /// 纯 JSON 的决策轮会得到空字符串（那种本来也没人话可显示）。
-    /// </summary>
+    /// <summary>把模型输出里的「工具调用 JSON / DSML 标记」剥掉，剩下的就是调用工具前它说的那句话。</summary>
     private static string ExtractToolProse(string reply)
     {
         if (string.IsNullOrWhiteSpace(reply)) return "";
@@ -1714,9 +1744,7 @@ public sealed class Agent
         string repaired = Regex.Replace(reply ?? "", @"\r?\n", "\\n");
         if (TryParseToolObject(repaired, out tool, out args)) return true;
 
-        // ④ 模型自家的工具标记（DeepSeek 系会吐 …DSML… invoke name="运行命令" …参数 JSON…）
-        //    模型偶尔不按我们的 JSON 协议走，直接吐自家标记：以前这段会被原样显示成一堆尖括号，
-        //    工具也不会执行——用户看到的"AI 说了一段奇怪的话就停了"就是它。这里直接解析成工具调用。
+        // ④ 模型自家的工具标记（DeepSeek 系会吐 …DSML… invoke name="运行命令" …参数 JSON…）模型偶尔不按我们的 JSON 协议走
         var dm = Regex.Match(reply ?? "", "invoke\\s+name=\"([^\"]+)\"");
         if (dm.Success)
         {
@@ -1818,18 +1846,14 @@ public sealed class Agent
         return -1;
     }
 
-    /// <summary>
-    /// 工具调用格式规则：既用于系统提示，也用于「格式修正」重试。
-    /// <para>
-    /// 必须把**合法工具名逐个列出来** —— 小模型编不出名字时会自造
-    /// <c>write_to_file</c> 这种训练里见过的英文名。虽然 <see cref="NormalizeToolName"/>
-    /// 已经能兜住绝大多数别名，但直接告诉它正确名字，比事后纠正少绕一圈。
-    /// </para>
-    /// </summary>
+    /// <summary>工具调用格式规则：既用于系统提示，也用于「格式修正」重试。 必须把合法工具名逐个列出来 —— 小模型编不出名字时会自造 write_to_file这种训练里见过的英文名。</summary>
     private string ToolFormatRule()
     {
         // 极速模式连「查知识库」这个名字都不报给模型，避免它白跑一次被拦的调用
-        var names = FastMode ? ToolNames.Where(n => n != ToolKnowledge) : ToolNames;
+        // 连接器工具只在连上之后才报给模型：没连 Blender / GitHub 就别让它去试
+        var names = ToolNames.Where(n => (!FastMode || n != ToolKnowledge) && ToolAllowedInMode(n)
+                                    && (n != ToolBlender || BlenderRunner != null)
+                                    && (n != ToolGitHub || GitHubRunner != null));
         return "你的工具调用格式错误：只能输出合法 JSON，不要输出解释，不要包在 ``` 代码块里。\n" +
                "调用工具：{\"tool_call\":{\"name\":\"工具名\",\"arguments\":{...}}}\n" +
                "不需要工具：{\"tool_call\":null}\n" +
@@ -1843,28 +1867,16 @@ public sealed class Agent
     /// <summary>本应用提供的工具名（格式修正提示里报给模型，避免它自己编名字）。</summary>
     public static readonly string[] ToolNames =    {
         ToolRunCommand, ToolPython, ToolWriteFile, ToolReadFile, ToolOpenFile,
-        ToolSearch, ToolResearch, ToolFetch, ToolImage, ToolVideo, ToolVision,
+        ToolSearch, ToolResearch, ToolFetch, ToolRender, ToolImage, ToolVideo, ToolVision,
+        ToolBlender, ToolGitHub,
         ToolRemember, ToolForget, ToolInstallExt, ToolMakeExt, ToolComputer,
         ToolSplit, ToolKnowledge,
     };
 
-    /// <summary>
-    /// 「拆分任务」的执行器（由内核注入）：参数是工具调用的原始 JSON，返回汇总结论文本。
-    /// Agent 自己不持有子智能体，用回调注入是为了让内核独占编排逻辑。
-    /// </summary>
+    /// <summary>「拆分任务」的执行器（由内核注入）：参数是工具调用的原始 JSON，返回汇总结论文本。</summary>
     public Func<string, CancellationToken, Task<string>>? SplitRunner;
 
-    /// <summary>
-    /// 判断这段输出「像是要调工具」但没能解析成功。
-    /// <para>
-    /// 为什么不能只查 <c>"tool"</c>：小模型的失败姿势五花八门，最常见的是
-    /// <c>{"tool_call":{"name":"write_to_file",...}}</c>（写的是 tool_call 而不是 tool），
-    /// 或者干脆 <c>{"name":"write_to_file","arguments":{...}}</c>；
-    /// 再常见的是 JSON 被输出长度上限截断、根本闭合不了。
-    /// 这些以前全都判不出来 → 落到「当普通文本显示」→ 用户看到模型说了一大段
-    /// 「我现在调用工具写入文件」，然后一个文件都没生成。
-    /// </para>
-    /// </summary>
+    /// <summary>判断这段输出「像是要调工具」但没能解析成功。</summary>
     private static bool LooksLikeToolAttempt(string? reply)
     {
         if (string.IsNullOrWhiteSpace(reply)) return false;
@@ -1892,15 +1904,7 @@ public sealed class Agent
         return false;
     }
 
-    /// <summary>
-    /// 把模型可能输出的工具别名归一成正式工具名。
-    /// <para>
-    /// ⚠ 这条极其关键：小模型（尤其本地 9B）几乎不会照着中文工具名来，它们按训练时见过的
-    /// 英文习惯输出 <c>write_to_file</c> / <c>run_command</c> / <c>read_file</c>。
-    /// 以前这里只映射了搜索/研究两个别名，于是「工具名不认识」→ 工具不执行 →
-    /// 用户看到模型说了一大段「我现在将调用工具写入文件」，然后什么都文件没生成。
-    /// </para>
-    /// </summary>
+    /// <summary>把模型可能输出的工具别名归一成正式工具名。</summary>
     internal static string NormalizeToolName(string tool)
     {
         string t = (tool ?? "").Trim();
@@ -1943,6 +1947,8 @@ public sealed class Agent
             // 抓网页
             "fetch_url" or "fetch" or "crawl" or "http_get" or "get_url" or "scrape"
                 or "web_fetch" or "抓取网页" or "抓网页" or "读取网页" => ToolFetch,
+            "screenshot" or "render" or "render_page" or "page_screenshot" or "html2png"
+                or "渲染图片" or "渲染网页" or "网页截图" or "截图" => ToolRender,
 
             // 图片
             "generate_image" or "gen_image" or "text_to_image" or "image_gen" or "draw_image"
@@ -1954,6 +1960,13 @@ public sealed class Agent
                 or "make_video" or "video" or "生成视频" or "做视频" or "生成动画" => ToolVideo,
             "see_image" or "view_image" or "image_to_text" or "vision" or "ocr" or "describe_image"
                 or "看图" or "识别图片" or "图片理解" => ToolVision,
+
+            // Blender 建模
+            "blender" or "blender_modeling" or "blender_model" or "model_3d" or "3d_model" or "bpy"
+                or "blender建模" or "建模" or "3d建模" => ToolBlender,
+
+            // GitHub 连接器
+            "github" or "github_api" or "gh" or "github操作" => ToolGitHub,
 
             // 记忆
             "remember" or "memory_save" or "save_memory" or "memorize" or "记住" or "记下来" => ToolRemember,
@@ -1972,13 +1985,45 @@ public sealed class Agent
         return t;
     }
 
-    /// <summary>
-    /// chat（纯聊天）模式下只放开「不改动电脑」的工具。
-    /// 「拆分任务」也放开：它本身不动系统，子智能体会继承 chat 模式（同样只读），
-    /// 所以纯聊天里也能用「拆开并行想」这件事，不会因此真的去改用户的电脑。
-    /// </summary>
-    private bool ToolAllowedInMode(string tool)
-        => RunMode != "chat" || tool is ToolSearch or ToolResearch or ToolSplit;
+    /// <summary>工具能力的单一分类源；应用内部记忆与会话持久化不算模型文件操作。 ///</summary>
+    public static IReadOnlyList<string> ToolCapabilities(string tool, JsonElement args = default)
+    {
+        tool = NormalizeToolName(tool);
+        return tool switch
+        {
+            ToolReadFile or ToolVision => new[] { CapabilityRead },
+            ToolWriteFile or ToolImage or ToolVideo => new[] { CapabilityWrite },
+            ToolOpenFile => Sandbox.IsExecutableLike(GetArg(args, "路径") ?? "")
+                ? new[] { CapabilityOpen, CapabilityRead, CapabilityWrite, CapabilityCommand }
+                : new[] { CapabilityOpen },
+            ToolInstallExt or ToolMakeExt => new[] { CapabilityRead, CapabilityWrite },
+            ToolComputer => new[] { CapabilityRead, CapabilityWrite, CapabilityCommand, CapabilityComputer },
+            ToolRunCommand or ToolPython or ToolBlender => new[] { CapabilityRead, CapabilityWrite, CapabilityCommand },
+            ToolSearch or ToolResearch or ToolFetch or ToolRender or ToolGitHub or ToolRemember or ToolForget
+                or ToolSplit or ToolKnowledge => Array.Empty<string>(),
+            // 自定义工具是本机脚本，未知工具也不能作为安全能力放行。
+            _ => new[] { CapabilityRead, CapabilityWrite, CapabilityCommand },
+        };
+    }
+
+    private bool ToolAllowedInMode(string tool, JsonElement args = default)
+        => RunMode != "chat" || ToolCapabilities(tool, args).Count == 0;
+
+    public async Task<bool> AuthorizeCapabilityAsync(int sid, string capability, string detail, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        if (RunMode == "chat") return false;
+        if (RunMode == "boom") return true;
+        bool approved;
+        if (CapabilityConfirmRequested != null)
+            approved = await CapabilityConfirmRequested(sid, capability, detail, ct).WaitAsync(ct);
+        else if (ConfirmRequested != null)
+            approved = await ConfirmRequested(sid, $"[capability:{capability}]\n{detail}").WaitAsync(ct);
+        else
+            return false;
+        ct.ThrowIfCancellationRequested();
+        return approved && RunMode != "chat";
+    }
 
     /// <summary>用户这句话是否在要「深度研究 / 调研 / 整份资料」。</summary>
     private static bool WantsResearch(string? text)
@@ -1994,21 +2039,31 @@ public sealed class Agent
     /// <summary>搜索一次：优先爬虫脚本，失败回退内核内置爬虫；都没结果返回 null。</summary>
     private async Task<List<SearchHit>?> SearchOnceAsync(string query, CancellationToken ct)
     {
-        var viaScript = await SearchViaScriptAsync(query, ct);
-        if (viaScript is { Count: > 0 }) return viaScript;
+        if (RunMode == "boom")
+        {
+            var viaScript = await SearchViaScriptAsync(query, ct);
+            if (viaScript is { Count: > 0 }) return viaScript;
+        }
         var (_, hits) = await WebCrawler.SearchAsync(query, ct);
         return hits.Count > 0 ? hits : null;
     }
 
-    // ------------------------------------------------------------------
     // 工具实现
-    // ------------------------------------------------------------------
 
     private async Task<string> ExecuteToolAsync(string tool, JsonElement args, int sid,
                                                  CancellationToken ct)
     {
         tool = NormalizeToolName(tool);
         _lastToolFull = null;   // 每次工具调用重新记，免得上一个工具的输出串到下一张卡片
+        _lastImagePath = null;
+        _lastVideoPath = null;
+        if (!ToolAllowedInMode(tool, args))
+            return $"chat 模式不允许工具「{tool}」涉及的本地文件操作或命令执行。";
+        foreach (string capability in ToolCapabilities(tool, args))
+            if (!await AuthorizeCapabilityAsync(sid, capability, $"工具：{tool}\n参数：{args}", ct))
+                return $"未获得「{capability}」授权，已取消工具「{tool}」。";
+        ct.ThrowIfCancellationRequested();
+        if (!ToolAllowedInMode(tool, args)) return "模式已切换，操作已取消。";
         try
         {
             return tool switch
@@ -2017,6 +2072,12 @@ public sealed class Agent
                 ToolPython => await PythonTool(args, sid, ct),
                 ToolImage => await ImageTool(args, sid, ct),
                 ToolVideo => await VideoTool(args, sid, ct),
+                ToolBlender => BlenderRunner == null
+                    ? "Blender 连接器没启用：让用户去设置 →  连接器 点「连接」Blender（会自动找安装路径）。"
+                    : await BlenderRunner(GetArg(args, "操作") ?? "", args.GetRawText(), ct),
+                ToolGitHub => GitHubRunner == null
+                    ? "GitHub 连接器没启用：让用户去设置 →  连接器 里连上账号。"
+                    : await GitHubRunner(GetArg(args, "操作") ?? "", args.GetRawText(), ct),
                 ToolInstallExt => InstallExtTool(args),
                 ToolMakeExt => MakeExtTool(args),
                 ToolComputer => await ComputerTool(args, sid, ct),
@@ -2027,6 +2088,7 @@ public sealed class Agent
                 ToolSearch => await WebSearchTool(args, ct),
                 ToolResearch => await ResearchToolAsync(args, sid, ct),
                 ToolFetch => await FetchUrlTool(args, ct),
+            ToolRender => await RenderToolAsync(args, sid, ct),
                 ToolOpenFile => await OpenFileTool(args, sid),
                 ToolReadFile => ReadFileTool(args),
                 ToolWriteFile => WriteFileTool(args),
@@ -2044,11 +2106,7 @@ public sealed class Agent
         }
     }
 
-    /// <summary>
-    /// 工具名对不上内置的，就看看是不是 .dslt 自定义工具；都不是才报「未知工具」。
-    /// 自定义工具 = 用户/模型自己打包的脚本（Python / cmd / PowerShell / Node），
-    /// 在包目录里运行，输入通过参数 + 环境变量 DEEPSLEEP_TOOL_INPUT 传入，stdout 就是结果。
-    /// </summary>
+    /// <summary>工具名对不上内置的，就看看是不是 .dslt 自定义工具；都不是才报「未知工具」。</summary>
     private async Task<string> CustomOrDefaultAsync(string tool, JsonElement args, int sid, CancellationToken ct)
     {
         var t = _customTools.FirstOrDefault(x =>
@@ -2064,13 +2122,6 @@ public sealed class Agent
         if (!File.Exists(entry)) return $"自定义工具「{t.Name}」的入口脚本不见了：{entry}";
 
         string input = GetArg(args, "输入") ?? GetArg(args, "input") ?? GetArg(args, "参数") ?? "";
-
-        if (RunMode != "boom" && ConfirmRequested != null)
-        {
-            bool ok = await ConfirmRequested(sid, $"运行自定义工具「{t.Name}」\n脚本：{t.Entry}" +
-                (input.Length > 0 ? $"\n输入：{Preview(input, 200)}" : ""));
-            if (!ok) return "用户拒绝运行该自定义工具。";
-        }
 
         string exe;
         var argv = new List<string>();
@@ -2134,18 +2185,15 @@ public sealed class Agent
         catch (Exception ex) { return $"自定义工具执行失败：{ex.Message}"; }
     }
 
-    /// <summary>
-    /// 查 deepsleep 知识库。极速模式直接拒绝：知识库检索会多一次往返并塞回长章节，
-    /// 与「极速」的取舍冲突；用户真要完整规范就提示他关掉 ⚡。
-    /// </summary>
+    /// <summary>查 deepsleep 知识库。极速模式直接拒绝：知识库检索会多一次往返并塞回长章节， 与「极速」的取舍冲突；</summary>
     private string KnowledgeTool(JsonElement args)
     {
         if (FastMode)
             return "极速模式不查阅知识库（保持响应速度）。当前系统提示词里已经带了工具参数与关键规则，请直接据此作答；" +
-                   "需要 deepsleep 的完整规格/格式规范时，请提示用户关闭 ⚡ 极速模式后再查。";
+                   "需要 deepsleep 的完整规格/格式规范时，请提示用户关闭极速模式后再查。";
         string topic = GetArg(args, "主题") ?? GetArg(args, "topic") ??
                        GetArg(args, "课题") ?? GetArg(args, "关键词") ?? GetArg(args, "query") ?? "";
-        var kb = KnowledgeBase.Load(DataDir ?? "");
+        var kb = Knowledge;
         if (kb.Count == 0)
             return "知识库为空：安装目录 assets/knowledge/ 下没找到内置文档。可把 .md / .txt 放进 data/knowledge/ 自建。";
         Log($"查知识库：主题={topic} 条目={kb.Count}");
@@ -2178,11 +2226,7 @@ public sealed class Agent
         return msg;
     }
 
-    /// <summary>
-    /// 「操作电脑」：执行一步鼠标/键盘动作 → 立刻截图 → 用视觉模型读屏 → 把结果交回给主模型决策。
-    /// 这样即使是纯文本的主模型也能"看见"屏幕（每步都有一份文字版的界面状态）。
-    /// 坐标统一用 0~1 相对坐标：截图会被缩放，像素坐标跨分辨率/缩放不可靠。
-    /// </summary>
+    /// <summary>「操作电脑」：执行一步鼠标/键盘动作 → 立刻截图 → 用视觉模型读屏 → 把结果交回给主模型决策。</summary>
     private async Task<string> ComputerTool(JsonElement args, int sid, CancellationToken ct)
     {
         string action = (GetArg(args, "动作") ?? GetArg(args, "action") ?? "截图").Trim();
@@ -2199,22 +2243,6 @@ public sealed class Agent
         string text = GetArg(args, "text") ?? GetArg(args, "文字") ?? GetArg(args, "文本") ?? "";
         string key = GetArg(args, "key") ?? GetArg(args, "按键") ?? "";
         int amount = (int)Num("amount", "数量");
-
-        // 鼠标键盘是「能替用户点任何东西」的权限，work 模式下必须先问一句
-        if (RunMode != "boom" && ConfirmRequested != null)
-        {
-            string desc = action switch
-            {
-                "输入" => $"输入文字「{(text.Length > 60 ? text[..60] + "…" : text)}」",
-                "按键" => $"按 {key}",
-                "点击" or "双击" or "右键" or "移动" => $"{action} ({x:0.###}, {y:0.###}){(relative ? " 相对" : " 像素")}",
-                "滚动" => $"滚动 {amount} 格",
-                "等待" => $"等待 {amount} 毫秒",
-                _ => "截屏",
-            };
-            bool ok = await ConfirmRequested(sid, "操作你的电脑（鼠标/键盘）：" + desc);
-            if (!ok) return "用户拒绝了这次电脑操作。";
-        }
 
         var (done, msg) = ComputerUse.Do(action, x, y, relative, text, key, amount);
         if (!done) return msg;
@@ -2245,7 +2273,7 @@ public sealed class Agent
         }
         else
         {
-            visual = "\n\n（未配置图像理解 Key，只能给你截图路径，没法读屏；要我看图请到 ⚙ 设置 → 图像理解 填 Key）";
+            visual = "\n\n（未配置图像理解 Key，只能给你截图路径，没法读屏；要我看图请到设置 → 图像理解 填 Key）";
         }
 
         return $"{msg}。\n截图：{path}（图上 {w}×{h}，实际屏幕 {RemoteDesktop.ScreenWidth}×{RemoteDesktop.ScreenHeight}）" +
@@ -2258,8 +2286,10 @@ public sealed class Agent
         string? content = GetArg(args, "内容");
         if (string.IsNullOrWhiteSpace(content))
             return "参数错误：缺少「内容」。";
+        int before = Memory.Entries.Count;
         Memory.Add(content);
-        Log($"已记住：{content}");
+        if (Memory.Entries.Count == before)
+            return "该内容已存在或属于对话摘要，未新增画像记忆。";
         return $"已写入长期记忆：{content}\n当前共 {Memory.Entries.Count} 条记忆。";
     }
 
@@ -2311,19 +2341,10 @@ public sealed class Agent
 
         // 拦截"命令行抓网页"：搜索类需求应走「网络搜索 / 深度研究」工具，而不是 curl 等
         if (LooksLikeWebFetch(cmd))
-            return "⚠️ 检测到你在用命令行抓取网页。网页搜索/查资料请改用「网络搜索」或「深度研究」工具；" +
-                   "如果该工具提示已关闭，请提醒用户打开 🌐 联网搜索开关。不要用 curl / wget / Invoke-WebRequest / Python requests 等代替。";
+            return "检测到你在用命令行抓取网页。网页搜索/查资料请改用「网络搜索」或「深度研究」工具；" +
+                   "如果该工具提示已关闭，请提醒用户打开联网搜索开关。不要用 curl / wget / Invoke-WebRequest / Python requests 等代替。";
         string? sandboxErr = Sandbox.CheckCommand(cmd);
         if (sandboxErr != null) return sandboxErr;
-
-        // work 模式：执行命令前请求用户确认
-        if (RunMode == "work" && ConfirmRequested != null)
-        {
-            bool ok = await ConfirmRequested(sid,
-                $"命令：{cmd}\n工作目录：{(string.IsNullOrWhiteSpace(workDir) ? "（默认）" : workDir)}");
-            if (!ok)
-                return "用户拒绝执行该命令。请换一种方式，或提示用户可切到 boom 模式。";
-        }
 
         // Windows 走 PowerShell（先设 UTF-8 输出防中文乱码），Linux / macOS 走 bash
         var psi = Platform.ShellStartInfo(cmd, workDir);
@@ -2362,10 +2383,7 @@ public sealed class Agent
         }
     }
 
-    /// <summary>
-    /// 写并运行 Python 3 脚本：自动选择解释器、写入临时文件、运行并返回输出/报错。
-    /// 干不了的事 → 写脚本解决。
-    /// </summary>
+    /// <summary>写并运行 Python 3 脚本：自动选择解释器、写入临时文件、运行并返回输出/报错。</summary>
     private async Task<string> PythonTool(JsonElement args, int sid, CancellationToken ct)
     {
         string? code = GetArg(args, "代码");
@@ -2378,16 +2396,6 @@ public sealed class Agent
         string codeText = code ?? (File.Exists(file ?? "") ? File.ReadAllText(file!) : "");
         string? pySandbox = Sandbox.CheckPython(codeText);
         if (pySandbox != null) return pySandbox;
-
-        if (RunMode == "work" && ConfirmRequested != null)
-        {
-            string preview = string.IsNullOrWhiteSpace(code)
-                ? $"运行 Python 脚本文件：{file}"
-                : $"运行 Python 脚本（{code.Length} 字符）\n脚本预览：\n{Preview(code, 300)}";
-            bool ok = await ConfirmRequested(sid, preview);
-            if (!ok)
-                return "用户拒绝运行该脚本。请换一种方式，或提示用户可切到 boom 模式。";
-        }
 
         string? py = await FindPython3Async();
         if (py == null)
@@ -2528,15 +2536,8 @@ public sealed class Agent
             return "参数错误：缺少「提示词」。";
         string? size = GetArg(args, "尺寸");
 
-        if (RunMode == "work" && ConfirmRequested != null)
-        {
-            bool ok = await ConfirmRequested(sid, $"生成图片\n提示词：{Preview(prompt, 200)}");
-            if (!ok)
-                return "用户拒绝生成图片。";
-        }
-
         if (!_image.Configured)
-            return "图片生成不可用：请到 ⚙ 设置 → 图像生成 里填写 CogView 的 API Key。";
+            return "图片生成不可用：请到设置 → 图像生成 里填写 CogView 的 API Key。";
 
         string? path = await _image.GenerateAsync(prompt, size, ct);
         if (path == null)
@@ -2557,16 +2558,9 @@ public sealed class Agent
             return "参数错误：缺少「提示词」。";
         string? size = GetArg(args, "尺寸");
 
-        if (RunMode == "work" && ConfirmRequested != null)
-        {
-            bool ok = await ConfirmRequested(sid, $"生成视频（约 1~2 分钟）\n提示词：{Preview(prompt, 200)}");
-            if (!ok)
-                return "用户拒绝生成视频。";
-        }
-
         if (!_video.Configured)
             return "视频生成需要你自己的 API Key（内置免费 Key 不含视频额度的）。"
-                 + "去 ⚙ 设置 → 🎬 视频 绑定：可以先用你自己的图像 Key（同属智谱时通用），"
+                 + "去设置 →  视频 绑定：可以先用你自己的图像 Key（同属智谱时通用），"
                  + "也可以填别家兼容地址 + Key。";
 
         string? path = await _video.GenerateAsync(prompt, size, ct);
@@ -2582,6 +2576,9 @@ public sealed class Agent
         return $"视频已生成并保存到：{path}\n提示词：{prompt}";
     }
 
+    /// <summary>探测本机 Blender（内核首启用它把路径写进配置）。真正的连接状态在 Blender 连接器里， 工具执行也走连接器 —— 这里只保留探测，避免「工具」和「连接器」两套路径各判一次。</summary>
+    public string? DetectBlender() => BlenderConnector.Detect(string.IsNullOrWhiteSpace(BlenderPath) ? null : BlenderPath);
+
     /// <summary>看图：调用 GLM-4.6V-Flash 多模态模型识别/分析本地图片。</summary>
     private async Task<string> VisionTool(JsonElement args, int sid, CancellationToken ct)
     {
@@ -2592,15 +2589,8 @@ public sealed class Agent
             return $"图片不存在：{path}";
         string? question = GetArg(args, "问题");
 
-        if (RunMode == "work" && ConfirmRequested != null)
-        {
-            bool ok = await ConfirmRequested(sid, $"看图分析：{path}");
-            if (!ok)
-                return "用户拒绝看图。";
-        }
-
         if (!_vision.Configured)
-            return "看图不可用：请到 ⚙ 设置 → 图像理解 里填写 GLM-4.6V 的 API Key。";
+            return "看图不可用：请到设置 → 图像理解 里填写 GLM-4.6V 的 API Key。";
 
         string? result = await _vision.AnalyzeAsync(path, question, ct);
         if (result == null)
@@ -2611,10 +2601,7 @@ public sealed class Agent
         return $"图片：{path}\n识别结果：\n{result}";
     }
 
-    /// <summary>
-    /// 调用随程序分发的爬虫脚本 tools\websearch.py 搜索（多引擎，无需 API Key）。
-    /// 脚本不存在 / 本机无 Python 3 / 脚本失败时返回 null，由内置爬虫兜底。
-    /// </summary>
+    /// <summary>调用随程序分发的爬虫脚本 tools\websearch.py 搜索（多引擎，无需 API Key）。</summary>
     private static async Task<List<SearchHit>?> SearchViaScriptAsync(string query, CancellationToken ct)
     {
         try
@@ -2683,14 +2670,11 @@ public sealed class Agent
         }
     }
 
-    /// <summary>
-    /// 深度研究：规划子查询 → 多轮搜索 → 抓取网页正文 → 让模型汇总成 Markdown 研究报告并保存到本地。
-    /// 参数：主题（必填）、深度 1-3（可选，默认 2）、输出文件（可选绝对路径）。
-    /// </summary>
+    /// <summary>深度研究：规划子查询 → 多轮搜索 → 抓取网页正文 → 让模型汇总成 Markdown 研究报告并保存到本地。</summary>
     private async Task<string> ResearchToolAsync(JsonElement args, int sid, CancellationToken ct)
     {
         if (!WebSearchEnabled)
-            return "深度研究已关闭（🌐 联网搜索开关关闭）。请提醒用户打开 🌐 开关。";
+            return "深度研究已关闭（ 联网搜索开关关闭）。请提醒用户打开开关。";
         string? topic = GetArg(args, "主题") ?? GetArg(args, "课题") ?? GetArg(args, "问题") ?? GetArg(args, "关键词");
         if (string.IsNullOrWhiteSpace(topic))
             return "参数错误：缺少「主题」。";
@@ -2749,11 +2733,17 @@ public sealed class Agent
         string? report = await WriteResearchReportAsync(topic, queries, docs, all, ct);
         if (string.IsNullOrWhiteSpace(report)) report = FallbackReport(topic, queries, docs, all);
 
-        // ⑤ 保存
+        // 报告正文属于上下文；只有真正落盘才申请文件写入权限。
+        _lastToolFull = report;
+        if (RunMode == "chat") return report;
         string dir = string.IsNullOrWhiteSpace(DataDir) ? Path.GetTempPath() : Path.Combine(DataDir, "research");
         string path = string.IsNullOrWhiteSpace(outFile)
             ? Path.Combine(dir, $"{DateTime.Now:yyyyMMdd-HHmmss}-{Slug(topic)}.md")
             : Path.GetFullPath(outFile);
+        if (!await AuthorizeCapabilityAsync(sid, CapabilityWrite, $"保存研究报告：{path}", ct))
+            return "未获得文件写入授权，报告未保存。\n\n" + report;
+        string? writeError = Sandbox.CheckWritePath(path);
+        if (writeError != null) return writeError + "\n\n" + report;
         try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -2773,7 +2763,7 @@ public sealed class Agent
         int want = depth >= 3 ? 5 : depth == 2 ? 4 : 2;
         var fallback = new List<string>
         {
-            topic, topic + " 最新进展", topic + " 数据 事实", topic + " 风险 争议", topic + " 对比 案例",
+            topic, topic + "最新进展", topic + "数据 事实", topic + "风险 争议", topic + "对比 案例",
         };
         try
         {
@@ -2845,7 +2835,7 @@ public sealed class Agent
         var sb = new StringBuilder();
         sb.AppendLine($"# {topic} · 研究报告（原始资料汇总）");
         sb.AppendLine();
-        sb.AppendLine($"> 模型汇总不可用，以下为工具直接整理的结果：命中 {all.Count} 条，精读 {docs.Count} 篇。");
+        sb.AppendLine($">模型汇总不可用，以下为工具直接整理的结果：命中 {all.Count} 条，精读 {docs.Count} 篇。");
         sb.AppendLine();
         sb.AppendLine("## 搜索轮次");
         foreach (var q in queries) sb.AppendLine($"- {q}");
@@ -2888,7 +2878,7 @@ public sealed class Agent
     private async Task<string> WebSearchTool(JsonElement args, CancellationToken ct)
     {
         if (!WebSearchEnabled)
-            return "网络搜索已关闭。请提醒用户打开 AI 助手页的 🌐 联网搜索开关。";
+            return "网络搜索已关闭。请提醒用户打开 AI 助手页的联网搜索开关。";
         string? q = GetArg(args, "关键词");
         if (string.IsNullOrWhiteSpace(q))
             return "参数错误：缺少「关键词」。";
@@ -2911,6 +2901,35 @@ public sealed class Agent
     }
 
     /// <summary>抓取网页：下载 URL 并提取正文文本（去标签、限长），可阅读搜索结果指向的文章。</summary>
+    /// <summary>渲染图片：网址（或一段 HTML）→ PNG，落在 data\render 下。</summary>
+    private async Task<string> RenderToolAsync(JsonElement args, int sid, CancellationToken ct)
+    {
+        string? url = GetArg(args, "网址") ?? GetArg(args, "url") ?? GetArg(args, "链接");
+        string? html = GetArg(args, "HTML") ?? GetArg(args, "html");
+        string? outPath = GetArg(args, "输出") ?? GetArg(args, "路径") ?? GetArg(args, "path");
+        if (string.IsNullOrWhiteSpace(url) && string.IsNullOrWhiteSpace(html))
+            return "参数错误：需要「网址」或「HTML」其中之一（要渲染网页给网址，要渲染自己写的页面给 HTML）。";
+        if (!string.IsNullOrWhiteSpace(url) &&
+            !url.StartsWith("http://", StringComparison.OrdinalIgnoreCase) &&
+            !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase) &&
+            !url.StartsWith("file://", StringComparison.OrdinalIgnoreCase))
+            return "参数错误：网址必须以 http:// 或 https:// 开头。";
+
+        int w = TryGetIntArg(args, out int wv, "宽度", "width") ? wv : 1280;
+        int h = TryGetIntArg(args, out int hv, "高度", "height") ? hv : 1600;
+        if (w <= 0) w = 1280;
+        if (h <= 0) h = 1600;
+        string dir = string.IsNullOrWhiteSpace(DataDir) ? Path.Combine(Path.GetTempPath(), "deepsleep-render")
+                                                       : Path.Combine(DataDir, "render");
+        Directory.CreateDirectory(dir);
+        if (string.IsNullOrWhiteSpace(outPath))
+            outPath = Path.Combine(dir, "shot-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".png");
+
+        var r = await PageRenderer.ShotAsync(url ?? "", html, outPath, w, h, null, ct).ConfigureAwait(false);
+        if (!r.Ok) return "渲染失败：" + r.Error;
+        return $"已渲染成图片：{r.Path}\n（尺寸 {r.Width}×{r.Height}；需要读内容就用「看图」工具打开这个路径）";
+    }
+
     private async Task<string> FetchUrlTool(JsonElement args, CancellationToken ct)
     {
         string? url = GetArg(args, "网址") ?? GetArg(args, "url");
@@ -2922,9 +2941,12 @@ public sealed class Agent
         try
         {
             string text = await WebCrawler.FetchTextAsync(url, ct, 8000);
+            // 正文之外再渲染一张截图：JS 页面抓不到文字时，图里还有内容可看
+            string shot = await ShotForFetchAsync(url, ct).ConfigureAwait(false);
+            string tail = shot.Length > 0 ? "\n\n页面截图：" + shot + "（需要看版面/图表就调「看图」打开它）" : "";
             if (string.IsNullOrWhiteSpace(text))
-                return $"抓取「{url}」成功，但未能提取到可见文本（可能是 JS 渲染页面或非 HTML 内容）。";
-            return $"网页内容（{url}）：\n{text}";
+                return $"抓取「{url}」成功，但没有提取到可见文本（可能是 JS 渲染页面或非 HTML 内容）。" + tail;
+            return $"网页内容（{url}）：\n{text}" + tail;
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -2934,6 +2956,22 @@ public sealed class Agent
         {
             return $"抓取「{url}」失败：{ex.Message}";
         }
+    }
+
+    /// <summary>抓取网页时顺手截一张图；浏览器缺失/渲染失败就返回空串（不影响正文抓取）。</summary>
+    private async Task<string> ShotForFetchAsync(string url, CancellationToken ct)
+    {
+        try
+        {
+            if (PageRenderer.FindBrowser() == null) return "";
+            string dir = string.IsNullOrWhiteSpace(DataDir) ? Path.Combine(Path.GetTempPath(), "deepsleep-render")
+                                                           : Path.Combine(DataDir, "render");
+            Directory.CreateDirectory(dir);
+            string path = Path.Combine(dir, "page-" + DateTime.Now.ToString("yyyyMMdd-HHmmss-fff") + ".png");
+            var r = await PageRenderer.ShotAsync(url, null, path, 1280, 1600, null, ct).ConfigureAwait(false);
+            return r.Ok ? r.Path : "";
+        }
+        catch { return ""; }
     }
 
     private static string ReadFileTool(JsonElement args)
@@ -2970,10 +3008,7 @@ public sealed class Agent
         return $"已写入：{full}（{content.Length} 字符）";
     }
 
-    /// <summary>
-    /// 用系统默认程序打开文件。可执行 / 脚本类文件（打开即运行）不再被沙箱一刀切拦掉：
-    /// work 模式先弹一次确认，boom 模式直接放行。
-    /// </summary>
+    /// <summary>用系统默认程序打开文件。可执行 / 脚本类文件（打开即运行）不再被沙箱一刀切拦掉： work 模式先弹一次确认，boom 模式直接放行。</summary>
     private async Task<string> OpenFileTool(JsonElement args, int sid)
     {
         string? path = GetArg(args, "路径");
@@ -2984,13 +3019,6 @@ public sealed class Agent
 
         string full = Path.GetFullPath(path);
         bool runsCode = Sandbox.IsExecutableLike(full);
-        if (runsCode && RunMode == "work" && ConfirmRequested != null)
-        {
-            bool ok = await ConfirmRequested(sid,
-                $"启动可执行文件（打开即运行）：{full}\n只会启动它本身，不带任何参数。");
-            if (!ok)
-                return $"用户拒绝：已取消启动 {full}。";
-        }
         try
         {
             Process.Start(new ProcessStartInfo(full) { UseShellExecute = true });

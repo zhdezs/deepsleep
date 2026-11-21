@@ -87,7 +87,7 @@
       var f = input.files && input.files[0];
       document.body.removeChild(input);
       if (!f) { respond(msg, true); return; }
-      toastLine('正在把 ' + f.name + ' 传给内核…');
+      toastLine('正在把 ' + f.name + '传给内核…');
       fetch(base() + '/api/upload?name=' + encodeURIComponent(f.name), {
         method: 'POST', headers: { 'X-DS-Token': cfg.token }, body: f
       }).then(function (r) { return r.json(); })
@@ -119,7 +119,7 @@
   }
   function setBadge(text, warn) {
     var b = ensureBadge();
-    b.textContent = '⚡ ' + text;
+    b.textContent = ' ' + text;
     b.style.background = warn ? 'rgba(180,40,30,.78)' : 'rgba(0,0,0,.62)';
     b.style.opacity = '.55';
   }
@@ -145,7 +145,7 @@
       'border-radius:16px;padding:22px 24px;font:13.5px/1.7 -apple-system,\'Segoe UI\',\'Microsoft YaHei\',sans-serif;box-shadow:0 20px 60px rgba(0,0,0,.35)">' +
       '<h3 style="margin:0 0 6px;font-size:16px">连接内核（Core）</h3>' +
       '<div style="color:var(--muted,#777);font-size:12px;margin-bottom:14px">' +
-      '  本机填 <b>http://127.0.0.1:8756</b>；人在外面就把内核用 <b>--tunnel</b> 开出来的公网地址' +
+      '本机填 <b>http://127.0.0.1:8756</b>；人在外面就把内核用 <b>--tunnel</b>开出来的公网地址' +
       '（https://xxx.trycloudflare.com）填进来。配对令牌在 Core 窗口里打印，也在 data\\core-token.txt。' +
       '</div>' +
       '<div class="field"><label>内核地址</label><input id="cpUrl" type="text" placeholder="http://127.0.0.1:8756 或 https://xxx.trycloudflare.com"></div>' +

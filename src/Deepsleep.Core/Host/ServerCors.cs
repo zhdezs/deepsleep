@@ -35,10 +35,7 @@ public static partial class CoreServer
 
     private static int _tokenFails;
 
-    /// <summary>
-    /// 令牌错了就让对方多等一会儿：连续错越多次等越久（最多 5 秒）。
-    /// 不封 IP —— 走隧道时所有请求的来源都是本机 127.0.0.1，封 IP 会把自己也关在门外。
-    /// </summary>
+    /// <summary>令牌错了就让对方多等一会儿：连续错越多次等越久（最多 5 秒）。 不封 IP —— 走隧道时所有请求的来源都是本机 127.0.0.1，封 IP 会把自己也关在门外。</summary>
     private static int TokenPenaltyMs()
     {
         int n = Interlocked.Increment(ref _tokenFails);
@@ -63,11 +60,7 @@ public static partial class CoreServer
             bool ok = AllowOrigins.Contains(origin) || origin == "null" || sameHost
                       || origin.StartsWith("http://127.0.0.1", StringComparison.OrdinalIgnoreCase)
                       || origin.StartsWith("http://localhost", StringComparison.OrdinalIgnoreCase)
-                      // 超级连接的应用内远程桌面：桌面端界面本身是个 WebView，把对端页面
-                      // 嵌在 iframe 里跑（不再拉系统浏览器）。这时 Origin 是「外层界面所在的源」，
-                      // 跟本内核的 Host 对不上，上面的 sameHost 会判失败。
-                      // 判据改成看令牌：请求带着有效的配对令牌（本机令牌或超级连接的一次性令牌）
-                      // 就放行 —— 令牌本身就是密钥，能拿出来说明这台机器已经被合法配对了。
+                      // 超级连接的应用内远程桌面：桌面端界面本身是个 WebView，把对端页面嵌在 iframe 里跑（不再拉系统浏览器）。
                       || TokenOk(req);
             if (!ok) return false;
             res.Headers["Access-Control-Allow-Origin"] = origin;
@@ -79,7 +72,7 @@ public static partial class CoreServer
         res.Headers["Access-Control-Allow-Headers"] = "content-type, x-ds-token, authorization";
         res.Headers["Access-Control-Max-Age"] = "600";
         // 被自己人（桌面端 / 超级连接）嵌进 iframe 是预期用法，别发拒绝嵌套的头。
-        // 注意：这里刻意 **不设置** X-Frame-Options / CSP frame-ancestors。
+        // 注意：这里刻意 不设置 X-Frame-Options / CSP frame-ancestors。
         if (req.Has("Access-Control-Request-Private-Network", "true"))
             res.Headers["Access-Control-Allow-Private-Network"] = "true";
         return true;

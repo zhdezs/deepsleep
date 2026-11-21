@@ -211,11 +211,8 @@ public sealed class DesktopPet : IDisposable
     {
         switch (m)
         {
-            // 【桌宠无法交互的真根因】窗口是照系统的 "STATIC" 类建的，静态控件的窗口过程对
-            // WM_NCHITTEST 一律回 HTTRANSPARENT（静态控件天生「鼠标穿透」）→ 鲸鱼看得见、动画也在动，
-            // 但单击 / 拖拽 / 右键的鼠标消息全被透给了下面的桌面，桌宠等于一块摆设。
-            // 现在自己应答：鲸鱼身上（alpha 够高）回 HTCLIENT，四周真透明的区域回 HTTRANSPARENT，
-            // 既点得到，又不会拿那个透明方框去挡桌面的点击。
+            // 【桌宠无法交互的真根因】窗口是照系统的 "STATIC"类建的，静态控件的窗口过程对WM_NCHITTEST 一律回 HTTRANSPARENT（静态控件天生「鼠标穿透」
+            // ）→ 鲸鱼看得见、动画也在动
             case WM_NCHITTEST:
             {
                 long lp = l.ToInt64();
@@ -278,9 +275,9 @@ public sealed class DesktopPet : IDisposable
     private void ShowMenu(IntPtr h)
     {
         IntPtr menu = CreatePopupMenu();
-        AppendMenuW(menu, MF_STRING, 4, "💬 跟桌宠聊天");
+        AppendMenuW(menu, MF_STRING, 4, "跟桌宠聊天");
         AppendMenuW(menu, MF_STRING, 1, "打开主界面");
-        AppendMenuW(menu, MF_STRING, 2, "隐藏桌宠（在 ⚙ 设置里可重新显示）");
+        AppendMenuW(menu, MF_STRING, 2, "隐藏桌宠（在设置里可重新显示）");
         AppendMenuW(menu, MF_STRING, 9, "退出 deepsleep");
         GetCursorPos(out POINT p);
         int cmd = TrackPopupMenu(menu, TPM_RETURNCMD | TPM_RIGHTBUTTON, p.X, p.Y, 0, h, IntPtr.Zero);

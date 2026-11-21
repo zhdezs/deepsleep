@@ -7,9 +7,7 @@ using System.Threading.Tasks;
 
 namespace TrollWrangler.Core;
 
-/// <summary>
-/// 内核：OTA 自动更新（更新线路默认 Gitee、可在 ⚙ 设置里切成 GitHub；Gitee 线路上只有 Gitee 下不动才回退 GitHub，校验始终用官方 SHA256）与本地大模型探测。
-/// </summary>
+/// <summary>内核：OTA 自动更新（更新线路默认 Gitee、可在设置里切成 GitHub；</summary>
 public sealed partial class Kernel
 {
     private static readonly int[] OllamaPorts = { 11434, 11435, 11436, 1234, 8080, 8081, 8000, 5000 };
@@ -39,10 +37,10 @@ public sealed partial class Kernel
         bool giteeRoute = !string.IsNullOrWhiteSpace(i.MirrorUrl) || i.PartUrls.Count > 0;
         if (giteeRoute)
             return i.PartUrls.Count > 0
-                ? "更新线路：Gitee 优先（可在 ⚙ 设置里切换）。装不下的安装包在 Gitee 那边切成多片，下齐后拼回整包；不再探速比快慢，只有 Gitee 连不上、卡住或下不动时才回退 GitHub。"
-                : "更新线路：Gitee 优先（国内实测快一个数量级，可在 ⚙ 设置里切换）：不再探速比快慢，Gitee 连不上或下不动时才回退 GitHub。";
-        if (i.Source == "gitee") return "该版本来自 Gitee 国内源（更新线路：Gitee 优先，可在 ⚙ 设置里切换）。";
-        return "更新线路：GitHub（可在 ⚙ 设置里切回 Gitee）。直连失败或中断会自动切国内加速镜像接着下（断点续传、卡住会换源），下完仍按官方 SHA256 校验。";
+                ? "更新线路：Gitee 优先（可在设置里切换）。装不下的安装包在 Gitee 那边切成多片，下齐后拼回整包；不再探速比快慢，只有 Gitee 连不上、卡住或下不动时才回退 GitHub。"
+                : "更新线路：Gitee 优先（国内实测快一个数量级，可在设置里切换）：不再探速比快慢，Gitee 连不上或下不动时才回退 GitHub。";
+        if (i.Source == "gitee") return "该版本来自 Gitee 国内源（更新线路：Gitee 优先，可在设置里切换）。";
+        return "更新线路：GitHub（可在设置里切回 Gitee）。直连失败或中断会自动切国内加速镜像接着下（断点续传、卡住会换源），下完仍按官方 SHA256 校验。";
     }
 
     /// <summary>启动时静默检查更新，有新版就推给界面（左下角出现「有新版」按钮）。</summary>
@@ -172,9 +170,7 @@ public sealed partial class Kernel
         try { _updateCts?.Cancel(); } catch { }
     }
 
-    // ------------------------------------------------------------------
     // 本地大模型（Ollama）探测
-    // ------------------------------------------------------------------
 
     private async Task ProbeLlmAsync()
     {
@@ -189,7 +185,7 @@ public sealed partial class Kernel
                     _config.OllamaUrl = found;
                     _config.Save();
                     _engine.ApplyConfig(_config);
-                    _agent.ApplyConfig(_config);
+                    _agent.ApplyConfig(RouterCfg);
                     _clusterAgent.ApplyConfig(_config);
                     _llmOnline = await _engine.PingLlmAsync().ConfigureAwait(false);
                 }

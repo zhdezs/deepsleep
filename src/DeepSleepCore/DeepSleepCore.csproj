@@ -35,6 +35,8 @@
   <!-- 界面文件随内核一起发布：本地打开 http://127.0.0.1:8756/ 就能用（离线可用） -->
   <ItemGroup>
     <Content Include="..\..\ui\**\*.*" Link="ui\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+    <!-- 内置知识库 + 内置皮肤（assets\skins）：内核版也要有一份，否则首次启动没有默认皮肤 -->
+    <Content Include="..\..\assets\**\*.*" Link="assets\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\web\**\*.*" Link="web\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

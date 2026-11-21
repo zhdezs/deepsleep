@@ -7,29 +7,7 @@ using TrollWrangler.CoreHost;
 
 namespace DeepSleepHarmony;
 
-/// <summary>
-/// deepsleep 内核的鸿蒙原生入口。
-///
-/// 鸿蒙侧（NAPI C++）通过 dlopen("libdeepsleep.so") + dlsym 调下面这些函数：
-///
-///   const char* deepsleep_version();                      版本号（静态，不用释放）
-///   int  deepsleep_start(dataDir, rootDir, port);          起内核，返回 0 成功
-///   int  deepsleep_port();                                 实际监听端口
-///   const char* deepsleep_token();                         配对令牌（用完要 free）
-///   const char* deepsleep_error();                         最近一次错误（用完要 free）
-///   void deepsleep_free(const char* p);                    释放上面两者的内存
-///   void deepsleep_stop();                                 停服务（退出前调）
-///
-/// ⚠ 设计要点：
-/// 1. **不阻塞调用线程**。桌面版的内核 exe 是 main 里 Thread.Sleep(Infinite) 挂住；
-///    这里是 .so，NAPI 的调用发生在 UI 线程上，一旦阻塞界面就死。所以
-///    CoreServer.Start 之后立刻返回，HTTP 服务自己在后台线程池里跑
-///    （AcceptLoop 本来就是 Task.Run 起的）。
-/// 2. **不写 Console**。鸿蒙应用没有标准输出，写 Console 会抛异常。
-///    所有日志走 Log 回调 → 由 NAPI 层转成 hilog。
-/// 3. **数据/资源目录由调用方给**。鸿蒙应用跑在沙箱里（
-///    /data/storage/el2/base/haps/entry/files 之类），内核自己猜不出来。
-/// </summary>
+/// <summary>deepsleep 内核的鸿蒙原生入口。</summary>
 public static unsafe class NativeEntry
 {
     private static Kernel? _kernel;
@@ -91,7 +69,7 @@ public static unsafe class NativeEntry
 
             if (!up)
             {
-                _lastError = "端口 " + _port + " 起不来";
+                _lastError = "端口 " + _port + "起不来";
                 return -2;
             }
 
@@ -127,8 +105,6 @@ public static unsafe class NativeEntry
         _started = false;
     }
 
-    // ------------------------------------------------------------------
-
     private static void OnKernelPush(string json)
     {
         // 内核事件流：桌面版走 WebView 的 postMessage，网页版走 SSE。
@@ -158,11 +134,7 @@ public static unsafe class NativeEntry
         catch { return Guid.NewGuid().ToString("N"); }
     }
 
-    // ------------------------------------------------------------------
-    // UTF-8 字符串在托管/非托管之间来回
-    // ------------------------------------------------------------------
-    // 返回给 NAPI 的串用 CoTaskMem 分配，对方必须调 deepsleep_free。
-    // （每次 [UnmanagedCallersOnly] 调用都会走这里，别的地方不要顺手也调。）
+    // UTF-8 字符串在托管/非托管之间来回返回给 NAPI 的串用 CoTaskMem 分配，对方必须调 deepsleep_free。
 
     private static IntPtr ToUtf8(string s)
         => Marshal.StringToCoTaskMemUTF8(s ?? "");
@@ -171,10 +143,7 @@ public static unsafe class NativeEntry
         => p == IntPtr.Zero ? "" : (Marshal.PtrToStringUTF8(p) ?? "");
 }
 
-/// <summary>
-/// 版本号从程序集元数据读，不写死 —— 版本来回改时只动 Directory.Build.props 一处
-/// （AGENTS.md 里记过一次教训：内核那份忘了同步，程序自报版本一直是旧的）。
-/// </summary>
+/// <summary>版本号从程序集元数据读，不写死 —— 版本来回改时只动 Directory.Build.props 一处 （AGENTS.md 里记过一次教训：内核那份忘了同步，程序自报版本一直是旧的）。</summary>
 internal static class AppInfo
 {
     public static string Version { get; } = Read();

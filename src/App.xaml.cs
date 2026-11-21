@@ -47,11 +47,7 @@ public partial class App : Application
     /// <summary>双击安装扩展的结果，等主窗口建好后再弹提示。</summary>
     private (bool ok, string msg)? _extInstall;
 
-    /// <summary>
-    /// 双击 .dslt / .dslp 时系统会用 `--install-ext "路径"` 调起本程序。
-    /// 这里只负责安装（此时窗口还没建，弹不了 XAML 对话框），结果留给调用方显示。
-    /// 返回 true 表示这次启动是「装扩展」，不是普通打开应用。
-    /// </summary>
+    /// <summary>双击 .dslt / .dslp 时系统会用 `--install-ext "路径"` 调起本程序。</summary>
     private bool TryHandleExtensionInstall()
     {
         try
@@ -101,7 +97,7 @@ public partial class App : Application
         }
         catch { /* 拿不到互斥体不影响启动 */ }
 
-        // 双击 .dslt / .dslp 会带着 --install-ext "<文件路径>" 启动我们
+        // 双击 .dslt / .dslp 会带着 --install-ext "<文件路径>"启动我们
         bool installOnly = TryHandleExtensionInstall();
 
         // 应用已经开着：装上就退，别弹第二个窗口。
@@ -111,7 +107,7 @@ public partial class App : Application
             var r0 = _extInstall ?? (false, "没有拿到安装结果");
             AppLog("已有实例在运行 → 只安装，不开窗口");
             InfoBox((r0.ok ? "扩展已安装。\n\n" : "安装失败：\n\n") + r0.msg +
-                    (r0.ok ? "\n\n切回 Deep Sleep 窗口就能看到（右下角工具清单 / ⚙ 设置 → 🧩 扩展）。" : ""),
+                    (r0.ok ? "\n\n切回 Deep Sleep 窗口就能看到（右下角工具清单 /  设置 →  扩展）。" : ""),
                     r0.ok ? "扩展已安装" : "安装失败");
             Environment.Exit(0);
             return;
@@ -141,7 +137,7 @@ public partial class App : Application
             var dlg = new Microsoft.UI.Xaml.Controls.ContentDialog
             {
                 Title = ok ? "扩展已安装" : "安装失败",
-                Content = ok ? msg + "\n\n在 ⚙ 设置 → 🧩 扩展 里可以查看、启用或删除。" : msg,
+                Content = ok ? msg + "\n\n在设置 →  扩展 里可以查看、启用或删除。" : msg,
                 CloseButtonText = "好",
                 XamlRoot = _window?.Content?.XamlRoot,
             };

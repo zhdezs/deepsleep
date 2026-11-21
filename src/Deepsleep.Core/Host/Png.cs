@@ -3,10 +3,7 @@ using System.Text;
 
 namespace TrollWrangler.CoreHost;
 
-/// <summary>
-/// 最小 PNG 编码器（24 位 RGB，无依赖）。
-/// 远程桌面用它把屏幕帧压成 PNG：屏幕画面大块纯色 + 文字，PNG 往往比 JPEG 还小，而且不糊。
-/// </summary>
+/// <summary>最小 PNG 编码器（24 位 RGB，无依赖）。 远程桌面用它把屏幕帧压成 PNG：屏幕画面大块纯色 + 文字，PNG 往往比 JPEG 还小，而且不糊。</summary>
 public static class Png
 {
     public static byte[] EncodeRgb(byte[] rgb, int w, int h, int stride)

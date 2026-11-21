@@ -61,7 +61,7 @@
 </head>
 <body>
 <div id="bar">
-  <b>🖥 远程桌面</b>
+  <b>远程桌面</b>
   <span id="who"></span>
   <span class="grow"></span>
   <select id="quality">
@@ -78,7 +78,7 @@
     <option value="12">12 帧</option>
     <option value="6">6 帧</option>
   </select>
-  <button id="btnChat">💬 对话</button>
+  <button id="btnChat">对话</button>
   <button id="btnFit">适应窗口</button>
   <button id="btnFull">全屏</button>
   <button id="btnHide">沉浸</button>
@@ -86,7 +86,7 @@
 </div>
 <div id="stage" class="fit"><img id="screen" alt=""></div>
 <div id="chat">
-  <div id="chatHead"><span>💬 对话</span><span class="grow"></span><span id="chatState"></span><button id="chatClose">✕</button></div>
+  <div id="chatHead"><span>对话</span><span class="grow"></span><span id="chatState"></span><button id="chatClose">✕</button></div>
   <div id="chatLog"></div>
   <div id="chatIn">
     <textarea id="chatText" placeholder="给这台电脑发消息…（Enter 发送 / Shift+Enter 换行）"></textarea>
@@ -181,7 +181,7 @@
       try { es.close(); } catch (e) { }
       retries++;
       if (retries > 5) { whyNoPicture(); return; }   // 反复连不上就别再转圈，把真实原因问出来
-      stat.textContent = '画面断了，正在重连…（第 ' + retries + ' 次）';
+      stat.textContent = '画面断了，正在重连…（第 ' + retries + '次）';
       setTimeout(connectStream, Math.min(1200 * retries, 6000));
     };
   }

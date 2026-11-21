@@ -93,9 +93,7 @@ internal sealed class Res
 
     public async Task SseAsync(string payload) => await ChunkAsync(Encoding.UTF8.GetBytes(payload));
 
-    // --- SSE 有序发送队列 ---------------------------------------------------
-    // 以前每个事件都 Task.Run 直接往同一个 socket 写，多个事件并发写会互相踩坏帧、
-    // 甚至抛异常把连接踢掉（网页版「事件丢一半」的真凶）。改成一条队列串行写。
+    // SSE 事件串行写入，并发写同一个 socket 会把帧踩坏。
     private readonly System.Collections.Concurrent.ConcurrentQueue<string> _sseQ = new();
     private int _sseBusy;
     /// <summary>连接已坏（写失败），由 SSE 保活循环负责把客户端摘掉。</summary>

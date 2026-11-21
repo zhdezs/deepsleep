@@ -22,11 +22,7 @@ public sealed class CoreServerOptions
     public Action<string>? Log;
 }
 
-/// <summary>
-/// 内核的 HTTP 服务端 + 内网穿透隧道。
-/// 内核版 exe（deepsleep-core）和桌面客户端跑的是同一份实现，
-/// 所以两边能力、跨域策略、令牌校验完全一致 —— 桌面版不会有「Core 有而我没有」的功能。
-/// </summary>
+/// <summary>内核的 HTTP 服务端 + 内网穿透隧道。</summary>
 public static partial class CoreServer
 {
     private static Kernel _kernel = null!;
@@ -94,16 +90,11 @@ public static partial class CoreServer
 
         try
         {
-            // 端口可能起不来，而且**不一定是因为被占用**：Windows 会把成片的动态端口预留给
-            // Hyper-V / WSL / Docker，落在那一段里绑定失败报的是「访问权限不允许」（WSAEACCES），
-            // 不是习惯上的「已被占用」。实测这台机器的 8756 就落在保留段 8722-8821 里，
-            // 于是内核版双击后一闪就退出（用户看到的就是「闪退」）。
-            // 所以这里不放弃：从请求的端口往后找一个真能绑上的，并把实际端口告诉用户。
+            // 端口可能起不来，而且不一定是因为被占用：Windows 会把成片的动态端口预留给Hyper-V / WSL / Docker，
+            // 落在那一段里绑定失败报的是「访问权限不允许」（WSAEACCES）
             int want = o.Port;
             string? firstError = null;
-            // 往后找 1000 个端口。为什么不是 20 / 200：Windows 的保留段是**成片**的，
-            // 这台机器上 8622-9121 整段都被 Hyper-V/WSL 预留了（500 个端口连成一片），
-            // 小步长扫描会整段撞死在这里 —— 实测 +200 全失败，+1000 才出去。
+            // 往后找 1000 个端口。
             const int ScanSpan = 1000;
             for (int i = 0; i <= ScanSpan; i++)
             {
@@ -130,7 +121,7 @@ public static partial class CoreServer
         }
         catch (Exception ex)
         {
-            Say("端口 " + _port + " 起不来：" + ex.Message);
+            Say("端口 " + _port + "起不来：" + ex.Message);
             _listener = null;
         }
 
@@ -152,17 +143,7 @@ public static partial class CoreServer
     public static void RemoveExtraToken(string t) { if (t.Length > 0) lock (ExtraTokens) ExtraTokens.Remove(t); }
     internal static bool ExtraTokenOk(string t) { lock (ExtraTokens) return ExtraTokens.Contains(t); }
 
-    /// <summary>
-    /// 换绑监听地址。超级连接要在局域网里被对方直连，必须临时监听所有网卡；
-    /// 配对结束再换回 127.0.0.1。
-    ///
-    /// ⚠ 两处都是踩过的坑：
-    ///   1) **先停旧监听，再绑新地址**。以前是「先绑新的、成功后再停旧的」，在 Windows 上
-    ///      从 127.0.0.1 换到 0.0.0.0 时经常直接 10048（端口还被自己占着），而调用方又没看
-    ///      返回值 —— 结果超级连接以为已经在全网卡监听了，实际还只听本机：
-    ///      **同机自测能连上，跨机永远找不到设备**。
-    ///   2) 绑失败要**回滚**原地址，宁可退回只听本机，也不能把整个服务弄没。
-    /// </summary>
+    /// <summary>换绑监听地址。超级连接要在局域网里被对方直连，必须临时监听所有网卡； 配对结束再换回 127.0.0.1。</summary>
     public static bool Rebind(IPAddress addr)
     {
         var old = _listener;

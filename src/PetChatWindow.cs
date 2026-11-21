@@ -11,10 +11,7 @@ using Windows.Graphics;
 
 namespace TrollWrangler;
 
-/// <summary>
-/// 桌宠的独立聊天浮窗：和主界面共用同一套 HTML（ui\index.html?pet=1 走精简布局）与同一个内核，
-/// 所以在浮窗里说话和主界面完全连贯。
-/// </summary>
+/// <summary>桌宠的独立聊天浮窗：和主界面共用同一套 HTML（ui\index.html?pet=1 走精简布局）与同一个内核， 所以在浮窗里说话和主界面完全连贯。</summary>
 public sealed class PetChatWindow
 {
     private const int W = 384;

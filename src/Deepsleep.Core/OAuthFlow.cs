@@ -10,30 +10,7 @@ using System.Threading.Tasks;
 
 namespace TrollWrangler;
 
-/// <summary>
-/// OAuth PKCE 一键绑定：不手工创建 API Key，授权登录一次就自动填好。
-/// <para>
-/// 流程（Codex / Claude Code / Cline 走的是同一套标准做法）：
-/// ① 生成 PKCE 的 code_verifier / code_challenge（S256）与防重放的 state；
-/// ② 把用户送到平台授权页，授权页里的 callback_url 指向本机 http://127.0.0.1:&lt;随机端口&gt;/…；
-/// ③ 用户登录并点「同意」；
-/// ④ 平台带 ?code= 跳回那个本机地址，**两条接收路径同时开着，谁先拿到算谁**：
-///    · 应用内窗口：导航到回调地址时在网络层拦下，直接取走查询串；
-///    · 本机回环服务：真的起一个只监听 127.0.0.1 的 HttpListener。
-/// ⑤ 拿 code + code_verifier 换回 API Key。
-/// </para>
-/// <para>
-/// ⚠ **第二条路径必须一直开着**。这不是「二选一」而是「双保险」：授权中途被带去外部浏览器是
-/// 常态（GitHub / Google 这类第三方登录尤其容易），只靠应用内拦截的话，流程走到一半就断了 ——
-/// 用户会卡在 GitHub 页面上，而应用这边永远等不到授权码。真实踩过。
-/// </para>
-/// <para>
-/// ⚠ 只有**开放第三方应用 OAuth** 的平台能用。硅基流动、智谱这些只能在控制台手工建 Key；
-/// 魔搭虽有 OIDC，但换回的是身份 access_token（不是推理 Key），调不了推理接口 ——
-/// 这几家走「按引导绑定」，界面上会明确区分，不会让用户点了按钮撞一头灰。
-/// </para>
-/// 零第三方依赖：HttpListener + HttpClient 都是 .NET 自带。
-/// </summary>
+/// <summary>OAuth PKCE 一键绑定：不手工创建 API Key，授权登录一次就自动填好。</summary>
 public static class OAuthFlow
 {
     /// <summary>一个支持一键绑定的平台。</summary>
@@ -54,10 +31,7 @@ public static class OAuthFlow
         public bool SendPkce { get; init; } = true;
     }
 
-    /// <summary>
-    /// 支持一键绑定的平台。加新平台只要这里加一条 —— 但**必须先确认它真的开放第三方 OAuth**，
-    /// 否则用户点下去只会看到一个「未授权应用 / invalid client」的错误页。
-    /// </summary>
+    /// <summary>支持一键绑定的平台。加新平台只要这里加一条 —— 但必须先确认它真的开放第三方 OAuth， 否则用户点下去只会看到一个「未授权应用 / invalid client」的错误页。</summary>
     public static readonly Provider[] Providers =
     {
         new()
@@ -93,9 +67,7 @@ public static class OAuthFlow
         return null;
     }
 
-    /// <summary>
-    /// 跑完整条一键绑定流程，返回换到的 API Key。失败抛异常，调用方把 Message 直接显示给用户。
-    /// </summary>
+    /// <summary>跑完整条一键绑定流程，返回换到的 API Key。失败抛异常，调用方把 Message 直接显示给用户。</summary>
     public static async Task<string> RunAsync(Provider p, int timeoutSeconds, CancellationToken ct = default)
     {
         int port = FreePort();
@@ -115,7 +87,7 @@ public static class OAuthFlow
         q.Add("state=" + Uri.EscapeDataString(state));
         string authUrl = p.AuthUrl + "?" + string.Join("&", q);
 
-        // 回环服务**先起**，再开授权页 —— 中间任何一个瞬间的跳转都不能漏掉。
+        // 回环服务先起，再开授权页 —— 中间任何一个瞬间的跳转都不能漏掉。
         OAuthCallback.Clear();   // 清掉上一次残留的回调，避免新流程拿到旧授权码
         var receivers = new List<Func<CancellationToken, Task<OAuthCallback.CallbackPayload>>>();
         LoopbackReceiver? loopback = null;
@@ -129,9 +101,8 @@ public static class OAuthFlow
             catch { loopback = null; }   // 端口被占等：还能走应用内拦截
         }
 
-        // 应用内接收器**无条件**挂上，不跟「窗口有没有建成」绑定：
-        // 窗口没建成时它只是个空转的队列轮询（成本为零），但窗口建成后又被中途关掉、
-        // 或者外壳在别处把回调交回队列时，这条路径就是唯一的救生索。
+        // 应用内接收器无条件挂上，不跟「窗口有没有建成」绑定：窗口没建成时它只是个空转的队列轮询（成本为零），但窗口建成后又被中途关掉、或者外壳在别处把回调交回队列时，
+        // 这条路径就是唯一的救生索。
         receivers.Add(t => OAuthCallback.NextAsync(TimeSpan.FromSeconds(timeoutSeconds), t));
 
         bool inApp = InternalBrowser.TryOpen(authUrl, redirect);
@@ -163,10 +134,7 @@ public static class OAuthFlow
         }
     }
 
-    /// <summary>
-    /// 多条接收路径赛跑，谁先拿到有效结果算谁。**单条路径失败不影响另一条** ——
-    /// 所以这里把异常都吃掉，只认「真的拿到了回调」。
-    /// </summary>
+    /// <summary>多条接收路径赛跑，谁先拿到有效结果算谁。单条路径失败不影响另一条 —— 所以这里把异常都吃掉，只认「真的拿到了回调」。</summary>
     private static async Task<OAuthCallback.CallbackPayload> FirstResultAsync(
         IReadOnlyList<Func<CancellationToken, Task<OAuthCallback.CallbackPayload>>> receivers,
         TimeSpan timeout, CancellationToken ct)

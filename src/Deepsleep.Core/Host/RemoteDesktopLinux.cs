@@ -4,26 +4,11 @@ using System.Text.RegularExpressions;
 
 namespace TrollWrangler.CoreHost;
 
-/// <summary>
-/// Linux 被控端的远程桌面：截屏 + 鼠标键盘注入。
-///
-/// Windows 那份直接用 GDI + SendInput，Linux 不能照搬：
-///   · 截屏：X11 没有"随便读屏"的通用接口，Wayland 更必须过 compositor。
-///     所以按顺序试 —— GNOME Shell 的 DBus 截图（GNOME 3.26+，Wayland 下最稳）→
-///     xdg-desktop-portal 的 Screenshot（其它桌面 / 新版 GNOME）→ grim / spectacle /
-///     gnome-screenshot / xfce4-screenshooter / ImageMagick import / scrot 这些命令行工具。
-///     哪个先把 PNG 写出来就用哪个，之后一直用它。
-///   · 输入：走 X11 的 XTest（libXtst）。X11 会话下全局有效；Wayland 会话下只能操作
-///     XWayland 应用（GNOME/KDE 没有给普通程序留全局注入的口子），所以这种情况会回一句提示。
-/// </summary>
+/// <summary>Linux 被控端的远程桌面：截屏 + 鼠标键盘注入。</summary>
 internal static class RemoteDesktopLinux
 {
     private static readonly object Gate = new();
-    /// <summary>
-    /// 临时截图放哪：优先 ~/Pictures（GNOME 41+ 的 Shell 截图 DBus 只肯往「图片」目录里写，
-    /// 给它 /tmp 里的路径会被直接拒掉 —— Debian 13 的 GNOME 就是这么拦的）；
-    /// 没有「图片」目录（或不是 GNOME）再退回 /tmp，别的截图工具不挑地方。
-    /// </summary>
+    /// <summary>临时截图放哪：优先 ~/Pictures（GNOME 41+ 的 Shell 截图 DBus 只肯往「图片」目录里写</summary>
     private static readonly string Dir = PickDir();
 
     private static string PickDir()
@@ -69,7 +54,7 @@ internal static class RemoteDesktopLinux
     public static int ScreenWidth { get { Probe(); return _sw; } }
     public static int ScreenHeight { get { Probe(); return _sh; } }
 
-    // ------------------------------------------------------------------ 探测
+    // ---- 探测 ----
 
     private static bool IsWayland()
     {
@@ -98,11 +83,7 @@ internal static class RemoteDesktopLinux
         return false;
     }
 
-    /// <summary>
-    /// 重新探测一次：装好截屏工具、或者换了桌面会话（X11 ↔ Wayland）之后，
-    /// 刷新一下远控页就能用上，不用重启整个程序。15 秒内不重复探测（rd.html 一打开就会问
-    /// /api/rd/info，别把 gdbus / 门户对话框反复拉起来）。
-    /// </summary>
+    /// <summary>重新探测一次：装好截屏工具、或者换了桌面会话（X11 ↔ Wayland）之后， 刷新一下远控页就能用上，不用重启整个程序。</summary>
     public static void Reprope()
     {
         lock (Gate)
@@ -171,7 +152,7 @@ internal static class RemoteDesktopLinux
         }
     }
 
-    // ------------------------------------------------------------------ 截屏
+    // ---- 截屏 ----
 
     public static byte[] CapturePng(int maxWidth, out int outW, out int outH)
     {
@@ -286,11 +267,7 @@ internal static class RemoteDesktopLinux
         return true;
     }
 
-    /// <summary>
-    /// xdg-desktop-portal 的截图：结果是异步的，方法只回一个 handle，
-    /// 真正的文件地址在 org.freedesktop.portal.Request.Response 信号里 —— 所以先跑一个
-    /// gdbus monitor，再发请求，然后在监控输出里等那个信号。
-    /// </summary>
+    /// <summary>xdg-desktop-portal 的截图：结果是异步的，方法只回一个 handle</summary>
     private static bool PortalShot(string file, int timeoutMs)
     {
         Process? mon = null;
@@ -372,7 +349,7 @@ internal static class RemoteDesktopLinux
         catch { return ""; }
     }
 
-    // ------------------------------------------------------------------ 输入（X11 / XTest）
+    // ---- 输入（X11 / XTest） ----
 
     private const string LibX11 = "libX11.so.6";
     private const string LibXtst = "libXtst.so.6";
@@ -502,10 +479,7 @@ internal static class RemoteDesktopLinux
         }
     }
 
-    /// <summary>
-    /// 网页发过来的是 Windows 虚拟键码（event.keyCode），这里换成 X11 的 keysym 名字，
-    /// 再让 X 服务器查键位表 —— 比自己维护一张 keycode 表稳（不同键盘布局都对得上）。
-    /// </summary>
+    /// <summary>网页发过来的是 Windows 虚拟键码（event.keyCode），这里换成 X11 的 keysym 名字</summary>
     private static string? VkToKeysymName(int vk)
     {
         if (VkNames.TryGetValue(vk, out string? n)) return n;

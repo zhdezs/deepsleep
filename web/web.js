@@ -328,7 +328,7 @@ const PRESETS = [
 function systemPrompt() {
   const parts = [];
   const a = (S.cfg.agentMd || '').trim();
-  if (a) parts.push('【初始提示词 · AGENT.md（所有对话共享，只能在 ⚙ 设置里修改，优先级最高）】' + '\n' + a);
+  if (a) parts.push('【初始提示词 · AGENT.md（所有对话共享，只能在设置里修改，优先级最高）】' + '\n' + a);
   const mem = (S.cfg.memory || '').trim();
   if (mem) parts.push('【长期记忆（用户自己写的背景，回答时参考）】' + '\n' + mem);
   parts.push('你是 deepsleep 网页版的 AI 助手，运行在浏览器里。用中文回答，Markdown 排版，代码用围栏代码块。');
@@ -337,9 +337,9 @@ function systemPrompt() {
 function failHint(status, msg) {
   const m = String(msg || '');
   if (status === 429 || /429|访问量过大|限流|too many|rate limit/i.test(m)) {
-    return '内置的免费 Key 是大家共用的，这会儿被限流了 —— 过一两分钟再试，或者去 ⚙ 设置里填自己的 Key（免费注册智谱开放平台即可）。';
+    return '内置的免费 Key 是大家共用的，这会儿被限流了 —— 过一两分钟再试，或者去设置里填自己的 Key（免费注册智谱开放平台即可）。';
   }
-  if (status === 401 || status === 403) return 'Key 不对或没有权限：去 ⚙ 设置检查 API Key 和地址（内置免费 Key 请在设置里勾上「没有自己的 Key 时使用内置免费 Key」）。';
+  if (status === 401 || status === 403) return 'Key 不对或没有权限：去设置检查 API Key 和地址（内置免费 Key 请在设置里勾上「没有自己的 Key 时使用内置免费 Key」）。';
   if (/Failed to fetch|NetworkError|Load failed/i.test(m)) {
     return '这类报错通常是**浏览器跨域（CORS）**或地址/网络不通。\n- 换一个允许浏览器直连的地址（例如智谱、硅基流动）再试\n- 或用「本地 Ollama」这种同机地址\n- 桌面客户端没有跨域限制，功能也更全，建议下载客户端';
   }
@@ -366,15 +366,15 @@ async function send() {
   const text = box.value.trim();
   if (!c || !text) return;
   if (S.cfg.imageMode) { box.value = ''; grow(); return draw(text); }
-  if (!(S.effKey || '').trim()) { toast('先在 ⚙ 设置里填 API Key', 'error'); return openSettings(); }
-  if (!(S.cfg.apiUrl || '').trim()) { toast('先去 ⚙ 设置填 API 地址', 'error'); return openSettings(); }
+  if (!(S.effKey || '').trim()) { toast('先在设置里填 API Key', 'error'); return openSettings(); }
+  if (!(S.cfg.apiUrl || '').trim()) { toast('先去设置填 API 地址', 'error'); return openSettings(); }
   box.value = '';
   grow();
   const me = { id: uid(), self: true, text: text, time: clock() };
   const withImgs = S.imgs.slice();
   if (withImgs.length) {
     me.mm = [{ type: 'text', text: text }].concat(withImgs.map(x => ({ type: 'image_url', image_url: { url: x.url } })));
-    me.text = text + '（附 ' + withImgs.length + ' 张图）';
+    me.text = text + '（附 ' + withImgs.length + '张图）';
     S.imgs = [];
     renderImgs();
   }
@@ -549,7 +549,7 @@ function openSettings() {
   const m = document.createElement('div');
   m.className = 'modal';
   const h = document.createElement('h3');
-  h.textContent = '⚙ 设置（网页版）';
+  h.textContent = '设置（网页版）';
   const b = document.createElement('div');
   b.className = 'body';
   b.innerHTML =
@@ -690,7 +690,7 @@ function init() {
   renderImgs();
   paintDrawBtn();
   grow();
-  if (!S.effKey) toast('还没配 API Key，点右上角 ⚙ 填一个', 'error');
+  if (!S.effKey) toast('还没配 API Key，点右上角填一个', 'error');
 }
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
 else init();

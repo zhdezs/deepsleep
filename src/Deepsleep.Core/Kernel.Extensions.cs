@@ -8,10 +8,7 @@ namespace TrollWrangler.Core;
 
 using TrollWrangler;
 
-/// <summary>
-/// 扩展（.dslt 工具包 / .dslp 皮肤包）的界面命令。
-/// 安装逻辑在 ExtensionStore，这里只负责收发与把结果推给前端。
-/// </summary>
+/// <summary>扩展（.dslt 工具包 / .dslp 皮肤包）的界面命令。 安装逻辑在 ExtensionStore，这里只负责收发与把结果推给前端。</summary>
 public sealed partial class Kernel
 {
     /// <summary>扩展 API 版本：界面显示出来，一眼看出前端/内核是不是同一代。</summary>
@@ -19,10 +16,7 @@ public sealed partial class Kernel
 
     private static readonly JsonSerializerOptions ExtJson = new() { WriteIndented = false };
 
-    /// <summary>
-    /// 扩展相关命令的落盘日志。界面那头没有控制台，出问题只能靠这个查：
-    /// 有日志说明命令到了内核，没日志说明前端没发出来 / 跑的是旧 DLL。
-    /// </summary>
+    /// <summary>扩展相关命令的落盘日志。界面那头没有控制台，出问题只能靠这个查： 有日志说明命令到了内核，没日志说明前端没发出来 / 跑的是旧 DLL。</summary>
     private void ExtLog(string msg)
     {
         try
@@ -88,11 +82,7 @@ public sealed partial class Kernel
         };
     }
 
-    /// <summary>
-    /// 重新扫盘。用于「另一个进程刚装完扩展包」的场景：
-    /// 双击 .dslt/.dslp 会新起一个进程装完就退，正开着的窗口靠这条命令把
-    /// 新工具塞进 Agent 工具表和界面（切回窗口时自动触发，不弹提示）。
-    /// </summary>
+    /// <summary>重新扫盘。用于「另一个进程刚装完扩展包」的场景： 双击 .dslt/.dslp 会新起一个进程装完就退，正开着的窗口靠这条命令把 新工具塞进 Agent 工具表和界面（切回窗口时自动触发，不弹提示）。</summary>
     internal void ExtRescan()
     {
         RefreshAgentTools();
@@ -143,7 +133,7 @@ public sealed partial class Kernel
         Emit(new { ev = "toast", ok, text = ok ? (string.IsNullOrEmpty(id) ? "已关闭皮肤" : "皮肤已应用") : "没找到这个皮肤" });
         if (ok)
         {
-            // 主题（亮/暗）由右上角 ☀️/🌙 独占控制：皮肤只是叠加层，
+            // 主题（亮/暗）由右上角 / 独占控制：皮肤只是叠加层，
             // 绝不能因为装了个 base=dark 的皮肤就把当前浅色模式掰过去。
             EmitExtensions();
             EmitSettings();

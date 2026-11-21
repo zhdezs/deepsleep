@@ -7,10 +7,7 @@ namespace TrollWrangler.Core;
 /// <summary>会话运行状态（发送 / 停止 / 恢复 三态按钮用）。</summary>
 public enum RunState { Idle, Running, Stopped }
 
-/// <summary>
-/// 一条聊天消息（纯数据，不含任何界面类型）。界面（HTML）只认这些字段，
-/// 颜色 / 头像 / 显隐规则全部交给前端决定。
-/// </summary>
+/// <summary>一条聊天消息（纯数据，不含任何界面类型）。界面（HTML）只认这些字段， 颜色 / 头像 / 显隐规则全部交给前端决定。</summary>
 public sealed class ChatItem
 {
     public string Id { get; set; } = Guid.NewGuid().ToString("N")[..10];
@@ -45,8 +42,7 @@ public sealed class ChatItem
     public string ToolSummary { get; set; } = "";
     /// <summary>展开后的明细（搜索结果列表 / 命令输出 / 文件内容）。</summary>
     public string ToolDetail { get; set; } = "";
-    /// <summary>工具大类：cmd（运行命令）/file（写文件）/search/research/vision/read/other。
-    /// 界面把同一轮里连续的 cmd、file 各自合并成一张可展开卡片。</summary>
+    /// <summary>工具大类：cmd（运行命令）/file（写文件）/search/research/vision/read/other。</summary>
     public string ToolKind { get; set; } = "";
 
     /// <summary>模型的思考过程（reasoning）。界面把它折叠在正文上方（默认不展开），绝不混进正文。</summary>
@@ -62,6 +58,7 @@ public sealed class Conversation
     public string Created { get; set; } = "";
     public bool IsPinned { get; set; }
     public bool AutoApprove { get; set; }
+    public Dictionary<string, DateTimeOffset> CapabilityGrants { get; set; } = new();
     public List<ChatItem> Items { get; } = new();
 }
 

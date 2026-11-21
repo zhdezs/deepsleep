@@ -5,10 +5,7 @@ using System.Text.Json;
 
 namespace TrollWrangler;
 
-/// <summary>持久化的单条消息（不含纯界面字段，头像那类按标签页类型重建）。
-/// ⚠️ 工具卡的 ToolName / ToolSummary / ToolDetail / ToolKind **必须在这里**：
-/// 少了它们，重启后 RestoreConversation 恢复出的项没有工具身份，前端
-/// <c>if (it.tool)</c> 判空 → 工具卡退化成一段裸文本全文（曾因此出过一个 bug）。</summary>
+/// <summary>持久化的单条消息（不含纯界面字段，头像那类按标签页类型重建）。</summary>
 public sealed class ChatMessageDto
 {
     public string Text { get; set; } = "";
@@ -46,6 +43,7 @@ public sealed class ConversationDto
     public int Sid { get; set; }
     public string Created { get; set; } = "";
     public bool AutoApprove { get; set; }
+    public Dictionary<string, DateTimeOffset> CapabilityGrants { get; set; } = new();
     public bool IsPinned { get; set; }
     public List<ChatMessageDto> Messages { get; set; } = new();
 }

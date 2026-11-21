@@ -8,10 +8,7 @@ using System.Threading.Tasks;
 
 namespace TrollWrangler;
 
-/// <summary>
-/// 图像生成客户端：调用智谱 CogView-3-Flash（OpenAI 兼容 images/generations 接口）。
-/// 生成的图片下载保存到本地，返回本地路径供聊天展示。
-/// </summary>
+/// <summary>图像生成客户端：调用智谱 CogView-3-Flash（OpenAI 兼容 images/generations 接口）。</summary>
 public sealed class ImageGenClient : IDisposable
 {
     private readonly HttpClient _http = new();

@@ -53,11 +53,7 @@ public static partial class CoreServer
         await res.SendAsync(png, "image/png");
     }
 
-    /// <summary>
-    /// 帧流：每帧 PNG 转 base64，塞进 SSE 的 data 里发（约定 "img" 字段）。
-    /// 原来的 multipart/x-mixed-replace 长连会被部分隧道整体缓存，浏览器就一直黑屏 —— 换成 SSE 后
-    /// 每条事件都是独立一行，隧道只会转发不会攒着。默认 30 帧，画面没变就跳过，静止不吃带宽。
-    /// </summary>
+    /// <summary>帧流：每帧 PNG 转 base64，塞进 SSE 的 data 里发（约定 "img"字段）。</summary>
     private static async Task RdStreamAsync(Res res, Req req)
     {
         if (!RemoteDesktop.Available)
@@ -92,10 +88,7 @@ public static partial class CoreServer
         catch { /* 对方关了页面 / 断线 */ }
     }
 
-    /// <summary>
-    /// 远控消息：控制端把文字 base64 编码后 POST 过来，这里解码喂给本机内核（等价于本机输入一条消息）。
-    /// 用 base64 是为了让消息里出现换行 / emoji / 引号时也不被隧道和 JSON 转义搞坏。
-    /// </summary>
+    /// <summary>远控消息：控制端把文字 base64 编码后 POST 过来，这里解码喂给本机内核（等价于本机输入一条消息）。</summary>
     private static async Task RdMsgAsync(Res res, Req req)
     {
         string text = "";
@@ -121,10 +114,7 @@ public static partial class CoreServer
         await res.SendJsonAsync("{\"ok\":true}");
     }
 
-    /// <summary>
-    /// 远控事件流：把内核输出（AI 流式回答、工具状态…）base64 后推给控制端，
-    /// 就是用户说的「被控端发上下文」——控制端据此看到完整的回复过程。
-    /// </summary>
+    /// <summary>远控事件流：把内核输出（AI 流式回答、工具状态…）base64 后推给控制端， 就是用户说的「被控端发上下文」——控制端据此看到完整的回复过程。</summary>
     internal static async Task RdChatAsync(Res res)
     {
         await res.StartSseAsync();

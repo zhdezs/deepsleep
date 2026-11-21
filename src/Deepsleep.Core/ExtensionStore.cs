@@ -38,10 +38,7 @@ public sealed class SkinPack
     public string Description = "";
     /// <summary>light / dark：套用后先切到哪个底。</summary>
     public string Base = "dark";
-    /// <summary>
-    /// light / dark：这是该主题模式的「默认皮肤」，切主题时自动换上。空 = 普通皮肤。
-    /// 默认皮肤之间就是这样成对工作的：切到深色用 dark 那套，切到浅色用 light 那套。
-    /// </summary>
+    /// <summary>light / dark：这是该主题模式的「默认皮肤」，切主题时自动换上。空 = 普通皮肤。</summary>
     public string DefaultFor = "";
     /// <summary>是不是随程序分发的内置皮肤（不能删，版本由 builtin 计数驱动升级）。</summary>
     public bool Builtin = false;
@@ -52,15 +49,7 @@ public sealed class SkinPack
     public string Wallpaper = "";
 }
 
-/// <summary>
-/// deepsleep 扩展（.dslt 工具包 / .dslp 皮肤包）的安装、列表与卸载。
-///
-/// 两种包都是 **zip**，根目录放一个清单文件：
-///   .dslt → manifest.json（id / name / entry / runtime / description / version / author）
-///   .dslp → theme.json  （id / name / base / vars / css / wallpaper / …）
-/// 安装 = 解压到 data\tools\或 data\skins\ 下，并登记到 data\extensions.json。
-/// 双击安装靠注册表关联到 deepsleep.exe --install-ext "文件路径"。
-/// </summary>
+/// <summary>deepsleep 扩展（.dslt 工具包 / .dslp 皮肤包）的安装、列表与卸载。</summary>
 public static class ExtensionStore
 {
     public const string ToolExt = ".dslt";
@@ -70,7 +59,7 @@ public static class ExtensionStore
     public static string SkinsDir(string dataDir) => Path.Combine(dataDir, "skins");
     private static string IndexFile(string dataDir) => Path.Combine(dataDir, "extensions.json");
 
-    // ------------------------------------------------------------------ 读清单
+    // ---- 读清单 ----
 
     private static JsonObject? ReadJsonInZip(string zipPath, string entry)
     {
@@ -191,7 +180,7 @@ public static class ExtensionStore
         return sb.ToString();
     }
 
-    // ------------------------------------------------------------------ 索引
+    // ---- 索引 ----
 
     private sealed class Index
     {
@@ -248,7 +237,7 @@ public static class ExtensionStore
         SaveIndex(dataDir, idx);
     }
 
-    // ------------------------------------------------------------------ 列表
+    // ---- 列表 ----
 
     public static List<CustomTool> Tools(string dataDir)
     {
@@ -332,7 +321,7 @@ public static class ExtensionStore
         catch { return null; }
     }
 
-    // ------------------------------------------------------------------ 启用 / 删除 / 皮肤
+    // ---- 启用 / 删除 / 皮肤 ----
 
     public static bool SetToolEnabled(string dataDir, string id, bool on)
     {
@@ -385,13 +374,9 @@ public static class ExtensionStore
         return Skins(dataDir).FirstOrDefault(s => s.Id == id);
     }
 
-    // ------------------------------------------------------------------ 内置默认皮肤
+    // ---- 内置默认皮肤 ----
 
-    /// <summary>
-    /// 把随程序分发的内置皮肤（assets\skins\&lt;id&gt;\）装进 data\skins。
-    /// 用 theme.json 里的 <c>builtin</c> 计数判断要不要覆盖：计数变大 = 有新版本，
-    /// 这样不必每次发版都去动 version 字段。返回这次更新了几套。
-    /// </summary>
+    /// <summary>把随程序分发的内置皮肤（assets\skins\&lt;id&gt;\）装进 data\skins。</summary>
     public static int SeedBuiltins(string dataDir, string assetsDir)
     {
         if (string.IsNullOrWhiteSpace(assetsDir) || !Directory.Exists(assetsDir)) return 0;
@@ -421,13 +406,7 @@ public static class ExtensionStore
         return upgraded;
     }
 
-    /// <summary>
-    /// 旧版本曾把「深/浅默认皮肤」当 .dslp 灌进 data\skins（dsh-style / dsh-light）。
-    /// 现在两套 CSS 已经是亮/暗模式固有的（ui/theme-*.css），这些残留目录要清掉，
-    /// 否则它们还会出现在扩展列表里，让人误以为需要手动点「使用」。
-    /// 只清这两个已知 id：第三方皮肤就算自己写了 builtin 字段也不会被误删。
-    /// 返回清理掉的套数。
-    /// </summary>
+    /// <summary>旧版本曾把「深/浅默认皮肤」当 .dslp 灌进 data\skins（dsh-style / dsh-light）。</summary>
     public static int PurgeBuiltins(string dataDir)
     {
         string root = SkinsDir(dataDir);
@@ -467,14 +446,7 @@ public static class ExtensionStore
         return "";
     }
 
-    /// <summary>
-    /// 切主题 / 启动时决定该挂哪套皮肤：
-    /// <list type="bullet">
-    ///   <item>当前没选皮肤 → 用这个模式的默认皮肤（新装的用户开箱就是这个样子）</item>
-    ///   <item>当前选的就是某套默认皮肤 → 换成新模式对应那套（深/浅色成对切换）</item>
-    ///   <item>当前选的是第三方皮肤 / 用户自己关掉了皮肤 → 不动，用户的选择优先</item>
-    /// </list>
-    /// </summary>
+/// <summary>切主题或启动时决定挂哪套皮肤。</summary>
     public static string ResolveSkinForTheme(string dataDir, string theme)
     {
         if (LoadIndex(dataDir).SkinOff) return "";    // 用户明确关掉了皮肤
@@ -485,12 +457,9 @@ public static class ExtensionStore
         return cur.Id;
     }
 
-    // ------------------------------------------------------------------ 制作包
+    // ---- 制作包 ----
 
-    /// <summary>
-    /// 把一个目录打成 .dslt / .dslp（zip）。给 AI 造扩展用：
-    /// 先写文件，再调这里打包，用户就能双击安装 / 直接安装。
-    /// </summary>
+    /// <summary>把一个目录打成 .dslt / .dslp（zip）。给 AI 造扩展用： 先写文件，再调这里打包，用户就能双击安装 / 直接安装。</summary>
     public static (bool ok, string msg) Pack(string srcDir, string outPath)
     {
         try

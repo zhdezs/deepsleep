@@ -7,21 +7,7 @@ using System.Text.Json;
 
 namespace TrollWrangler;
 
-/// <summary>
-/// 可增量训练的「词级」n-gram 语言模型（BPE 词表 + trigram + 插值回退 + 温度采样）。
-///
-/// 关键：字符级 n-gram 在几千句小语料上计数稀疏，采样会生成乱码。
-/// 因此先用 BPE（字节对编码）从语料自动学习出「词表」（无监督分词，
-/// 把高频字组合并成词），再在词序列上统计 n-gram。生成按「词」采样再拼接，
-/// 能产出通顺的中文回复——这是真正从数据训练、且可增量学习的模型。
-///
-/// 支持：
-///   - Collect(text)：收集语料（种子训练时批量喂）；
-///   - FinalizeTrain()：学 BPE 词表 + 全量训练词级 n-gram；
-///   - Learn(text)：增量训练（用已学词表分词后累加计数，对话即训练数据）；
-///   - Sample(seed, temperature)：按词温度采样生成；
-///   - Save / Load：持久化（含 BPE 合并表与 n-gram 计数）。
-/// </summary>
+/// <summary>可增量训练的「词级」n-gram 语言模型（BPE 词表 + trigram + 插值回退 + 温度采样）。</summary>
 public sealed class NgramModel
 {
     private const string Bos = "\u0001";
@@ -46,9 +32,7 @@ public sealed class NgramModel
     public int MergeCount => _merges.Count;
     public long TotalTokens { get; private set; }
 
-    // ==================================================================
     // 分词：先按标点切「短语」，短语内部再用 BPE 合并
-    // ==================================================================
 
     private static List<string> PreTokens(string text)
     {
@@ -91,9 +75,7 @@ public sealed class NgramModel
         return toks;
     }
 
-    // ==================================================================
     // BPE 词表学习（无监督分词）
-    // ==================================================================
 
     private void LearnMerges(int numMerges = 220)
     {
@@ -117,9 +99,7 @@ public sealed class NgramModel
         }
     }
 
-    // ==================================================================
     // 训练
-    // ==================================================================
 
     /// <summary>收集语料（供 FinalizeTrain 学 BPE 用）。</summary>
     public void Collect(string text)
@@ -202,9 +182,7 @@ public sealed class NgramModel
         d[k] = d.TryGetValue(k, out int v) ? v + n : n;
     }
 
-    // ==================================================================
     // 概率与采样（词级）
-    // ==================================================================
 
     private double Prob(string tok, List<string> ctx)
     {
@@ -262,9 +240,7 @@ public sealed class NgramModel
         return weights[^1].tok;
     }
 
-    // ==================================================================
     // 采样生成
-    // ==================================================================
 
     public string Sample(string seed = "", double temperature = 0.9, int maxLen = 150, int minLen = 14)
     {
@@ -333,9 +309,7 @@ public sealed class NgramModel
         return t;
     }
 
-    // ==================================================================
     // 持久化
-    // ==================================================================
 
     public void Save(string path)
     {

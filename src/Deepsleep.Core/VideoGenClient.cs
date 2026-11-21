@@ -8,16 +8,7 @@ using System.Threading.Tasks;
 
 namespace TrollWrangler;
 
-/// <summary>
-/// 视频生成客户端（**自定义 API**）。
-///
-/// 视频生成没有统一标准，各家的差别主要在「怎么拿到结果」。这里按下面三种都认：
-///   ① 提交接口直接给视频地址 / base64（同步型）
-///   ② 提交后返回任务 id，再轮询查询接口（智谱 / 多数国内厂商）
-///   ③ 自己指定查询地址模板（含 {id} 占位，例如 https://api.x.com/v1/videos/{id}）
-/// 查询地址留空时按「把提交地址最后一段换成 async-result/{id}」推导（智谱协议）。
-/// 结果里 url / video_result[0].url / data[0].url / b64_json 都能识别。
-/// </summary>
+/// <summary>视频生成客户端（自定义 API）。 视频生成没有统一标准，各家的差别主要在「怎么拿到结果」。</summary>
 public sealed class VideoGenClient : IDisposable
 {
     private readonly HttpClient _http = new() { Timeout = TimeSpan.FromMinutes(5) };
@@ -35,6 +26,9 @@ public sealed class VideoGenClient : IDisposable
 
     public bool Configured => !string.IsNullOrWhiteSpace(ApiKey);
 
+    /// <summary>是不是火山方舟（Seedance）那套协议：POST /contents/generations/tasks 提交， GET 同一路径 + /{id} 查询。</summary>
+    private bool IsArk => (Url ?? "").Contains("contents/generations/tasks", StringComparison.OrdinalIgnoreCase);
+
     /// <summary>生成视频并保存到本地，返回本地文件路径；失败返回 null（原因见 LastError）。</summary>
     public async Task<string?> GenerateAsync(string prompt, string? size = null,
                                              CancellationToken ct = default)
@@ -48,13 +42,21 @@ public sealed class VideoGenClient : IDisposable
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromMinutes(10));
 
-            // ---- 1) 提交任务
-            var payload = new System.Collections.Generic.Dictionary<string, object?>
+            // ---- 1) 提交任务 ----
+            var payload = new System.Collections.Generic.Dictionary<string, object?>();
+            if (IsArk)
             {
-                ["model"] = Model,
-                ["prompt"] = prompt,
-            };
-            if (!string.IsNullOrWhiteSpace(size)) payload["size"] = size;
+                // Seedance：提示词走 content 数组；size 在这里当画幅比例用（16:9 / 9:16 / 1:1）
+                payload["model"] = Model;
+                payload["content"] = new object[] { new { type = "text", text = prompt } };
+                if (!string.IsNullOrWhiteSpace(size) && size.Contains(':')) payload["ratio"] = size;
+            }
+            else
+            {
+                payload["model"] = Model;
+                payload["prompt"] = prompt;
+                if (!string.IsNullOrWhiteSpace(size)) payload["size"] = size;
+            }
 
             using var req = new HttpRequestMessage(HttpMethod.Post, Url);
             req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
@@ -86,7 +88,7 @@ public sealed class VideoGenClient : IDisposable
             }
             if (taskId.Length == 0) { LastError = "接口没返回任务 id：" + Short(body); return null; }
 
-            // ---- 2) 轮询结果
+            // ---- 2) 轮询结果 ----
             string pollUrl = PollUrl(taskId);
             string lastStatus = "";
             for (int i = 0; i < 120 && !cts.Token.IsCancellationRequested; i++)
@@ -131,6 +133,12 @@ public sealed class VideoGenClient : IDisposable
         if (tpl.Length > 0)
             return tpl.Contains("{id}") ? tpl.Replace("{id}", Uri.EscapeDataString(taskId)) : tpl.TrimEnd('/') + "/" + taskId;
         string s = (Url ?? "").Trim();
+        if (IsArk)
+        {
+            int qa = s.IndexOf('?');
+            if (qa >= 0) s = s[..qa];
+            return s.TrimEnd('/') + "/" + Uri.EscapeDataString(taskId);
+        }
         int q = s.IndexOf('?');
         if (q >= 0) s = s[..q];
         try
@@ -160,6 +168,10 @@ public sealed class VideoGenClient : IDisposable
                 first.TryGetProperty("url", out var u2) && u2.ValueKind == JsonValueKind.String) return u2.GetString();
         }
         if (root.TryGetProperty("url", out var u3) && u3.ValueKind == JsonValueKind.String) return u3.GetString();
+        // 火山方舟 Seedance：{"content":{"video_url":"https://…mp4"}}
+        if (root.TryGetProperty("content", out var ct) && ct.ValueKind == JsonValueKind.Object &&
+            ct.TryGetProperty("video_url", out var vu) && vu.ValueKind == JsonValueKind.String)
+            return vu.GetString();
         return null;
     }
 

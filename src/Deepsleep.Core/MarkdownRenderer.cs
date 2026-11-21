@@ -4,11 +4,7 @@ using System.Text.RegularExpressions;
 
 namespace TrollWrangler;
 
-/// <summary>
-/// 轻量 Markdown 清洗器（无第三方依赖、不创建 UI 元素，杜绝 XAML 绑定崩溃）：
-/// 把 Markdown 转成干净可读的纯文本 —— 去掉 **、`、#、``` 等标记符号，
-/// 让 AI 输出不再出现 {JSON}、**加粗** 之类的原始符号。
-/// </summary>
+/// <summary>轻量 Markdown 清洗器，把 Markdown 转成纯文本。</summary>
 public static class MarkdownRenderer
 {
     public static string ToPlainText(string? text)
@@ -38,7 +34,7 @@ public static class MarkdownRenderer
             // 标题：去掉 # 前缀
             s = Regex.Replace(s, @"^#{1,6}\s+", "");
 
-            // 引用：去掉 > 前缀
+            // 引用：去掉 >前缀
             if (s.StartsWith(">")) s = s.TrimStart('>').TrimStart();
 
             // 无序列表 → 项目符号；有序列表保留编号
@@ -63,10 +59,7 @@ public static class MarkdownRenderer
         return result;
     }
 
-    /// <summary>
-    /// 全局 JSON 过滤器：把形如 {"tool":"...","args":{...}} 的工具调用 JSON（含 ```json 围栏、
-    /// 包裹在段落里、或格式有误的情况）从显示文本中统一抠掉，杜绝原始 JSON 漏进对话。
-    /// </summary>
+/// <summary>全局 JSON 过滤器，把工具调用 JSON 从显示文本里抠掉。</summary>
     public static string StripToolJson(string text)
     {
         if (string.IsNullOrEmpty(text)) return text;
@@ -113,7 +106,7 @@ public static class MarkdownRenderer
         }
         catch
         {
-            // 解析失败也过滤：只要同时含 "tool" 与 "args" 键特征
+            // 解析失败也过滤：只要同时含 "tool"与 "args"键特征
             return json.Contains("\"tool\"", StringComparison.Ordinal) &&
                    json.Contains("\"args\"", StringComparison.Ordinal);
         }

@@ -19,11 +19,7 @@ public sealed class SearchHit
     public string Engine { get; init; } = "";
 }
 
-/// <summary>
-/// 内置爬虫式搜索：不依赖任何搜索 API / Key，直接抓取搜索引擎结果页并解析正文。
-/// 多引擎依次尝试（Bing 国内 → 搜狗 → 360 → DuckDuckGo HTML），
-/// 统一处理相对链接、跳转链接解包、去重与无意义标题过滤。
-/// </summary>
+/// <summary>内置爬虫式搜索：不依赖任何搜索 API / Key，直接抓取搜索引擎结果页并解析正文。</summary>
 public static class WebCrawler
 {
     public const string UserAgent =
@@ -132,7 +128,7 @@ public static class WebCrawler
         return text;
     }
 
-    // ---------- 各引擎结果页解析 ----------
+    // ---- 各引擎结果页解析 ----
 
     private static List<SearchHit> ParseBing(string html)
         => ParsePairs(html,

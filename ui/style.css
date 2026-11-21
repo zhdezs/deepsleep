@@ -58,6 +58,15 @@ input, textarea, select { font: inherit; color: inherit; }
 }
 body.dark .seg button.on { background: #636366; }
 .tb-right { display: flex; align-items: center; gap: 6px; }
+/* 线性图标，颜色跟随文字 */
+.ico {
+  width: 17px; height: 17px; display: block; flex: 0 0 auto;
+  stroke: currentColor; fill: none; stroke-width: 1.7;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.bar-icon .ico { width: 18px; height: 18px; }
+body.dark .only-light { display: none; }
+body.light .only-dark { display: none; }
 .icon {
   width: 30px; height: 30px; border-radius: 8px; font-size: 14px;
   display: flex; align-items: center; justify-content: center; opacity: .82;
@@ -101,7 +110,7 @@ body.dark .seg button.on { background: #636366; }
 .conv:hover { background: var(--hover); }
 .conv.on { background: var(--sel); font-weight: 600; }
 .conv .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.conv .p { font-size: 10px; opacity: .55; }
+.conv .p { width: 5px; height: 5px; border-radius: 50%; background: var(--blue); opacity: .7; flex: 0 0 auto; }
 .side-bottom {
   display: flex; gap: 6px; padding: 8px 10px 10px;
   border-top: 1px solid var(--border);
@@ -350,6 +359,9 @@ body.dark .seg button.on { background: #636366; }
   color: inherit;
 }
 .brand svg { width: 100%; height: 100%; display: block; }
+/* 认不出品牌的模型用自家图标（deepsleep.png）：圆角裁一下，别让白底块在深色主题里发亮 */
+.brand img { width: 100%; height: 100%; display: block; object-fit: contain; }
+.brand.dsf { border-radius: 4px; overflow: hidden; }
 .brand.mono {
   border-radius: 5px; color: #fff; font-size: 9px; font-weight: 700; line-height: 1;
   letter-spacing: -.2px;
@@ -385,6 +397,19 @@ body.dark .seg button.on { background: #636366; }
 .plus-menu .menu-item input { display: none; }
 .plus-menu .menu-item:has(input:checked) { color: var(--blue); font-weight: 600; }
 .plus-menu .menu-sep { height: 1px; margin: 5px 6px; background: var(--border); }
+/* 思考强度：一行里塞四个档位小按钮，选中的用蓝色描边，别用实色填充（深色下会糊成一团） */
+.plus-menu .reason-row { justify-content: space-between; cursor: default; }
+.plus-menu .reason-row:hover { background: transparent; }
+.seg-mini { display: flex; gap: 2px; padding: 2px; border-radius: 9px; background: var(--chipbg); }
+.seg-mini button {
+  min-width: 26px; height: 22px; padding: 0 6px; border: 1px solid transparent; border-radius: 7px;
+  background: transparent; color: var(--muted); font-size: 11.5px; cursor: pointer;
+}
+.seg-mini button:hover { color: var(--text); }
+.seg-mini button.on {
+  background: rgba(0, 122, 255, .16); border-color: rgba(0, 122, 255, .45);
+  color: var(--blue); font-weight: 600;
+}
 
 /* ---------------- 输入区上方的展开面板（用量 / 技能 / 模型）---------------- */
 /* 三个面板都锚在输入卡片正上方：右下角弹出用量与模型，左下角弹出技能。
@@ -510,6 +535,7 @@ body.dark .seg button.on { background: #636366; }
 }
 .chip input { display: none; }
 .chip i { font-style: normal; font-size: 12.5px; line-height: 1; }
+.chip i .ico { width: 14px; height: 14px; }
 .chip span { line-height: 1; }
 .compose-foot { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; }
 .busy { font-size: 11.5px; color: var(--blue); }
@@ -726,9 +752,9 @@ body.pet #agents { display: none; }
 .runcard details.runstep > summary::before { content: '▸ '; color: var(--muted); }
 .runcard details.runstep[open] > summary::before { content: '▾ '; }
 
-/* ---------------- 扩展列表（设置 → 🧩 扩展） ---------------- */
+/* 扩展列表 */
 .extrow {
-  display: flex; align-items: center; gap: 10px;
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
   padding: 9px 11px; border: 1px solid var(--border); border-radius: 11px;
   margin: 7px 0; background: var(--card);
 }
@@ -744,6 +770,22 @@ body.pet #agents { display: none; }
 .extrow .extinfo span { font-size: 12px; color: var(--muted); }
 .extrow .extinfo em { font-size: 11px; color: var(--muted); font-style: normal; opacity: .8; }
 .extrow .ck { margin: 0; }
+
+/* 连接器：点「连接」后展开的令牌输入行（整行铺满，跟在详情下面） */
+.conn-token {
+  display: none; flex-basis: 100%; gap: 6px; align-items: center;
+  padding-top: 8px; margin-top: 2px; border-top: 1px dashed var(--border);
+}
+/* 通用文本/下拉输入：连接器的令牌行、触发器的添加行都用它。
+   以前只写在 .conn-token 下，触发器那行用 .conn-input 就拿不到样式 →
+   暗色主题里是「浏览器默认白底 + 继承来的浅色字」，等于看不见。 */
+.conn-input {
+  flex: 1; min-width: 0; font: inherit; font-size: 12.5px;
+  padding: 6px 9px; border-radius: 9px;
+  border: 1px solid var(--border); background: var(--input, var(--card)); color: var(--text);
+}
+.conn-input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 2px var(--ring); }
+select.conn-input { cursor: pointer; }
 
 /* 右下角「可用工具」：一行小字，点开去扩展管理 */
 .compose-foot { display: flex; align-items: center; gap: 8px; }

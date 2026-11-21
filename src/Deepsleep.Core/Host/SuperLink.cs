@@ -3,16 +3,7 @@ using System.Text.Json;
 
 namespace TrollWrangler.CoreHost;
 
-/// <summary>
-/// 超级连接：一串 6 位配对码，把两台设备的 deepsleep 连起来，连上就能用远程桌面。
-///
-/// 被控端（host）：生成配对码 + 一个一次性令牌 → 临时监听网卡并把地址发到信令通道
-///                → 对方先试局域网直连（真点对点）；同时手写一条内置隧道（系统自带 ssh，
-///                  零下载）热着备用 → 直连成功立刻关掉隧道，保持点对点。
-/// 控制端（client）：输入配对码 → 从信令通道拿到地址 → 直连优先，隧道兜底 → 连上后打开远程桌面。
-///
-/// 信令只传几 KB 的握手消息（ntfy.sh），连上之后数据都在两台设备之间，不经过第三方。
-/// </summary>
+/// <summary>超级连接：一串 6 位配对码，把两台设备的 deepsleep 连起来，连上就能用远程桌面。</summary>
 public static class SuperLink
 {
     private static readonly string SelfId = Guid.NewGuid().ToString("N")[..8];
@@ -38,7 +29,7 @@ public static class SuperLink
     private static bool _wasPublic;
     private static DateTime _startedAt = DateTime.Now;
 
-    // ------------------------------------------------------------------ 被控端
+    // ---- 被控端 ----
 
     /// <summary>生成配对码，开始等对方连过来。</summary>
     public static void StartHost()
@@ -67,7 +58,7 @@ public static class SuperLink
         {
             lock (Gate)
             {
-                Message = "⚠ 局域网监听没打开（端口被占用或被防火墙挡住），对方只能走内置隧道，可能慢一些。";
+                Message = "局域网监听没打开（端口被占用或被防火墙挡住），对方只能走内置隧道，可能慢一些。";
             }
         }
         _cts = new CancellationTokenSource();    // 自己管生命周期，别让 5 分钟把已连上的会话掐了
@@ -176,9 +167,8 @@ public static class SuperLink
     private static void OnTunnelReady()
     {
         string now = CoreServer.TunnelUrl;
-        // 隧道断了 / 正在重建（地址被清空）：把自己的旧地址也作废，
-        // 并且不要把空地址当成 offer 发出去 —— 空的 offer 会让对方以为「对方还没建好」，
-        // 而继续持有旧地址又会让对方对着死域名白探。两种都不做，等新地址来了再说。
+        // 隧道断了 / 正在重建（地址被清空）：把自己的旧地址也作废，并且不要把空地址当成 offer 发出去 —— 空的 offer 会让对方以为「对方还没建好」，
+        // 而继续持有旧地址又会让对方对着死域名白探。
         if (now.Length == 0)
         {
             if (TunnelUrl.Length > 0)
@@ -225,7 +215,7 @@ public static class SuperLink
         catch { }
     }
 
-    // ------------------------------------------------------------------ 控制端
+    // ---- 控制端 ----
 
     /// <summary>输入 6 位配对码去连对方的设备。</summary>
     public static void Connect(string code)
@@ -310,20 +300,14 @@ public static class SuperLink
             ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
         }), ct);
 
-        // 1) 局域网直连优先（真点对点）
-        //    窗口给足：跨机首次配对时对方要先听到 hello、再回 offer，信令有几秒延迟；
-        //    这里等不到 offer 就等于白跑一轮。8 轮 × 600ms 太紧（实测偶发 offer 到得晚），
-        //    放宽到 20 轮 × 600ms ≈ 12 秒，代价只是跨网时多等几秒才转隧道。
+        // 1) 局域网直连优先（真点对点）窗口给足：跨机首次配对时对方要先听到 hello、再回 offer，信令有几秒延迟；
         Offer? best = null;
         string hitUrl = "";
         string hitToken = "";
         string hitName = "";
         for (int i = 0; i < 20 && best == null && !ct.IsCancellationRequested; i++)
         {
-            // ⚠ 把所有 offer 的局域网地址**一起去探**，不能只盯第一条。
-            //   订阅用的是 since=5m：5 分钟内的旧消息也会被捞回来，如果死等 FirstOrDefault
-            //   那一条（很可能是上一轮配对留下的失效地址），新 offer 里的有效地址永远轮不到 ——
-            //   用户看到的就是「一直找不到设备，直到超时」。
+            // 把所有 offer 的局域网地址一起去探，不能只盯第一条。
             var targets = new List<(string Ep, string Token, string Name)>();
             lock (gate)
             {
@@ -340,9 +324,7 @@ public static class SuperLink
                 var probes = targets.Select(async t =>
                 {
                     string burl = t.Ep.StartsWith("http") ? t.Ep : "http://" + t.Ep;
-                    // 跨机探测别用 1.5 秒那么久：不可达的地址多数是「连接被拒 / 立即无路由」，
-                    // 会秒回；真正慢的是被防火墙丢包的，那种等 1.5 秒也回不来。
-                    // 用 900ms 换更快的轮次，同一个地址下一轮还会再试。
+                    // 跨机探测别用 1.5 秒那么久：不可达的地址多数是「连接被拒 / 立即无路由」，会秒回；
                     return await PingOk(burl, t.Token, 900)
                         ? (burl, t.Token, t.Name)
                         : ((string, string, string)?)null;
@@ -446,7 +428,7 @@ public static class SuperLink
         Stop();
     }
 
-    // ------------------------------------------------------------------ 公共
+    // ---- 公共 ----
 
     public static void Stop()
     {
@@ -519,19 +501,14 @@ public static class SuperLink
     {
         try
         {
-            // ⚠ 局域网探测必须**绕开系统代理**。
-            //   国内很多人常开 Clash / v2rayN 之类的系统代理，而 HttpClient 默认就走系统代理，
-            //   于是 http://192.168.x.x:端口 这种直连请求被塞进代理 → 代理当然到不了对方网段，
-            //   探测全部失败。表现极具迷惑性：**同机自测能连上，跨机永远「找不到设备」**。
-            //   公网隧道地址（serveo / cloudflared 的域名）反过来要留着代理 —— 那种走代理才通。
+            // 局域网探测必须绕开系统代理。
             var handler = new HttpClientHandler();
             if (IsPrivateHost(baseUrl)) { handler.UseProxy = false; handler.Proxy = null; }
             using var http = new HttpClient(handler) { Timeout = TimeSpan.FromMilliseconds(timeoutMs) };
             string url = baseUrl.TrimEnd('/') + "/api/ping?t=" + Uri.EscapeDataString(token);
             string s = await http.GetStringAsync(url);
-            // ⚠ 不能只看 "ok":true —— 令牌**错**的时候 /api/ping 也回 ok:true（只是字段少），
-            //   于是任何一台跑着 deepsleep 的机器都会被判成「找到了」。
-            //   「对令牌」的响应才带 dataDir 这组完整字段，用它当判据才是真的握上手了。
+            // 不能只看 "ok":true —— 令牌错的时候 /api/ping 也回 ok:true（只是字段少），
+            // 于是任何一台跑着 deepsleep 的机器都会被判成「找到了」。
             return s.Contains("\"ok\":true", StringComparison.Ordinal)
                 && s.Contains("\"dataDir\":", StringComparison.Ordinal);
         }
@@ -563,11 +540,8 @@ public static class SuperLink
     /// <summary>本机所有可用的局域网地址（ip:port），对方优先试这些。</summary>
     public static List<string> LocalEndpoints()
     {
-        // ⚠ 这里**不能**放 127.0.0.1。同一台机器上开两个 deepsleep 自测确实靠它才连得上，
-        //   但跨机时它会被对方当成「对端的地址」去 ping —— ping 到的是**它自己**的本机端口。
-        //   如果它自己正好也开着 deepsleep（或别的服务占了同端口），就会误判「直连成功」，
-        //   于是出现「连上了但打开的是自己 / 画面不对」这种极隐蔽的错。同机自测改由下面的
-        //   局域网地址覆盖（同机时 192.168.x.x 也是通的），代价是几百毫秒，换来跨机不出错。
+        // 这里不能放 127.0.0.1。同一台机器上开两个 deepsleep 自测确实靠它才连得上，
+        // 但跨机时它会被对方当成「对端的地址」去 ping —— ping 到的是它自己的本机端口。
         var list = new List<string>();
         try
         {
@@ -576,9 +550,8 @@ public static class SuperLink
                 if (ni.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up) continue;
                 if (ni.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback) continue;
 
-                // 虚拟网卡（VMware VMnetX / Hyper-V vEthernet / VirtualBox / 蓝牙 / WSL）上的地址
-                // 只有本机内部有意义：对方在别的机器上根本路由不到，白等 1.5 秒 / 个。
-                // 而且本机装了 VMware 时，这些地址往往排在真实网卡前面，会把探测窗口整个吃掉。
+                // 虚拟网卡（VMware VMnetX / Hyper-V vEthernet / VirtualBox / 蓝牙 / WSL）上的地址只有本机内部有意义：对方在别的机器上
+                // 根本路由不到
                 if (IsVirtualInterface(ni)) continue;
 
                 foreach (var ua in ni.GetIPProperties().UnicastAddresses)
@@ -611,9 +584,7 @@ public static class SuperLink
                 "VMware", "VirtualBox", "Hyper-V", "vEthernet", "Loopback", "Bluetooth",
                 "WSL", "Docker", "TAP-", "Npcap", "ZeroTier", "Tailscale", "Hamachi",
                 "Microsoft Wi-Fi Direct", "虚拟", "蓝牙",
-                // 注意：**别**按芯片型号排除。以前这里写过 "Realtek 8812AU"（当成"虚拟热点"），
-                // 但那是常见的 USB 无线网卡芯片，很多人的主网卡就是它 —— 一排就把唯一的
-                // 局域网地址排掉了，跨机自然找不到设备（同机还因为 127.0.0.1 兜底而显得正常）。
+                // 注意：别按芯片型号排除。
             };
             foreach (string m in marks)
                 if (d.Contains(m, StringComparison.OrdinalIgnoreCase)) return true;

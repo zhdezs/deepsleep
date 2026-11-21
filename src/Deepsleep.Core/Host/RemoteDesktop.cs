@@ -2,12 +2,7 @@ using System.Runtime.InteropServices;
 
 namespace TrollWrangler.CoreHost;
 
-/// <summary>
-/// 内置远程桌面（被控端）：截屏（GDI）→ PNG，鼠标键盘注入（SendInput）。
-/// Windows 走 GDI/SendInput（不引第三方库）；Linux 由 RemoteDesktopLinux 接手
-/// （外部工具截图 + X11 XTest 注入），macOS 暂时返回不可用（不影响别的功能）。
-/// 坐标一律用「归一化 0~1」在网上传，服务端换算成屏幕像素，避免缩放/DPI 两边对不齐。
-/// </summary>
+/// <summary>内置远程桌面（被控端）：截屏（GDI）→ PNG，鼠标键盘注入（SendInput）。</summary>
 public static class RemoteDesktop
 {
 #if WINDOWS
@@ -89,10 +84,7 @@ public static class RemoteDesktop
 
     [ThreadStatic] private static bool _deskTried;
 
-    /// <summary>
-    /// 个别环境（沙箱 / 被放到独立桌面的进程）当前线程不在交互桌面上，这时 BitBlt 会失败（错误码 6）。
-    /// 切到输入桌面再试即可 —— 只影响当前线程，正常桌面下压根不会走到这里。
-    /// </summary>
+    /// <summary>个别环境（沙箱 / 被放到独立桌面的进程）当前线程不在交互桌面上，这时 BitBlt 会失败（错误码 6）。</summary>
     private static void TrySwitchToInputDesktop()
     {
         if (_deskTried) return;

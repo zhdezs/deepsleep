@@ -7,14 +7,7 @@ using System.Text.Json;
 
 namespace TrollWrangler;
 
-/// <summary>
-/// 朴素贝叶斯分类器（字符 bigram 特征）：真正从带标签对话训练学习攻击意图，
-/// 而非纯关键词匹配。支持增量训练与持久化。
-///
-/// 训练数据来自：
-///   1. 内置的带标签语料（关键词 + 例句）；
-///   2. 运行时用户确认/归档的对话（把分类结果作为标签回喂）。
-/// </summary>
+/// <summary>朴素贝叶斯分类器（字符 bigram 特征）：真正从带标签对话训练学习攻击意图， 而非纯关键词匹配。</summary>
 public sealed class NaiveBayes
 {
     private readonly Dictionary<string, int> _classCount = new();
@@ -28,9 +21,7 @@ public sealed class NaiveBayes
     /// <summary>判断模型是否见过某个类别（用于健康检查）。</summary>
     public bool HasClass(string label) => _classCount.ContainsKey(label);
 
-    // ------------------------------------------------------------------
     // 特征：字符 bigram（能捕捉「懂个屁」「键盘侠」这类短语模式）
-    // ------------------------------------------------------------------
     public static List<string> Featurize(string text)
     {
         var feats = new HashSet<string>();
@@ -47,9 +38,7 @@ public sealed class NaiveBayes
         return feats.ToList();
     }
 
-    // ------------------------------------------------------------------
     // 增量训练
-    // ------------------------------------------------------------------
     public void Train(string text, string label)
     {
         var feats = Featurize(text);
@@ -65,9 +54,7 @@ public sealed class NaiveBayes
             fmap[f] = fmap.TryGetValue(f, out int n) ? n + 1 : 1;
     }
 
-    // ------------------------------------------------------------------
     // 预测
-    // ------------------------------------------------------------------
     public string Predict(string text)
     {
         var (label, top1, top2) = PredictWithConfidence(text);
@@ -123,9 +110,7 @@ public sealed class NaiveBayes
         return s.Count;
     }
 
-    // ------------------------------------------------------------------
     // 持久化
-    // ------------------------------------------------------------------
     public void Save(string path)
     {
         var data = new Dictionary<string, object>

@@ -7,10 +7,7 @@ using System.Threading.Tasks;
 
 namespace TrollWrangler;
 
-/// <summary>
-/// 本地 LLM 客户端：通过 HTTP 调用 Ollama（默认 qwen2.5:1.5b）。
-/// 零第三方依赖，仅用 System.Net.Http + System.Text.Json。
-/// </summary>
+/// <summary>本地 LLM 客户端：通过 HTTP 调用 Ollama（默认 qwen2.5:1.5b）。</summary>
 public sealed class OllamaClient : IDisposable
 {
     private readonly HttpClient _http = new();
@@ -82,11 +79,7 @@ public sealed class OllamaClient : IDisposable
         }
     }
 
-    /// <summary>
-    /// 让本地 LLM 生成一段回怼。
-    /// 可指定模型名与 token 预算（思考型模型如 qwen3 需要更大 numPredict）。
-    /// 失败（Ollama 未启动 / 超时 / 网络错误）返回 null，调用方回退本地引擎。
-    /// </summary>
+    /// <summary>让本地 LLM 生成一段回怼。 可指定模型名与 token 预算（思考型模型如 qwen3 需要更大 numPredict）。</summary>
     public async Task<string?> ChatAsync(string system, string user,
         string? model = null, int numPredict = 1024, int timeoutSeconds = 120,
         CancellationToken ct = default)
@@ -103,9 +96,7 @@ public sealed class OllamaClient : IDisposable
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
-            // think:false 尝试关闭思考链（对 qwen2.5 等非思考模型无害；
-            // 对升级 Ollama 后的 qwen3 能正确关闭思考，直接输出正文）。
-            // 旧版 Ollama 下若思考链漏进 content，由 Engine.LooksLikeThinking 兜底回退。
+            // think:false 尝试关闭思考链（对 qwen2.5 等非思考模型无害；对升级 Ollama 后的 qwen3 能正确关闭思考，直接输出正文）。
             var msgs = new List<object> { new { role = "system", content = system } };
             foreach (var (role, content) in messages)
                 msgs.Add(new { role = MapRole(role), content });

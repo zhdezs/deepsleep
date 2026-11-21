@@ -6,19 +6,11 @@ using System.Text.Json;
 
 namespace TrollWrangler;
 
-/// <summary>
-/// Session 数据库（对应 SuperAgent 架构里的 [5] Session 数据库）。
-/// <para>
-/// 以前所有会话挤在 data/runtime_state.json 一个快照里：没有元数据、消息被截到 4000 字、
-/// 也不能按状态查询，Router / Watchdog 根本没法用。现在每个 Session 一个独立 json 文件，
-/// index.json 存可查询的元数据（kind / parent / state / 时间戳 / 摘要）。
-/// </para>
-/// <para>写入用「临时文件 + 原子替换」，避免强关时写坏一半的文件。</para>
-/// </summary>
+/// <summary>Session 数据库（对应 SuperAgent 架构里的 [5] Session 数据库）。</summary>
 public sealed class SessionRecord
 {
     public int Sid { get; set; }
-    /// <summary>main = 主助手会话；worker = 子智能体隔离会话；router = 全局路由会话（第 2 期用）。</summary>
+    /// <summary>main = 主助手；worker = 子智能体隔离会话；router = 全局路由会话。</summary>
     public string Kind { get; set; } = "main";
     /// <summary>Worker 属于哪次 Router 任务 / 哪个父 Session。</summary>
     public int? ParentSid { get; set; }
@@ -206,10 +198,7 @@ public sealed class SessionStore
         }
     }
 
-    /// <summary>
-    /// 从旧的 runtime_state.json 快照迁移一次。返回迁移的会话数。
-    /// 已有 index.json 就说明迁过了，不会重复覆盖新数据。
-    /// </summary>
+    /// <summary>从旧的 runtime_state.json 快照迁移一次。返回迁移的会话数。 已有 index.json 就说明迁过了，不会重复覆盖新数据。</summary>
     public int MigrateIfNeeded(RuntimeState? old)
     {
         if (old == null || old.AgentSessions.Count == 0) return 0;

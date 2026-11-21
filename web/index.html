@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>deepsleep · 会动手的 AI 助手</title>
-<meta name="description" content="deepsleep（深眠）—— 能读写文件、跑命令、搜网络、做深度研究、看图、画图的 Windows AI 助手。桌面客户端 / 免安装网页版 / 内核版控电脑，三种用法。">
+<title>deepsleep · Windows AI 助手</title>
+<meta name="description" content="deepsleep 是一个 Windows 桌面 AI 助手，能读写文件、跑命令、搜网络、做深度研究、看图、画图。桌面客户端、免安装网页版、内核版三种用法。">
 <meta name="keywords" content="deepsleep,AI 助手,Agent,GLM-4.7-Flash,GLM-4.6V-Flash,CogView-3-Flash,免费大模型">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='%230a84ff'/%3E%3C/svg%3E">
-<meta property="og:title" content="deepsleep · 会动手的 AI 助手">
-<meta property="og:description" content="桌面客户端 / 免安装网页版 / 内核版控电脑。内置免费模型矩阵：GLM-4.7-Flash 聊天、GLM-4.6V-Flash 看图、CogView-3-Flash 画图。">
+<meta property="og:title" content="deepsleep · Windows AI 助手">
+<meta property="og:description" content="桌面客户端、免安装网页版、内核版控电脑。内置免费模型矩阵：GLM-4.7-Flash 聊天、GLM-4.6V-Flash 看图、CogView-3-Flash 画图。">
 <meta property="og:type" content="website">
 </head>
 <body>
@@ -65,7 +65,6 @@ h2{font-size:29px;margin:0 0 8px;letter-spacing:-.4px}
 .card h3{margin:0 0 6px;font-size:16px}
 .card p{margin:0;color:var(--muted);font-size:13.5px}
 .card .tag{font-size:11.5px;color:var(--blue);font-weight:600;letter-spacing:.3px;display:block;margin-bottom:8px}
-.ico{font-size:22px;display:block;margin-bottom:10px}
 .free .card{border-color:rgba(10,132,255,.35)}
 .step{display:flex;gap:14px;align-items:flex-start;margin-bottom:18px}
 .step b.n{flex:0 0 26px;height:26px;border-radius:50%;background:var(--blue);color:#fff;font-size:13px;
@@ -85,7 +84,7 @@ code{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;background:var(-
 table.dl{width:100%;border-collapse:collapse;font-size:13.5px}
 table.dl td,table.dl th{text-align:left;padding:11px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
 table.dl th{color:var(--muted);font-weight:600;font-size:12.5px}
-/* 下载源切换：GitHub / Gitee */
+/* 下载源切换 */
 .srcpick{display:flex;gap:10px;margin:14px 0 12px;flex-wrap:wrap}
 .srcpick .src{display:flex;flex-direction:column;gap:2px;padding:10px 16px;border:1px solid var(--line);
   border-radius:12px;cursor:pointer;background:var(--card,transparent);min-width:170px;transition:.15s}
@@ -126,102 +125,95 @@ table.dl th{color:var(--muted);font-weight:600;font-size:12.5px}
   <a class="lnk" href="#core">内核版</a>
   <a class="lnk" href="#superlink">超级连接</a>
   <a class="lnk" href="#download">下载</a>
-  <a class="lnk" href="help/">📖 帮助</a>
+  <a class="lnk" href="help/">帮助</a>
   <a class="btn gho sm" href="https://github.com/zhdezs/deepsleep" target="_blank" rel="noreferrer">GitHub</a>
 </div></nav>
 
 <header class="hero"><div class="wrap">
-  <div class="badge">Windows 10 / 11 · Linux · macOS · 最新版 3.2.3</div>
+  <div class="badge">Windows 10 / 11 · Linux · macOS · 3.2.4</div>
   <h1>会动手的 <em>AI 助手</em></h1>
-  <p class="lead">deepsleep（深眠）不只会聊天：它能读写你电脑上的文件、跑命令、搜网络、做带来源的深度研究、
-     看图、画图，还能长期记住你的偏好。内核与界面分离，界面是纯 HTML —— 桌面上跑、浏览器里也跑。</p>
+  <p class="lead">deepsleep 除了聊天，还能读写你电脑上的文件、跑命令、搜网络、写带来源的调研报告、看图、画图，也会记住你的偏好。内核和界面分开，界面是纯 HTML，桌面和浏览器里都能跑。</p>
   <div class="cta">
-    <a class="btn pri" href="#download">⬇ 下载 Windows 客户端</a>
-    <a class="btn gho" href="app/">💬 免安装 · 打开网页版</a>
-    <a class="btn gho" href="help/">📖 帮助文档</a>
+    <a class="btn pri" href="#download">下载 Windows 客户端</a>
+    <a class="btn gho" href="app/">免安装 · 打开网页版</a>
+    <a class="btn gho" href="help/">帮助文档</a>
   </div>
-  <div class="hint">网页版开箱即用：内置免费模型矩阵，不用注册也能聊。<br>
-    <strong>3.2.3</strong>：亮 / 暗两套自带 CSS · 内置知识库 · 扩展包双击即装 · SuperAgent 架构第一期</div>
+  <div class="hint">网页版不用注册，内置免费模型，打开就能聊。</div>
 </div></header>
 
 <section id="free" class="alt"><div class="wrap">
-  <h2>免费模型矩阵，开箱即用</h2>
-  <p class="sub">智谱开放平台（open.bigmodel.cn）的免费模型全家桶，客户端与网页版都已内置预置项；网页版还内置了一把免费 Key，打开就能用。</p>
+  <h2>免费模型，开箱即用</h2>
+  <p class="sub">智谱开放平台的三个免费模型，客户端和网页版都预置好了，网页版还带一把免费 Key。</p>
   <div class="grid g3 free">
-    <div class="card"><span class="tag">聊天 / 推理</span><span class="ico">💬</span>
+    <div class="card"><span class="tag">聊天 / 推理</span>
       <h3>GLM-4.7-Flash</h3>
-      <p>日常对话、写代码、改文档、当 Agent 的大脑。支持流式输出，长上下文。</p></div>
-    <div class="card"><span class="tag">看图 / 多模态</span><span class="ico">🖼</span>
+      <p>日常对话、写代码、改文档，也可以当 Agent 的主模型。支持流式输出和长上下文。</p></div>
+    <div class="card"><span class="tag">看图 / 多模态</span>
       <h3>GLM-4.6V-Flash</h3>
-      <p>把截图、照片、表格图片丢给它：认字、读懂界面、总结图表、照着图写代码。</p></div>
-    <div class="card"><span class="tag">画图</span><span class="ico">🎨</span>
+      <p>截图、照片、表格图片都能读，能认字，也能照着界面图写代码。</p></div>
+    <div class="card"><span class="tag">画图</span>
       <h3>CogView-3-Flash</h3>
-      <p>一句话出图，生成的图片会存到 <code>data\images\</code>，聊天里直接预览。</p></div>
+      <p>一句话出图，生成的图片存在 <code>data\images\</code>，聊天里直接预览。</p></div>
   </div>
-  <p class="hint">免费模型有并发限流，人多了会排队；把自己的 Key 填进 ⚙ 设置就能走自己的额度（Key 只存在你浏览器/本机）。</p>
+  <p class="hint">免费模型有并发限制，人多会排队。填自己的 Key 就走自己的额度，Key 只存在本机或浏览器里。</p>
 </div></section>
 
 <section id="ways"><div class="wrap">
-  <h2>三种用法，按需选</h2>
-  <p class="sub">同一份内核，三种外壳。数据都存在你自己的电脑上。</p>
+  <h2>三种用法</h2>
+  <p class="sub">同一份内核，三种外壳。数据都在你自己的电脑上。</p>
   <div class="grid g3">
-    <div class="card"><span class="ico">🖥</span><h3>① 桌面客户端</h3>
-      <p>功能最全：读写文件、跑命令、托盘与桌宠、OTA 静默升级、Agent 集群分工。推荐日常用。</p>
-      <p style="margin-top:6px">它还自带内核服务：设置里点一下就能开公网隧道，手机在外网也能连上来操控这台电脑（和内核版是同一份实现，不会缺功能）。</p>
+    <div class="card"><h3>桌面客户端</h3>
+      <p>功能最全，能读写文件、跑命令，带桌宠和静默升级，适合日常使用。桌面版本身也带内核服务，在设置里开一下隧道，手机在外网也能连回来操控这台电脑。</p>
       <p style="margin-top:10px"><a class="btn pri sm" href="#download">下载安装版</a></p></div>
-    <div class="card"><span class="ico">💬</span><h3>② 网页版</h3>
-      <p>零安装，打开就聊。聊天记录只存在浏览器里；带看图、画图，内置免费 Key。</p>
+    <div class="card"><h3>网页版</h3>
+      <p>不用安装，打开就聊。聊天记录只存在浏览器里，支持看图、画图，内置免费 Key。</p>
       <p style="margin-top:10px"><a class="btn gho sm" href="app/">立即打开</a></p></div>
-    <div class="card"><span class="ico">🔌</span><h3>③ 内核版 + 网页</h3>
-      <p>本机只装一个几十 MB 的 Core，就能在任意浏览器里操控这台电脑：文件、命令、搜索、记忆、技能全都有。</p>
+    <div class="card"><h3>内核版 + 网页</h3>
+      <p>本机只跑一个几十 MB 的 Core，用任意浏览器操控这台电脑，文件、命令、搜索、记忆、技能都在。</p>
       <p style="margin-top:10px"><a class="btn gho sm" href="#core">怎么装</a></p></div>
   </div>
 </div></section>
 
 <section id="features" class="alt"><div class="wrap">
-  <h2>它能替你干这些活</h2>
-  <p class="sub">不是「告诉你怎么做」，而是直接做完再给你结果。</p>
+  <h2>它能替你做的事</h2>
+  <p class="sub">不是告诉你步骤，而是做完把结果给你。</p>
   <div class="grid g3">
-    <div class="card"><span class="ico">🌐</span><h3>网络搜索 &amp; 深度研究</h3>
-      <p>快问快答用「网络搜索」；要调研就交给「深度研究」：它自己拆题、多轮搜索、抓正文，最后写出带来源的报告存到 <code>data\research\</code>。</p></div>
-    <div class="card"><span class="ico">🗂</span><h3>读写文件 / 跑命令</h3>
-      <p>整理资料、批量改名、跑脚本、装依赖。work 模式每一步先问你，boom 模式全自动。</p></div>
-    <div class="card"><span class="ico">🎬</span><h3>画图 · 看图 · 生成视频</h3>
-      <p>生成图片、读懂图片、生成短视频都是内置工具。图像生成 / 图像识别 / 视频生成的接口地址、API Key、模型名都能自己换（智谱、硅基流动、OpenAI 或任意兼容网关），设置里选平台自动填好。没填 Key 时聊天和画图直接用内置免费 Key。</p></div>
-    <div class="card"><span class="ico">🧠</span><h3>长期记忆</h3>
-      <p>你的习惯、项目背景、常用路径写进记忆，以后每轮对话都自动带上。</p></div>
-    <div class="card"><span class="ico">🧩</span><h3>技能 / 模板</h3>
-      <p>把常做的事存成技能与快捷指令，一句话触发整套流程；Agent 集群还能分角色同时干活。</p></div>
-    <div class="card"><span class="ico">◔</span><h3>上下文用量一眼看清</h3>
-      <p>输入框右下角的圆环就是当前对话的上下文占用：蓝→橙→红。点开是完整面板——占比、进度条、消息条数、当前模型，
-         还能直接改<b>上下文上限</b>（跟随模型 / 32k / 64k / 128k / 200k / 1M / 自填）。模型名和技能也是点开就展开。</p></div>
-    <div class="card"><span class="ico">🐾</span><h3>桌宠浮窗</h3>
-      <p>一个随时可拖动的桌面小浮窗，不用开主窗口也能派活、看进度。</p></div>
-    <div class="card"><span class="ico">⬆</span><h3>OTA 静默升级</h3>
-      <p>客户端自己检查新版本，国内走 Gitee、国外走 GitHub，装完自动重启，不用你管。</p></div>
-    <div class="card"><span class="ico">🔗</span><h3>超级连接（远程桌面）</h3>
-      <p>一串 6 位配对码，把两台设备连起来：同一网络走点对点直连，不同网络自动开临时加密隧道，连上就能在浏览器里远程操作对方电脑（画面 + 鼠标键盘，手机触屏也行）。</p></div>
-    <div class="card"><span class="ico">📡</span><h3>超远程提问（内网穿透）</h3>
-      <p>桌面客户端在「设置 → 超远程提问」点一下开隧道；内核版加 <code>--tunnel</code> 同样一条命令搞定。都是免注册公网地址 + 带令牌的配对链接，手机存成书签，人在外面也能指挥这台电脑。</p></div>
+    <div class="card"><h3>网络搜索与深度研究</h3>
+      <p>查资料用「网络搜索」。要调研就交给「深度研究」，它自己拆题、多轮搜索、抓正文，最后把带来源的报告写到 <code>data\research\</code>。</p></div>
+    <div class="card"><h3>读写文件、跑命令</h3>
+      <p>整理资料、批量改名、跑脚本、装依赖都行。work 模式下每一步先问你，boom 模式全自动。</p></div>
+    <div class="card"><h3>画图、看图、生成视频</h3>
+      <p>三个都是内置工具，接口地址、Key、模型名可以自己换，智谱、硅基流动、OpenAI 或任意兼容网关都支持。没填 Key 时聊天和画图用内置免费 Key。</p></div>
+    <div class="card"><h3>长期记忆</h3>
+      <p>你的习惯、项目背景、常用路径存进记忆，之后每轮对话自动带上。</p></div>
+    <div class="card"><h3>技能与模板</h3>
+      <p>常做的事存成技能或快捷指令，一句话触发整套流程。复杂的任务还能拆给多个 Agent 分头做。</p></div>
+    <div class="card"><h3>上下文用量</h3>
+      <p>输入框右下角的圆环是当前上下文占用，蓝、橙、红三档。点开能看到占比、条数、当前模型，也能直接改上下文上限（跟随模型、32k、64k、128k、200k、1M、自填）。</p></div>
+    <div class="card"><h3>桌宠浮窗</h3>
+      <p>一个可拖动的小浮窗，不开主窗口也能派活、看进度。</p></div>
+    <div class="card"><h3>静默升级</h3>
+      <p>客户端自己检查新版本，国内走 Gitee，国外走 GitHub，装完自动重启。</p></div>
+    <div class="card"><h3>超级连接</h3>
+      <p>一串 6 位配对码把两台设备连起来。同一网络直连，跨网络自动开临时隧道，连上就能在浏览器里操作对方电脑，鼠标键盘和手机触屏都支持。</p></div>
+    <div class="card"><h3>远程访问</h3>
+      <p>桌面端在「设置 → 超远程提问」点一下开隧道，内核版加 <code>--tunnel</code>也一样。公网地址免注册，链接里带令牌，手机存成书签，人在外面也能用。</p></div>
   </div>
 </div></section>
 
 <section id="shots"><div class="wrap">
-  <h2>长这样</h2>
-  <p class="sub">界面是纯 HTML + CSS。<strong>深色「dsh · 深眠」与浅色「dsh · 晨光」各有一整套自带 CSS</strong>：
-     点右上角 ☀️ / 🌙 就整套换掉（配色、氛围光、消息动效、滚动条全都不一样），即时生效、不用重启。
-     还能再叠加 <code>.dslp</code> 皮肤包做自己的外观。</p>
+  <h2>界面</h2>
+  <p class="sub">界面是纯 HTML 和 CSS，深浅两套主题各有一份样式，点右上角切换即时生效，不用重启。也可以再装 <code>.dslp</code>皮肤包换外观。</p>
   <div class="shots">
-    <figure><img src="assets/site-light.png" alt="deepsleep 3.2.3 浅色模式「dsh · 晨光」界面" loading="lazy"><figcaption>浅色模式 · dsh 晨光（雾白画布 / 墨绿强调 / 柔和玻璃高光）</figcaption></figure>
-    <figure><img src="assets/site-dark.png" alt="deepsleep 3.2.3 深色模式「dsh · 深眠」界面" loading="lazy"><figcaption>深色模式 · dsh 深眠（漂移氛围光 / 星点 / 流光气泡）</figcaption></figure>
+    <figure><img src="assets/site-light.png" alt="deepsleep 浅色模式界面" loading="lazy"><figcaption>浅色模式</figcaption></figure>
+    <figure><img src="assets/site-dark.png" alt="deepsleep 深色模式界面" loading="lazy"><figcaption>深色模式</figcaption></figure>
   </div>
-  <p class="hint">两套都尊重系统的「减少动态效果」设置；截图为 3.2.3 实际运行画面。</p>
+  <p class="hint">两套主题都跟随系统的「减少动态效果」设置。截图为 3.2.3 的实际运行画面。</p>
 </div></section>
 
 <section id="superagent" class="alt"><div class="wrap">
-  <h2>SuperAgent 架构 <span style="font-size:13px;font-weight:600;color:var(--blue);vertical-align:middle">3.2.3 第一期</span></h2>
-  <p class="sub">不只是「一个会调工具的聊天窗口」。deepsleep 正在升级成一套常驻、可调度、可自愈的多 Agent 系统：
-     把「理解与路由」和「执行」彻底分开，状态全部落库，长任务更稳、断点可续、Agent 之间互不污染上下文。</p>
+  <h2>SuperAgent 架构</h2>
+  <p class="sub">不是「一个会调工具的聊天窗口」，而是一套常驻、可调度、可自愈的多 Agent 系统。理解与执行分开，状态全部落库，长任务更稳，断点能续，Agent 之间不互相污染上下文。</p>
 
   <div class="archflow">
     <span class="node">环境事件 Trigger</span><span class="arw">→</span>
@@ -232,66 +224,56 @@ table.dl th{color:var(--muted);font-weight:600;font-size:12.5px}
   </div>
 
   <div class="grid g2">
-    <div class="card"><span class="tag">已在 3.2.2 落地</span><h3>Session 数据库</h3>
-      <p>会话不再是一个截到 4000 字的快照文件，而是 <code>data/sessions/&lt;sid&gt;.json</code> + 索引，
-         带 kind(main/worker/router)、parentSid、state、时间戳与摘要；原子写入、旧数据自动迁移、可按状态查询。
-         这是 Router 与 Watchdog 的地基，也提供 <code>sessionList</code> / <code>sessionGet</code> 接口。</p></div>
-    <div class="card"><span class="tag">3.2.3 新增</span><h3>Router 层：共享上下文 + 路由决策</h3>
-      <p>每次「拆分任务」现在由 Router 统一收口：它持有一份共享简报（全局目标 / 权限边界 / 约束 / 同批角色 / 已产出路径），
-         只把这个下发给你那几个上下文隔离的 Worker，彼此私有历史互不可见。路由判定是毫秒级规则，
-         为什么拆、拆几路，界面上写得明明白白（<b>设置 → SuperAgent 架构 → 路由诊断</b>）。</p></div>
-    <div class="card"><span class="tag">3.2.3 新增</span><h3>Worker 会话落库 + 会话树</h3>
-      <p>Router 与每个 Worker 都是 Session 库里真实存在的会话（<code>kind=router/worker</code>、<code>parentSid</code>、
-         状态从 active 走到 done/stopped、结果压成摘要），重启后还能按父子关系和状态查回来。
-         <b>设置 → 查看会话架构</b> 能直接看到这棵两层的树。</p></div>
+    <div class="card"><h3>Session 数据库</h3>
+      <p>会话不再是一个截到 4000 字的快照文件，而是 <code>data/sessions/&lt;sid&gt;.json</code>加一份索引，带 kind（main / worker / router）、parentSid、state、时间和摘要。原子写入，旧数据自动迁移，可以按状态查询。</p></div>
+    <div class="card"><h3>Router 与 Worker</h3>
+      <p>拆分任务由 Router 统一收口。它持有一份共享简报，里面有全局目标、权限边界、约束、同批角色和已产出的路径，只把这份简报下发给上下文隔离的 Worker。路由判定是毫秒级规则，为什么拆、拆几路可以在「设置 → SuperAgent 架构 → 路由诊断」里看。</p></div>
+    <div class="card"><h3>会话树</h3>
+      <p>Router 和每个 Worker 都是 Session 库里真实存在的会话，状态从 active 走到 done 或 stopped，结果压成摘要。重启后可以按父子关系和状态查回来，在「设置 → 查看会话架构」里能看到这棵两层树。</p></div>
+    <div class="card"><h3>看门狗</h3>
+      <p>定时巡检，把不在活跃列表里、超过设定时间没有更新的会话标记为停止，避免卡死的 Worker 一直占着资源。</p></div>
   </div>
 
   <div class="card" style="margin-top:16px">
     <h3 style="margin-bottom:6px">分期路线</h3>
-    <div class="phase"><span class="pn">1</span><span class="pt"><b>Session 数据库</b><span>状态落库、原子写、迁移、查询 API</span></span><span class="ps done">✅ 3.2.1 已发布</span></div>
-    <div class="phase"><span class="pn">2</span><span class="pt"><b>Router + Worker Session 分层</b><span>Router 持有共享上下文与路由决策，Worker 上下文隔离并落库</span></span><span class="ps done">✅ 3.2.2 已发布</span></div>
-    <div class="phase"><span class="pn">3</span><span class="pt"><b>两级过滤 + Trigger</b><span>Fast Path 直通 Worker、Slow Path 走 Router；定时 / 文件 / 剪贴板事件</span></span><span class="ps">规划中</span></div>
-    <div class="phase"><span class="pn">4</span><span class="pt"><b>Watchdog</b><span>独立监控卡死 / 超时会话，标记与自愈</span></span><span class="ps">规划中</span></div>
-    <div class="phase"><span class="pn">5</span><span class="pt"><b>多信道 + daemon</b><span>复用超级连接隧道接 IM / GitHub / 邮件，工具执行抽到轻量 daemon</span></span><span class="ps">规划中</span></div>
-    <p class="hint" style="margin-top:14px">旁路还有订阅直通、多信道交互与外部看门狗。这一层对普通用户无感：界面和用法不变，只是长任务更稳。</p>
+    <div class="phase"><span class="pn">1</span><span class="pt"><b>Session 数据库</b><span>状态落库、原子写、迁移、查询接口</span></span><span class="ps done">已完成</span></div>
+    <div class="phase"><span class="pn">2</span><span class="pt"><b>Router + Worker 分层</b><span>Router 持有共享上下文与路由决策，Worker 上下文隔离并落库</span></span><span class="ps done">已完成</span></div>
+    <div class="phase"><span class="pn">3</span><span class="pt"><b>两级过滤 + Trigger</b><span>Fast Path 直通 Worker，Slow Path 走 Router；定时、文件事件</span></span><span class="ps done">已完成</span></div>
+    <div class="phase"><span class="pn">4</span><span class="pt"><b>Watchdog</b><span>独立监控卡死和超时的会话</span></span><span class="ps done">已完成</span></div>
+    <div class="phase"><span class="pn">5</span><span class="pt"><b>多信道 + daemon</b><span>复用超级连接隧道接 IM、邮件，工具执行抽到轻量 daemon</span></span><span class="ps">规划中</span></div>
+    <p class="hint" style="margin-top:14px">这一层对普通用户无感，界面和用法不变，只是长任务更稳。</p>
   </div>
 
   <p style="margin-top:20px"><a class="btn pri sm" href="help/#arch">读架构详解</a>
-     <a class="btn gho sm" href="help/">📖 完整帮助文档</a></p>
+     <a class="btn gho sm" href="help/">完整帮助文档</a></p>
 </div></section>
 
 <section id="core" class="alt"><div class="wrap">
   <h2>内核版：只装一个 Core，用网页操控这台电脑</h2>
-  <p class="sub">适合「不想安装完整客户端」或「想在手机 / 另一台电脑上遥控本机」的人。</p>
+  <p class="sub">适合不想安装完整客户端，或者想在手机、另一台电脑上遥控本机的情况。</p>
   <div class="grid g2">
     <div>
-      <div class="step"><b class="n">1</b><div>下载并解压内核版<strong>（解压即用，免安装）</strong>
-        <p class="hint" style="margin:6px 0">Windows 用 <code>deepsleep-core-3.2.3-win-x64.zip</code>；Linux 用 <code>deepsleep_3.2.3_amd64.deb</code> / <code>deepsleep-3.2.3-1.x86_64.rpm</code>（或免安装的 <code>deepsleep-3.2.3-linux-x64.tar.gz</code>）；macOS 用 <code>deepsleep-core-3.2.3-osx-arm64.tar.gz</code>。桌面版和内核版能力完全一样，区别只是桌面版默认开窗口；没有桌面环境就加 <code>--headless</code> 只跑服务（Linux 桌面需要 <code>libwebkit2gtk-4.1-0</code>）。</p>
-        <p><a class="btn pri sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-core-3.2.3-win-x64.zip" target="_blank" rel="noreferrer">⬇ deepsleep-core-3.2.3-win-x64.zip</a></p></div></div>
-      <div class="step"><b class="n">2</b><div>运行内核：Windows 双击 <code>deepsleep-core.exe</code>，Linux / macOS 执行 <code>./deepsleep.sh</code>
-        <p>Windows 会打开本机首页；Linux / macOS 会直接开一个<strong>原生桌面窗口</strong>，双击即用（服务器 / SSH 加 <code>--headless</code> 只跑服务）。</p>
-        <p>同时会打印<strong>端口</strong>与<strong>配对令牌</strong>，方便在别的设备上连。</p></div></div>
+      <div class="step"><b class="n">1</b><div>下载并解压内核版，免安装
+        <p class="hint" style="margin:6px 0">Windows 用 <code>deepsleep-core-3.2.4-win-x64.zip</code>；Linux 用 <code>deepsleep_3.2.4_amd64.deb</code>或 <code>deepsleep-3.2.4-1.x86_64.rpm</code>，也可以下免安装的 <code>deepsleep-3.2.4-linux-x64.tar.gz</code>；macOS 用 <code>deepsleep-core-3.2.4-osx-arm64.tar.gz</code>。桌面版和内核版能力一样，区别只是桌面版默认开窗口，没有桌面环境就加 <code>--headless</code>只跑服务。</p>
+        <p><a class="btn pri sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-core-3.2.4-win-x64.zip" target="_blank" rel="noreferrer">deepsleep-core-3.2.4-win-x64.zip</a></p></div></div>
+      <div class="step"><b class="n">2</b><div>运行内核。Windows 双击 <code>deepsleep-core.exe</code>，Linux 和 macOS 执行 <code>./deepsleep.sh</code>
+        <p>Windows 会打开本机首页，Linux 和 macOS 直接开一个原生窗口。服务器或 SSH 上加 <code>--headless</code>只跑服务。</p>
+        <p>启动时会打印端口和配对令牌，在别的设备上连接要用。</p></div></div>
       <div class="step"><b class="n">3</b><div>打开网页端连上来
-        <p>本机首页点「内核版网页」即可；在外面就用 <a href="core/">这个页面</a>，填端口 + 令牌。<br>
-           也可以直接把 <code>#p=端口&amp;t=令牌</code> 拼在后面打开。</p></div></div>
-      <div class="step"><b class="n">4</b><div>人在外面也想提问？加 <code>--tunnel</code> 走内网穿透
-        <p>运行 <code>deepsleep-core --tunnel</code>，内核自动建一条<strong>免注册的公网隧道</strong>（手写隧道，直接用系统自带的 ssh，<strong>不用下任何组件</strong>），
-           窗口里会打印一条<strong>配对链接</strong>（令牌已经带好）。</p>
-        <p>把那条链接在<strong>手机</strong>上打开、存成书签，出门在外也能直接指挥这台电脑。<br>
-           打不开多半是运营商 DNS 不解析隧道域名，把手机 DNS 换成 <code>114.114.114.114</code> 再试。</p>
-        <p class="hint">桌面客户端不用敲命令：装好后在「设置 → 超远程提问」里点一下就能开 / 关隧道，能力和这里完全一样。<br>
-           想用自己的穿透工具（frp / cpolar / ngrok / ssh -R 都行）：<br>
-           <code>deepsleep-core --public --tunnel-cmd "你的穿透命令"</code>，内核会自己从输出里抓公网地址。</p></div></div>
-      <p class="hint">换令牌：<code>deepsleep-core --new-token</code>；换端口：<code>--port 8888</code>。<br>
-         Linux / macOS 上数据默认放在 <code>~/.local/share/deepsleep</code>（macOS 是 <code>~/Library/Application Support/deepsleep</code>）。</p>
+        <p>本机首页点「内核版网页」。在外面就打开 <a href="core/">这个页面</a>，填端口和令牌，也可以直接把 <code>#p=端口&amp;t=令牌</code>拼在地址后面。</p></div></div>
+      <div class="step"><b class="n">4</b><div>人在外面想用，加 <code>--tunnel</code>走内网穿透
+        <p>运行 <code>deepsleep-core --tunnel</code>，内核会用系统自带的 ssh 建一条免注册的公网隧道，不需要下任何组件，窗口里会打印一条带令牌的访问链接。</p>
+        <p>在手机上打开那条链接存成书签，出门也能用。打不开多半是运营商 DNS 不解析隧道域名，把手机 DNS 换成 <code>114.114.114.114</code>再试。</p>
+        <p class="hint">桌面客户端不用敲命令，装好后在「设置 → 超远程提问」里点一下就能开关隧道。想用自己的穿透工具也行，frp、cpolar、ngrok、ssh -R 都可以：<code>deepsleep-core --public --tunnel-cmd "你的穿透命令"</code>，内核会从输出里取公网地址。</p></div></div>
+      <p class="hint">换令牌用 <code>--new-token</code>，换端口用 <code>--port 8888</code>。Linux 和 macOS 上数据默认放在 <code>~/.local/share/deepsleep</code>，macOS 是 <code>~/Library/Application Support/deepsleep</code>。</p>
     </div>
     <div class="card">
-      <h3>安全边界（重要）</h3>
-      <p style="margin-top:8px">· 默认只监听 <code>127.0.0.1</code>；只有加 <code>--public</code> / <code>--host</code> 才监听网卡，只有加 <code>--tunnel</code> 才挂到公网。<br>
-         · 所有接口都要配对令牌，跨域只放行官网与本机页面（隧道域名同源也放行）。<br>
-         · 配对链接里就带着令牌 = 这台电脑的钥匙：不要截图发给别人、不要贴到公开场合。<br>
-         · 令牌输错会越错越慢（递增延迟到 5 秒）再返回 401，防止被暴力猜。<br>
-         · 用完直接关掉内核窗口，服务与隧道立刻停止。</p>
+      <h3>安全边界</h3>
+      <p style="margin-top:8px">默认只监听 <code>127.0.0.1</code>，加 <code>--public</code>或 <code>--host</code>才监听网卡，加 <code>--tunnel</code>才挂到公网。<br>
+         所有接口都要配对令牌，跨域只放行官网和本机页面。<br>
+         访问链接里带着令牌，等于这台电脑的钥匙，不要截图外传，也不要贴到公开场合。<br>
+         令牌输错会递增延迟，最多 5 秒再返回 401，防止暴力猜。<br>
+         用完关掉内核窗口，服务和隧道立刻停止。</p>
       <p style="margin-top:12px"><a class="btn gho sm" href="core/">打开网页端</a>
          <a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases" target="_blank" rel="noreferrer">全部发行版</a></p>
     </div>
@@ -299,31 +281,28 @@ table.dl th{color:var(--muted);font-weight:600;font-size:12.5px}
 </div></section>
 
 <section id="superlink"><div class="wrap">
-  <h2>超级连接：一串 6 位数字，把两台设备连起来</h2>
-  <p class="sub">不用注册、不用配置、不用懂什么叫 NAT 打洞 —— 对着一串数字输进去就连上了，连上就能远程操作对方电脑。</p>
+  <h2>超级连接：一串 6 位数字连两台设备</h2>
+  <p class="sub">不用注册，不用配置，也不用懂 NAT 打洞。输一串数字连上，就能远程操作对方电脑。</p>
   <div class="grid g2">
     <div>
-      <div class="step"><b class="n">1</b><div>在<strong>被操控的那台电脑</strong>上打开「超级连接」
-        <p>桌面版：点工具栏的 <strong>🔗</strong> 图标 →「生成配对码」。<br>
-           内核版 / CMD 模式：输入 <code>打开超级连接</code>（也可以 <code>/superlink</code>）。</p></div></div>
-      <div class="step"><b class="n">2</b><div>把那串 <strong>6 位数字</strong>告诉另一台设备
-        <p>配对码 5 分钟内有效，过期自动作废；连上以后也不会一直留着。</p></div></div>
+      <div class="step"><b class="n">1</b><div>在被操控的电脑上打开「超级连接」
+        <p>桌面版点工具栏的链接图标，选「生成配对码」。内核版或 CMD 模式输入 <code>打开超级连接</code>，也可以用 <code>/superlink</code>。</p></div></div>
+      <div class="step"><b class="n">2</b><div>把 6 位数字告诉另一台设备
+        <p>配对码 5 分钟内有效，过期作废，连上以后也不会留着。</p></div></div>
       <div class="step"><b class="n">3</b><div>另一台设备打开超级连接页
-        <p>手机 / 平板 / 另一台电脑的浏览器打开：<br>
-           <code>deepsleep.liziserver.site/superlink/?type=你的配对码</code><br>
-           或者在自己的 deepsleep 里点 🔗 输入这 6 位数字。</p>
+        <p>手机、平板或另一台电脑的浏览器打开 <code>deepsleep.liziserver.site/superlink/?type=你的配对码</code>，也可以在自己的 deepsleep 里输入这 6 位数字。</p>
         <p><a class="btn pri sm" href="superlink/">打开超级连接页</a></p></div></div>
-      <div class="step"><b class="n">4</b><div>连上就能用远程桌面
-        <p>同一网络里走<strong>点对点局域网直连</strong>（延迟最低）；不在一个网络时，自动开一条<strong>临时加密隧道</strong>把两边牵上，连上之后<strong>立刻关掉隧道</strong>，数据保持点对点。</p>
-        <p>连上后点「打开远程桌面」：浏览器里直接看到对方屏幕，鼠标、键盘、滚轮、手机触屏都能操作；也能点「打开完整控制台」用整套能力。</p></div></div>
+      <div class="step"><b class="n">4</b><div>连上以后用远程桌面
+        <p>同一网络走点对点直连，延迟最低。不在一个网络时自动开一条临时加密隧道，连上之后立刻关掉，数据仍然点对点。</p>
+        <p>点「打开远程桌面」就能在浏览器里看到对方屏幕，鼠标、键盘、滚轮、手机触屏都能操作。点「打开完整控制台」可以用整套能力。</p></div></div>
     </div>
     <div class="card">
-      <h3>它是怎么做到「傻子都会用」的</h3>
-      <p style="margin-top:8px">· 信令只传几 KB 的握手消息（默认 ntfy.sh），用来交换「我这个配对码的地址在哪」；<br>
-         · 真正的画面与操作<strong>不经过第三方</strong>，在两台设备之间直连传输；<br>
-         · 连接用的是<strong>一次性令牌</strong>，配对结束就撤销，不会泄漏本机常驻令牌；<br>
-         · 生成配对码时会临时监听网卡（为了局域网直连），配对结束<strong>立刻换回只听 127.0.0.1</strong>；<br>
-         · 想用自己的信令服务器：设环境变量 <code>DEEPSLEEP_SIGNAL_BASE</code>。</p>
+      <h3>怎么连的</h3>
+      <p style="margin-top:8px">信令只传几 KB 的握手消息，默认走 ntfy.sh，用来交换「这个配对码的地址在哪」。<br>
+         画面和操作不经过第三方，在两台设备之间直连传输。<br>
+         连接用的是一次性令牌，配对结束就撤销，不会泄漏本机常驻令牌。<br>
+         生成配对码时会临时监听网卡，配对结束立刻换回只听 <code>127.0.0.1</code>。<br>
+         想用自己的信令服务器，设环境变量 <code>DEEPSLEEP_SIGNAL_BASE</code>。</p>
       <p style="margin-top:12px"><a class="btn gho sm" href="superlink/">打开超级连接页</a>
          <a class="btn gho sm" href="core/rd.html">远程桌面页面</a></p>
     </div>
@@ -332,16 +311,15 @@ table.dl th{color:var(--muted);font-weight:600;font-size:12.5px}
 
 <section id="download"><div class="wrap">
   <h2>下载</h2>
-  <p class="sub">两个源内容一致，按网络选：海外用 GitHub（整包），国内用 Gitee（安装包是分片，配合并器）。
-     客户端支持 OTA，装上以后升级不用再来这页。</p>
+  <p class="sub">两个源内容一致，按网络选。海外用 GitHub，整包下载；国内用 Gitee，安装包是分片，要配合并器。客户端支持自动更新，装上以后不用再来这一页。</p>
   <div class="helpstrip">
-    <a href="help/#start">🚀 五分钟上手</a>
-    <a href="help/#install-win">🪟 全部安装方式</a>
-    <a href="help/#install-gitee">🧩 Gitee 分片合并教程</a>
-    <a href="help/#model">🔑 配置模型</a>
-    <a href="help/#ext">📦 扩展包怎么用</a>
-    <a href="help/#faq">🛠 故障排查</a>
-    <a href="help/">📖 打开完整帮助文档 →</a>
+    <a href="help/#start">五分钟上手</a>
+    <a href="help/#install-win">全部安装方式</a>
+    <a href="help/#install-gitee">Gitee 分片合并</a>
+    <a href="help/#model">配置模型</a>
+    <a href="help/#ext">扩展包怎么用</a>
+    <a href="help/#faq">故障排查</a>
+    <a href="help/">完整帮助文档</a>
   </div>
 
   <div class="srcpick">
@@ -352,31 +330,31 @@ table.dl th{color:var(--muted);font-weight:600;font-size:12.5px}
   <div class="card" id="dlGh">
   <table class="dl">
     <tr><th>文件</th><th>说明</th><th></th></tr>
-    <tr><td><code>deepsleep-Setup.exe</code></td><td>安装版（推荐）：自动装到本机、带开始菜单与 OTA 静默升级</td>
+    <tr><td><code>deepsleep-Setup.exe</code></td><td>安装版，自动装到本机，带开始菜单和静默升级</td>
         <td><a class="btn pri sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-Setup.exe">下载</a></td></tr>
-    <tr><td><code>deepsleep-3.2.3-win-x64.zip</code></td><td>便携版：解压就能跑，不写注册表</td>
-        <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-3.2.3-win-x64.zip">下载</a></td></tr>
-    <tr><td><code>deepsleep-core-3.2.3-win-x64.zip</code></td><td>内核版（Windows）：解压即用，配合网页端操控本机</td>
-        <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-core-3.2.3-win-x64.zip">下载</a></td></tr>
-    <tr><td><code>deepsleep_3.2.3_amd64.deb</code></td><td>桌面版 · Debian / Ubuntu（x86_64）：<code>sudo apt install ./deepsleep_3.2.3_amd64.deb</code>，装完在应用菜单里搜 deepsleep</td>
-        <td><a class="btn pri sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep_3.2.3_amd64.deb">下载</a></td></tr>
-    <tr><td><code>deepsleep_3.2.3_arm64.deb</code></td><td>桌面版 · Debian / Ubuntu（ARM64）：同上</td>
-        <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep_3.2.3_arm64.deb">下载</a></td></tr>
-    <tr><td><code>deepsleep-3.2.3-1.x86_64.rpm</code></td><td>桌面版 · Fedora / RHEL / openSUSE（x86_64）：<code>sudo dnf install ./deepsleep-3.2.3-1.x86_64.rpm</code></td>
-        <td><a class="btn pri sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-3.2.3-1.x86_64.rpm">下载</a></td></tr>
-    <tr><td><code>deepsleep-3.2.3-1.aarch64.rpm</code></td><td>桌面版 · Fedora / RHEL / openSUSE（aarch64）：同上</td>
-        <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-3.2.3-1.aarch64.rpm">下载</a></td></tr>
-    <tr><td><code>deepsleep-3.2.3-linux-x64.tar.gz</code></td><td>免安装 · Linux x86_64：解压后 <code>./deepsleep.sh</code> 直接开窗口（服务器加 <code>--headless</code> 只跑服务）</td>
-        <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-3.2.3-linux-x64.tar.gz">下载</a></td></tr>
-    <tr><td><code>deepsleep-3.2.3-linux-arm64.tar.gz</code></td><td>免安装 · Linux ARM64（同上）</td>
-        <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-3.2.3-linux-arm64.tar.gz">下载</a></td></tr>
-    <tr><td><code>deepsleep-core-3.2.3-osx-arm64.tar.gz</code></td><td>macOS 内核版（Apple 芯片）：解压后 <code>./deepsleep.sh</code> 开窗口，服务器加 <code>--headless</code></td>
-        <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-core-3.2.3-osx-arm64.tar.gz">下载</a></td></tr>
-    <tr><td><code>deepsleep-core-3.2.3-osx-x64.tar.gz</code></td><td>macOS 内核版（Intel）：同上</td>
-        <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-core-3.2.3-osx-x64.tar.gz">下载</a></td></tr>
-    <tr><td><code>deepsleep-universal-3.2.3.zip</code></td><td>万能安装程序：一个小脚本，按你的系统自动下对应平台的包</td>
-        <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-universal-3.2.3.zip">下载</a></td></tr>
-    <tr><td>网页版</td><td>不用下载，直接用浏览器打开</td>
+    <tr><td><code>deepsleep-3.2.4-win-x64.zip</code></td><td>便携版，解压就能跑，不写注册表</td>
+        <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-3.2.4-win-x64.zip">下载</a></td></tr>
+    <tr><td><code>deepsleep-core-3.2.4-win-x64.zip</code></td><td>内核版（Windows），解压即用，配合网页端操控本机</td>
+        <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-core-3.2.4-win-x64.zip">下载</a></td></tr>
+    <tr><td><code>deepsleep_3.2.4_amd64.deb</code></td><td>桌面版 · Debian / Ubuntu（x86_64）：<code>sudo apt install ./deepsleep_3.2.4_amd64.deb</code>，装完在应用菜单里搜 deepsleep</td>
+        <td><a class="btn pri sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep_3.2.4_amd64.deb">下载</a></td></tr>
+    <tr><td><code>deepsleep_3.2.4_arm64.deb</code></td><td>桌面版 · Debian / Ubuntu（ARM64）</td>
+        <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep_3.2.4_arm64.deb">下载</a></td></tr>
+    <tr><td><code>deepsleep-3.2.4-1.x86_64.rpm</code></td><td>桌面版 · Fedora / RHEL / openSUSE（x86_64）：<code>sudo dnf install ./deepsleep-3.2.4-1.x86_64.rpm</code></td>
+        <td><a class="btn pri sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-3.2.4-1.x86_64.rpm">下载</a></td></tr>
+    <tr><td><code>deepsleep-3.2.4-1.aarch64.rpm</code></td><td>桌面版 · Fedora / RHEL / openSUSE（aarch64）</td>
+        <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-3.2.4-1.aarch64.rpm">下载</a></td></tr>
+    <tr><td><code>deepsleep-3.2.4-linux-x64.tar.gz</code></td><td>免安装 · Linux x86_64，解压后 <code>./deepsleep.sh</code>开窗口，服务器加 <code>--headless</code>只跑服务</td>
+        <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-3.2.4-linux-x64.tar.gz">下载</a></td></tr>
+    <tr><td><code>deepsleep-3.2.4-linux-arm64.tar.gz</code></td><td>免安装 · Linux ARM64</td>
+        <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-3.2.4-linux-arm64.tar.gz">下载</a></td></tr>
+    <tr><td><code>deepsleep-core-3.2.4-osx-arm64.tar.gz</code></td><td>macOS 内核版（Apple 芯片），解压后 <code>./deepsleep.sh</code>开窗口</td>
+        <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-core-3.2.4-osx-arm64.tar.gz">下载</a></td></tr>
+    <tr><td><code>deepsleep-core-3.2.4-osx-x64.tar.gz</code></td><td>macOS 内核版（Intel）</td>
+        <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-core-3.2.4-osx-x64.tar.gz">下载</a></td></tr>
+    <tr><td><code>deepsleep-universal-3.2.4.zip</code></td><td>万能安装程序，按系统自动下对应平台的包</td>
+        <td><a class="btn gho sm" href="https://github.com/zhdezs/deepsleep/releases/latest/download/deepsleep-universal-3.2.4.zip">下载</a></td></tr>
+    <tr><td>网页版</td><td>不用下载，浏览器直接打开</td>
         <td><a class="btn gho sm" href="app/">打开网页版</a></td></tr>
   </table>
   </div>
@@ -384,71 +362,65 @@ table.dl th{color:var(--muted);font-weight:600;font-size:12.5px}
   <div class="card" id="dlGitee" hidden>
   <table class="dl">
     <tr><th>文件</th><th>说明</th><th></th></tr>
-    <tr><td><code>deepsleep-Setup.exe.part1</code><br><code>deepsleep-Setup.exe.part2</code></td><td>安装版（推荐）：Gitee 单附件上限 100 MB，安装包被切成 2 片。<strong>两片都要下</strong>，和下面的合并器放同一个文件夹，双击合并器即可拼回整包并自动安装</td>
-        <td><a class="btn pri sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.3/deepsleep-Setup.exe.part1">下载 part1</a><br><a class="btn pri sm" style="margin-top:6px" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.3/deepsleep-Setup.exe.part2">下载 part2</a></td></tr>
-    <tr><td><code>deepsleep-merge-setup.exe</code></td><td>分片合并器（<strong>必下</strong>）：校验 SHA-256、拼回 <code>deepsleep-Setup.exe</code> 后自动启动安装</td>
-        <td><a class="btn pri sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.3/deepsleep-merge-setup.exe">下载</a></td></tr>
-    <tr><td><code>deepsleep-3.2.3-win-x64.zip</code></td><td>便携版：解压就能跑，不写注册表</td>
-        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.3/deepsleep-3.2.3-win-x64.zip">下载</a></td></tr>
-    <tr><td><code>deepsleep-core-3.2.3-win-x64.zip</code></td><td>内核版（Windows）：解压即用，配合网页端操控本机</td>
-        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.3/deepsleep-core-3.2.3-win-x64.zip">下载</a></td></tr>
-    <tr><td><code>deepsleep_3.2.3_amd64.deb</code></td><td>桌面版 · Debian / Ubuntu（x86_64）：<code>sudo apt install ./deepsleep_3.2.3_amd64.deb</code>，装完在应用菜单里搜 deepsleep</td>
-        <td><a class="btn pri sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.3/deepsleep_3.2.3_amd64.deb">下载</a></td></tr>
-    <tr><td><code>deepsleep_3.2.3_arm64.deb</code></td><td>桌面版 · Debian / Ubuntu（ARM64）：同上</td>
-        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.3/deepsleep_3.2.3_arm64.deb">下载</a></td></tr>
-    <tr><td><code>deepsleep-3.2.3-1.x86_64.rpm</code></td><td>桌面版 · Fedora / RHEL / openSUSE（x86_64）：<code>sudo dnf install ./deepsleep-3.2.3-1.x86_64.rpm</code></td>
-        <td><a class="btn pri sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.3/deepsleep-3.2.3-1.x86_64.rpm">下载</a></td></tr>
-    <tr><td><code>deepsleep-3.2.3-1.aarch64.rpm</code></td><td>桌面版 · Fedora / RHEL / openSUSE（aarch64）：同上</td>
-        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.3/deepsleep-3.2.3-1.aarch64.rpm">下载</a></td></tr>
-    <tr><td><code>deepsleep-3.2.3-linux-x64.tar.gz</code></td><td>免安装 · Linux x86_64：解压后 <code>./deepsleep.sh</code> 直接开窗口（服务器加 <code>--headless</code> 只跑服务）</td>
-        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.3/deepsleep-3.2.3-linux-x64.tar.gz">下载</a></td></tr>
-    <tr><td><code>deepsleep-3.2.3-linux-arm64.tar.gz</code></td><td>免安装 · Linux ARM64（同上）</td>
-        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.3/deepsleep-3.2.3-linux-arm64.tar.gz">下载</a></td></tr>
-    <tr><td><code>deepsleep-core-3.2.3-osx-arm64.tar.gz</code></td><td>macOS 内核版（Apple 芯片）：解压后 <code>./deepsleep.sh</code> 开窗口，服务器加 <code>--headless</code></td>
-        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.3/deepsleep-core-3.2.3-osx-arm64.tar.gz">下载</a></td></tr>
-    <tr><td><code>deepsleep-core-3.2.3-osx-x64.tar.gz</code></td><td>macOS 内核版（Intel）：同上</td>
-        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.3/deepsleep-core-3.2.3-osx-x64.tar.gz">下载</a></td></tr>
-    <tr><td>网页版</td><td>不用下载，直接用浏览器打开</td>
+    <tr><td><code>deepsleep-Setup.exe.part1</code><br><code>deepsleep-Setup.exe.part2</code></td><td>安装版。Gitee 单附件上限 100 MB，安装包切成 2 片，两片都要下，和合并器放在同一个文件夹，双击合并器就会拼回整包并自动安装</td>
+        <td><a class="btn pri sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.4/deepsleep-Setup.exe.part1">下载 part1</a><br><a class="btn pri sm" style="margin-top:6px" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.4/deepsleep-Setup.exe.part2">下载 part2</a></td></tr>
+    <tr><td><code>deepsleep-merge-setup.exe</code></td><td>分片合并器，必须下。校验 SHA-256，拼回 <code>deepsleep-Setup.exe</code>后自动启动安装</td>
+        <td><a class="btn pri sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.4/deepsleep-merge-setup.exe">下载</a></td></tr>
+    <tr><td><code>deepsleep-3.2.4-win-x64.zip</code></td><td>便携版，解压就能跑，不写注册表</td>
+        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.4/deepsleep-3.2.4-win-x64.zip">下载</a></td></tr>
+    <tr><td><code>deepsleep-core-3.2.4-win-x64.zip</code></td><td>内核版（Windows），解压即用，配合网页端操控本机</td>
+        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.4/deepsleep-core-3.2.4-win-x64.zip">下载</a></td></tr>
+    <tr><td><code>deepsleep_3.2.4_amd64.deb</code></td><td>桌面版 · Debian / Ubuntu（x86_64）：<code>sudo apt install ./deepsleep_3.2.4_amd64.deb</code></td>
+        <td><a class="btn pri sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.4/deepsleep_3.2.4_amd64.deb">下载</a></td></tr>
+    <tr><td><code>deepsleep_3.2.4_arm64.deb</code></td><td>桌面版 · Debian / Ubuntu（ARM64）</td>
+        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.4/deepsleep_3.2.4_arm64.deb">下载</a></td></tr>
+    <tr><td><code>deepsleep-3.2.4-1.x86_64.rpm</code></td><td>桌面版 · Fedora / RHEL / openSUSE（x86_64）：<code>sudo dnf install ./deepsleep-3.2.4-1.x86_64.rpm</code></td>
+        <td><a class="btn pri sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.4/deepsleep-3.2.4-1.x86_64.rpm">下载</a></td></tr>
+    <tr><td><code>deepsleep-3.2.4-1.aarch64.rpm</code></td><td>桌面版 · Fedora / RHEL / openSUSE（aarch64）</td>
+        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.4/deepsleep-3.2.4-1.aarch64.rpm">下载</a></td></tr>
+    <tr><td><code>deepsleep-3.2.4-linux-x64.tar.gz</code></td><td>免安装 · Linux x86_64，解压后 <code>./deepsleep.sh</code>开窗口</td>
+        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.4/deepsleep-3.2.4-linux-x64.tar.gz">下载</a></td></tr>
+    <tr><td><code>deepsleep-3.2.4-linux-arm64.tar.gz</code></td><td>免安装 · Linux ARM64</td>
+        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.4/deepsleep-3.2.4-linux-arm64.tar.gz">下载</a></td></tr>
+    <tr><td><code>deepsleep-core-3.2.4-osx-arm64.tar.gz</code></td><td>macOS 内核版（Apple 芯片），解压后 <code>./deepsleep.sh</code>开窗口</td>
+        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.4/deepsleep-core-3.2.4-osx-arm64.tar.gz">下载</a></td></tr>
+    <tr><td><code>deepsleep-core-3.2.4-osx-x64.tar.gz</code></td><td>macOS 内核版（Intel）</td>
+        <td><a class="btn gho sm" href="https://gitee.com/zhdezs/deepsleep/releases/download/v3.2.4/deepsleep-core-3.2.4-osx-x64.tar.gz">下载</a></td></tr>
+    <tr><td>网页版</td><td>不用下载，浏览器直接打开</td>
         <td><a class="btn gho sm" href="app/">打开网页版</a></td></tr>
   </table>
   </div>
-  <p class="hint">第一次运行 Windows 可能提示「未知发布者」，点「更多信息 → 仍要运行」即可。安装包 SHA256 写在 Release 说明里。<br>
-      Linux 上桌面包依赖系统自带的 WebView：Debian / Ubuntu 装 <code>libwebkit2gtk-4.1-0</code> 与 <code>libgtk-3-0</code>，Fedora / RHEL 装 <code>webkit2gtk4.1</code>（<code>.deb</code> / <code>.rpm</code> 会自动带上 Debian 侧的依赖）。<br>
-      macOS 只发行<strong>内核版</strong>（<code>deepsleep-core-*-osx-*.tar.gz</code>，不再出 .dmg）：
-      解压后 <code>./deepsleep.sh</code> 会在系统自带 WebView 里开窗口，服务器加 <code>--headless</code> 只跑服务；
-      需要 <strong>macOS 14 或更高版本</strong>（该下限来自窗口库二进制本身），首次运行被 Gatekeeper 拦时
-      右键图标 →「打开」→ 再点一次「打开」即可。<br>
-      在 <strong>Gitee</strong> 下载的安装包是分片的（<code>deepsleep-Setup.exe.part1</code>/<code>.part2</code>，单附件上限 100 MB）：
-      把所有分片和 <code>deepsleep-merge-setup.exe</code> 放进同一个文件夹，双击合并器就会按序拼回整包、
-      校验 SHA-256 并自动启动安装程序。GitHub 上是完整包，不需要合并。</p>
+  <p class="hint">第一次运行 Windows 可能提示「未知发布者」，点「更多信息 → 仍要运行」。安装包的 SHA256 写在 Release 说明里。<br>
+      Linux 桌面包依赖系统自带的 WebView。Debian 和 Ubuntu 装 <code>libwebkit2gtk-4.1-0</code>和 <code>libgtk-3-0</code>，Fedora 和 RHEL 装 <code>webkit2gtk4.1</code>。<br>
+      macOS 只发行内核版（<code>deepsleep-core-*-osx-*.tar.gz</code>），解压后 <code>./deepsleep.sh</code>在系统自带 WebView 里开窗口，要求 macOS 14 或更高。首次运行被 Gatekeeper 拦下时，右键图标选「打开」，再点一次「打开」。<br>
+      Gitee 上的安装包是分片的，把所有分片和 <code>deepsleep-merge-setup.exe</code>放进同一个文件夹，双击合并器就会按序拼回整包并校验 SHA-256。GitHub 上是完整包，不需要合并。</p>
 </div></section>
 
 <section id="faq" class="alt"><div class="wrap">
   <h2>常见问题</h2>
   <dl class="faq">
     <dt>要钱吗？</dt>
-    <dd>软件免费，默认接智谱的免费模型（GLM-4.7-Flash / GLM-4.6V-Flash / CogView-3-Flash），网页版还内置了一把免费 Key。想更快就把自己的 Key 填进设置。</dd>
+    <dd>软件免费，默认接智谱的免费模型（GLM-4.7-Flash、GLM-4.6V-Flash、CogView-3-Flash），网页版还内置一把免费 Key。想更快就填自己的 Key。</dd>
     <dt>我的聊天记录会被上传吗？</dt>
-    <dd>不会。会话、记忆、API Key 都存在你自己电脑上（网页版存在浏览器 localStorage）。只有发给模型的那段对话内容会走 API。</dd>
+    <dd>不会。会话、记忆、API Key 都存在你自己的电脑上，网页版存在浏览器 localStorage。只有发给模型的那段对话内容会走 API。</dd>
     <dt>网页版和客户端差在哪？</dt>
-    <dd>网页版是纯前端，不能碰你的文件、跑命令、联网抓取；这些「动手」能力必须靠内核版或桌面客户端。</dd>
+    <dd>网页版是纯前端，碰不到你的文件，也不能跑命令和联网抓取。这类操作要靠内核版或桌面客户端。</dd>
     <dt>内核版会不会有风险？</dt>
-    <dd>它只监听 127.0.0.1 并要求配对令牌，外网直连不进；但令牌等于钥匙，别外传。用完关窗口即停。</dd>
-    <dt>为什么有时候会「限流 / 429」？</dt>
-    <dd>免费模型有并发限制，人多了就排队。填自己的 Key 或稍等重试即可。<strong>生成视频不在免费额度里</strong>，需要你自己的 Key（可在设置里复用图像用的那把）。</dd>
-    <dt>支持 macOS / Linux 吗？</dt>
-    <dd>支持。<strong>桌面版</strong>有 Linux（.deb / .rpm，x64 与 ARM64）和 macOS（内核版，Apple 芯片与 Intel），和 Windows 客户端是同一份内核，功能一个不少。Linux 上 <code>sudo apt install ./deepsleep_*.deb</code> 或 <code>sudo dnf install ./deepsleep-*.rpm</code>，macOS 解压 <code>deepsleep-core-*-osx-*.tar.gz</code> 后 <code>./deepsleep.sh</code>。<br>
-      也可以下免安装的 <code>.tar.gz</code>，解压后 <code>./deepsleep.sh</code> 直接开原生桌面窗口；服务器 / SSH 加 <code>--headless</code> 就只跑内核服务、用浏览器连（Linux 桌面需要系统自带 <code>libwebkit2gtk-4.1-0</code>）。macOS 现在只发行内核版（.dmg 已下线，Apple 芯片上会被 Gatekeeper 判成「已损坏」）。</dd>
+    <dd>它只监听 127.0.0.1，并要求配对令牌，外网直连进不来。令牌等于钥匙，别外传，用完关窗口就停。</dd>
+    <dt>为什么有时候会限流或返回 429？</dt>
+    <dd>免费模型有并发限制，人多就排队。填自己的 Key，或者过一会儿重试。生成视频不在免费额度里，需要自己的 Key，可以复用图像那把。</dd>
+    <dt>支持 macOS 和 Linux 吗？</dt>
+    <dd>支持。Linux 有 .deb 和 .rpm，x64 与 ARM64 都有；macOS 发的是内核版，Apple 芯片和 Intel 都有，和 Windows 客户端是同一份内核。Linux 上用 <code>sudo apt install ./deepsleep_*.deb</code>或 <code>sudo dnf install ./deepsleep-*.rpm</code>，macOS 解压 <code>deepsleep-core-*-osx-*.tar.gz</code>后执行 <code>./deepsleep.sh</code>。也可以下免安装的 <code>.tar.gz</code>，服务器和 SSH 环境加 <code>--headless</code>只跑内核服务。</dd>
   </dl>
 </div></section>
 
 <footer>
-  <p>deepsleep · 内核与界面分离的跨平台 AI 助手 ·
+  <p>deepsleep ·
      <a href="https://github.com/zhdezs/deepsleep" target="_blank" rel="noreferrer">GitHub</a> ·
      <a href="https://gitee.com/zhdezs/deepsleep" target="_blank" rel="noreferrer">Gitee</a> ·
      <a href="app/">网页版</a> · <a href="core/">内核版网页端</a> ·
-     <a href="help/">📖 帮助文档</a> · <a href="#superagent">SuperAgent 架构</a></p>
-  <p>本页由 GitHub Pages 托管 · 模型服务由第三方提供，本页不收集任何数据</p>
+     <a href="help/">帮助文档</a> · <a href="#superagent">SuperAgent 架构</a></p>
+  <p>本页由 GitHub Pages 托管，模型服务由第三方提供，本页不收集数据</p>
 </footer>
 <script>
 (function(){

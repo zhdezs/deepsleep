@@ -7,14 +7,7 @@ using System.Text.RegularExpressions;
 
 namespace TrollWrangler;
 
-/// <summary>
-/// deepsleep 知识库：内置文档（安装目录 assets/knowledge/）+ 用户自建文档（data/knowledge/）。
-/// <para>
-/// 设计取舍：知识可以很多，但不能每次请求都把全文塞进上下文。所以只把一份**目录索引**
-/// 注入系统提示词，模型确实需要细节时再调「查知识库」工具按主题取回对应章节全文。
-/// 极速模式完全不接这套（不注入索引、工具调用也会被拦），否则多一次往返 + 长文本就不极速了。
-/// </para>
-/// </summary>
+/// <summary>deepsleep 知识库：内置文档（安装目录 assets/knowledge/）+ 用户自建文档（data/knowledge/）。</summary>
 public static class KnowledgeBase
 {
     public sealed class Entry

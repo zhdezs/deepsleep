@@ -39,31 +39,12 @@ public bool GiteeOnly { get; set; }
 public List<string> FallbackUrls { get; set; } = new();
 }
 
-/// <summary>
-/// OTA 自动更新：检查清单 → 下载安装包（SHA256 校验）→ 退出后静默覆盖安装 → 自动重启。
-///
-/// 更新源支持四种写法（设置 → OTA 自动更新 → 更新源）：
-///   1) GitHub 仓库：owner/repo 或 https://github.com/owner/repo
-///      走官方 Releases API 读最新 tag + deepsleep-Setup.exe 资产；
-///      仓库没有 Release 时自动退回仓库里的 update.json（main / master 都试）。
-///   2) Gitee 仓库：gitee.com/owner/repo，也可以写 gitee:owner/repo —— 国内直连快
-///   3) 清单直链：https://.../update.json（自建服务器、静态托管）
-///   4) 本地 / 共享盘：D:\release\update.json（离线升级）
-///
-/// 填 GitHub 仓库时会顺带看同名 Gitee 仓库：同一个版本优先从 Gitee 下载（国内快一个数量级），
-/// 校验始终用 GitHub 官方 SHA256。Gitee 单个附件不能超过 100MB，装不下的大安装包在那边切成
-/// deepsleep-Setup.exe.part1 / .part2 / … 存放，客户端逐片下载后拼回整包再校验。
-///
-/// 依赖发布版的 deepsleep-Setup.exe（支持 --silent --dir 参数）。
-/// </summary>
+/// <summary>OTA 自动更新：检查清单 → 下载安装包（SHA256 校验）→ 退出后静默覆盖安装 → 自动重启。</summary>
 public static class Updater
 {
 public static string CurrentVersion { get; } = ReadCurrentVersion();
 
-/// <summary>
-/// 当前内部构建号（版本号第 4 段，见 src\Directory.Build.props 里的 &lt;FileVersion&gt;）。
-/// 版本号不变、只改构建号时，OTA 就是靠它认出「这是新包」的。
-/// </summary>
+/// <summary>当前内部构建号（版本号第 4 段，见 src\Directory.Build.props 里的 &lt;FileVersion&gt;）。</summary>
 public static int CurrentBuild { get; } = ReadCurrentBuild();
 
 /// <summary>当前构建的内部代号（Directory.Build.props 的 &lt;DeepSleepCode&gt;，编译进程序集元数据）。</summary>
@@ -75,12 +56,7 @@ public static string CurrentDisplay =>
         ? (CurrentBuild > 0 ? $"{CurrentVersion} · {CurrentCode}.{CurrentBuild}" : $"{CurrentVersion} · {CurrentCode}")
         : (CurrentBuild > 0 ? $"{CurrentVersion} · b{CurrentBuild}" : CurrentVersion);
 
-/// <summary>
-/// GitHub 令牌（私有仓库 / 提高 API 限额）。只从两处读取：
-///   ① 环境变量 DEEPSLEEP_GITHUB_TOKEN
-///   ② data\github.token（Windows DPAPI 当前用户加密，只有本机本账号能解开）
-/// 永远不会写进 config.json，也永远不会被日志或界面打印出来。
-/// </summary>
+/// <summary>GitHub 令牌（私有仓库 / 提高 API 限额）。</summary>
 public static string Token { get; private set; } = "";
 
 /// <summary>加密令牌文件的固定位置（安装目录 data 下）。</summary>
@@ -116,10 +92,7 @@ private static void ApplyAuth(HttpClient hc)
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", Token);
 }
 
-// ------------------------------------------------------------------
 // DPAPI（crypt32.dll）：不引用额外的 NuGet 包，直接用系统 API。
-// 非 Windows 平台没有 DPAPI，一律返回空串（旧格式令牌解不开，能力不受影响）。
-// ------------------------------------------------------------------
 #if WINDOWS
 [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
 private struct DataBlob
@@ -169,11 +142,7 @@ private static string DpapiUnprotect(byte[] blob)
 private static string DpapiUnprotect(byte[] blob) => "";
 #endif
 
-/// <summary>
-/// 当前版本号：**以安装目录里 deepsleep.exe 的文件版本为准**，程序集版本只当兜底。
-/// 别再读内核程序集（Deepsleep.Core.dll）自己的版本 —— 它的 &lt;Version&gt; 不随发布同步，
-/// 以前就是读它，结果升到 2.1.0 了还自报 2.0.0（外面看起来像"检测不到自己的版本号"）。
-/// </summary>
+/// <summary>当前版本号：以安装目录里 deepsleep.exe 的文件版本为准，程序集版本只当兜底。</summary>
 private static string ReadCurrentVersion()
 {
     try
@@ -200,10 +169,7 @@ private static string ReadCurrentVersion()
     catch { return "1.0.0"; }
 }
 
-/// <summary>
-/// 当前内部构建号：先读安装目录 exe 的文件版本第 4 段（与 CurrentVersion 同源，升级完不会对不上号），
-/// 读不到再退回程序集元数据里的 DeepSleepBuild。
-/// </summary>
+/// <summary>当前内部构建号：先读安装目录 exe 的文件版本第 4 段（与 CurrentVersion 同源，升级完不会对不上号）， 读不到再退回程序集元数据里的 DeepSleepBuild。</summary>
 private static int ReadCurrentBuild()
 {
     try
@@ -236,10 +202,7 @@ private static string AsmMeta(string key)
     return "";
 }
 
-/// <summary>
-/// 取内部构建号：3.2.3.4 取第 4 段；只有一段数字（build: 4）就取它本身；
-/// 普通三段版本号返回 0（表示没有构建号）。
-/// </summary>
+/// <summary>取内部构建号：3.2.3.4 取第 4 段；只有一段数字（build: 4）就取它本身；</summary>
 private static int BuildOf(string? v)
 {
     if (string.IsNullOrWhiteSpace(v)) return 0;
@@ -253,10 +216,7 @@ private static int BuildOf(string? v)
     return int.TryParse(digits, out int n) && n > 0 ? n : 0;
 }
 
-/// <summary>
-/// 版本号只留 3 段：第 4 段是内部构建号，交给 CurrentBuild 单独管。
-/// 否则 3.2.3.4 会和远端 tag 的 3.2.3 比出「本地比线上还新」的假象。
-/// </summary>
+/// <summary>版本号只留 3 段：第 4 段是内部构建号，交给 CurrentBuild 单独管。</summary>
 private static string VersionOnly(string v)
 {
     if (string.IsNullOrEmpty(v)) return v;
@@ -288,10 +248,7 @@ internal static HttpClient NewClient(TimeSpan timeout)
     return hc;
 }
 
-/// <summary>
-/// 识别 "owner/repo" 形式的 GitHub 仓库地址。普通网址、本地路径都会返回 false，
-/// 所以可以和 update.json 直链混用，不影响老配置。
-/// </summary>
+/// <summary>识别 "owner/repo"形式的 GitHub 仓库地址。普通网址、本地路径都会返回 false， 所以可以和 update.json 直链混用，不影响老配置。</summary>
 public static bool TryParseGitHub(string text, out string owner, out string repo)
 {
     owner = ""; repo = "";
@@ -325,7 +282,7 @@ public static bool TryParseGitHub(string text, out string owner, out string repo
 }
 
 /// <summary>读取更新源，返回比当前版本更新的信息；无更新或失败返回 null。</summary>
-/// <param name="giteeFirst">Gitee 优先线路（⚙ 设置里的「更新线路」，默认 Gitee）：GitHub 更新源也会同时看同名 Gitee 仓库并从 Gitee 下载。</param>
+/// <param name="giteeFirst">Gitee 优先线路（ 设置里的「更新线路」，默认 Gitee）：GitHub 更新源也会同时看同名 Gitee 仓库并从 Gitee 下载。</param>
 public static async Task<UpdateInfo?> CheckAsync(string manifestUrl, bool giteeFirst = true,
                                                  CancellationToken ct = default)
 {
@@ -343,9 +300,8 @@ public static async Task<UpdateInfo?> CheckAsync(string manifestUrl, bool giteeF
     // 2) GitHub 仓库 → Releases API（顺便看 Gitee 同名仓库，能加速就加速）
     if (TryParseGitHub(manifestUrl, out string owner, out string repo))
     {
-        // 「明明是 Gitee 却慢」的元凶：GitHub 的 api.github.com 是境外地址，国内要么连接被重置、
-        // 要么一直挂到 20 秒超时，而它是串行挡在 Gitee 前面的。现在把 GitHub 那一请求丢后台，
-        // 只等 Gitee；Gitee 上有同一个版本、又自带官方 SHA256 的话直接就用，一秒都不等 GitHub。
+        // 「明明是 Gitee 却慢」的元凶：GitHub 的 api.github.com 是境外地址，国内要么连接被重置、要么一直挂到 20 秒超时，
+        // 而它是串行挡在 Gitee 前面的。
         var ghTask = CheckGitHubAsync(owner, repo, ct);
         UpdateInfo? gt = null;
         if (giteeFirst)
@@ -367,9 +323,6 @@ public static async Task<UpdateInfo?> CheckAsync(string manifestUrl, bool giteeF
         if (ghNewer)
         {
             // 同一个版本 → 只有 Gitee 线路才借 Gitee 的地址下载（整包或分片），SHA256 仍用 GitHub 官方 digest。
-            // GitHub 线路（用户在 ⚙ 设置里选了 GitHub）绝不沾 Gitee：设置了不服从就成 bug 了。
-            // 注意：Gitee 的 release JSON 里**没有 size**（只有 name + 下载地址），所以大小未知也得认，
-            // 完整性最终由 GitHub 官方摘要（以及这边记录的 gh.Size）兜底。
             if (giteeFirst)
             {
                 // 版本号相同还不够，构建号也得对得上 —— 否则会把 Gitee 上「同版本号的旧构建」
@@ -411,10 +364,7 @@ public static async Task<UpdateInfo?> CheckAsync(string manifestUrl, bool giteeF
     return await CheckManifestAsync(manifestUrl, ct).ConfigureAwait(false);
 }
 
-/// <summary>
-/// 识别 Gitee 仓库：gitee.com/owner/repo、https://gitee.com/owner/repo、git@gitee.com:owner/repo、
-/// 也可以显式写 gitee:owner/repo（同名仓库不想和 GitHub 混用时用这个）。
-/// </summary>
+/// <summary>识别 Gitee 仓库地址。</summary>
 public static bool TryParseGitee(string text, out string owner, out string repo)
 {
     owner = ""; repo = "";
@@ -452,10 +402,7 @@ public static bool TryParseGitee(string text, out string owner, out string repo)
     return owner.Length > 0 && repo.Length > 0;
 }
 
-/// <summary>
-/// 识别分片附件名：xxx.part1 / xxx.part01（片号从 1 开始）。Gitee 单个附件不能超过 100MB，
-/// 所以大安装包在那边切成 deepsleep-Setup.exe.part1 / .part2 …，客户端下齐了再拼回整包。
-/// </summary>
+/// <summary>识别分片附件名：xxx.part1 / xxx.part01（片号从 1 开始）。</summary>
 public static bool TryParsePartIndex(string name, out int index)
 {
     index = 0;
@@ -539,10 +486,7 @@ private static async Task<UpdateInfo?> CheckGiteeAsync(string owner, string repo
 
         if (string.IsNullOrWhiteSpace(url)) return null;
 
-        // Gitee 那边没有 size/digest 字段，所以发布脚本会把**每个资产**的 SHA256 写进 Release 说明，
-        // 形如 "SHA-256 (deepsleep-3.0.4-linux-x64.tar.gz): 3d20…"。
-        // 以前只写一个安装包的摘要，Linux 客户端选中的却是 linux-x64.tar.gz，拿 exe 的摘要去校验必然失败。
-        // 老的 "SHA256: …" 单行格式仍然兼容（那种只对应安装包本身）。
+        // Gitee 那边没有 size/digest 字段，所以发布脚本会把每个资产的 SHA256 写进 Release 说明
         var shaMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
                      notes ?? "", @"(?im)^\s*SHA-?256\s*\(\s*([^)]+?)\s*\)\s*[:：]\s*([0-9a-f]{64})\s*$"))
@@ -658,21 +602,14 @@ private static async Task<UpdateInfo?> CheckManifestAsync(string manifestUrl, Ca
     catch { return null; }
 }
 
-/// <summary>
-/// 把 Release 的 tag 规范化成版本号（去掉开头的 v）——
-/// 界面上到处都会再补一个 "v"，不规范化就会显示成 "vv1.0.11"。
-/// </summary>
+/// <summary>把 Release 的 tag 规范化成版本号（去掉开头的 v）—— 界面上到处都会再补一个 "v"，不规范化就会显示成 "vv1.0.11"。</summary>
 public static string NormalizeVersion(string tag)
 {
     string t = (tag ?? "").Trim();
     return t.Length > 1 && (t[0] == 'v' || t[0] == 'V') ? t[1..] : t;
 }
 
-/// <summary>
-/// 版本比较（支持 1.0.0 / 1.0.0.0 / v1.0.0 / 3.0.3-alpha 形式）。
-/// 数字段逐段比（缺的当 0，所以 3.0.3.1 &gt; 3.0.3）；数字全相同时，正式版排在预发布版前面
-/// （3.0.3 &gt; 3.0.3-alpha）—— 不然按 .alpha 约定装的测试版永远收不到同名正式版的更新。
-/// </summary>
+/// <summary>版本比较（支持 1.0.0 / 1.0.0.0 / v1.0.0 / 3.0.3-alpha 形式）。</summary>
 public static bool IsNewer(string remote, string local)
 {
     static (int[] Nums, string Pre) Parse(string s)
@@ -695,7 +632,7 @@ public static bool IsNewer(string remote, string local)
         int r = i < rn.Length ? rn[i] : 0, l = i < ln.Length ? ln[i] : 0;
         if (r != l) return r > l;
     }
-    if (rp.Length == 0 && lp.Length > 0) return true;    // 正式版 > 预发布版
+    if (rp.Length == 0 && lp.Length > 0) return true;    // 正式版 >预发布版
     if (rp.Length > 0 && lp.Length == 0) return false;
     return string.CompareOrdinal(rp, lp) > 0;
 }
@@ -704,11 +641,7 @@ public static bool IsNewer(string remote, string local)
 public static string InstallerFileName =>
     Platform.IsWindows ? "deepsleep-Setup.exe" : "deepsleep-core.tar.gz";
 
-/// <summary>
-/// 远端这份更新是不是比本机新。
-/// 先比版本号；**版本号相同时比内部构建号** —— 这就是「版本号不动、只改构建号」
-/// 也能把更新推下去的关键。远端没写构建号（老发布说明）时维持原行为：同版本号不算更新。
-/// </summary>
+/// <summary>远端这份更新是不是比本机新。 先比版本号；版本号相同时比内部构建号 —— 这就是「版本号不动、只改构建号」 也能把更新推下去的关键。</summary>
 public static bool IsUpgrade(UpdateInfo? info)
 {
     if (info == null || string.IsNullOrWhiteSpace(info.Version)) return false;
@@ -717,10 +650,7 @@ public static bool IsUpgrade(UpdateInfo? info)
     return info.Build > 0 && info.Build > CurrentBuild;
 }
 
-/// <summary>
-/// 两个版本号是不是「同一条线上的同一版本」（只比三段数字，预发布后缀另算）。
-/// 3.2.3 / 3.2.3.0 / v3.2.3 算同一个；3.2.3-alpha 与 3.2.3 不算（交给 IsNewer 的预发布规则）。
-/// </summary>
+/// <summary>两个版本号是不是同一条线上的同一版本。</summary>
 public static bool SameVersion(string a, string b)
 {
     if (!string.Equals(VersionOnly(CleanVersion(NormalizeVersion(a))),
@@ -730,11 +660,7 @@ public static bool SameVersion(string a, string b)
     return pa == pb;
 }
 
-/// <summary>
-/// 从发布说明里读出内部构建标记，读完把那一行从说明里去掉。
-/// 发布脚本（publish.py）会在说明顶部写一行「build: 3.2.3.4 · code: nebula」，
-/// 版本号不动、只加构建号时，OTA 全靠这一行认出「这是新包还不算旧包」。
-/// </summary>
+/// <summary>从发布说明里读出内部构建标记，读完把那一行从说明里去掉。</summary>
 private static UpdateInfo WithBuildMarker(UpdateInfo info)
 {
     string notes = info.Notes ?? "";
@@ -797,12 +723,7 @@ private static int PlatformScore(string name)
 
 public static string DownloadDir => Path.Combine(Path.GetTempPath(), "deepsleep-update");
 
-/// <summary>
-/// 这次更新的专属下载目录（版本号 + SHA256 前 8 位）。
-/// 以前所有版本共用 %TEMP%\deepsleep-update\deepsleep-Setup.exe，断点续传会把上一个版本、
-/// 或者上一个源剩下的半截"接着往下写"——拼出来的包 SHA256 永远对不上，于是每次都白下几百 MB、
-/// 又得从头再来（这就是"明明是 Gitee 却越来越慢"的直接原因之一）。
-/// </summary>
+/// <summary>这次更新的专属下载目录（版本号 + SHA256 前 8 位）。</summary>
 public static string DownloadDirFor(UpdateInfo info)
 {
     var keep = new List<char>();
@@ -825,7 +746,7 @@ private const int HttpStallSeconds = 45;
 
 /// <summary>下载更新包到临时目录，带进度回调；若清单提供 sha256 则校验。</summary>
 /// <param name="onStatus">给界面看的文字状态（走的哪个源、有没有自动换源）。</param>
-/// <param name="preferGitee">Gitee 优先线路（⚙ 设置里的「更新线路」）。GitHub 线路传 false：
+/// <param name="preferGitee">Gitee 优先线路（ 设置里的「更新线路」）。GitHub 线路传 false：
 /// 下载阶段不再尝试 Gitee（哪怕检查结果里带了 Gitee 地址），严格服从用户设置。</param>
 public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double>? progress,
                                                CancellationToken ct = default, Action<string>? onStatus = null,
@@ -836,10 +757,8 @@ public static async Task<string> DownloadAsync(UpdateInfo info, IProgress<double
     string dest = Path.Combine(destDir, InstallerFileName);
     CleanStaleDownloads(destDir);
 
-    // ① Gitee 优先线路（默认，⚙ 设置里可切成 GitHub 线路）：只要 Gitee 上有同一个版本，
-    //    就直接从 Gitee 下，不再跟 GitHub 探速比快慢（国内 Gitee 快一个数量级，探速纯属浪费时间）。
-    //    只有 Gitee 连不上、报错、卡住，或长时间低于保底速度，才回退 GitHub 接着下
-    //    —— 回退后照样按官方 SHA256 校验，镜像搬不了假货。
+    // ① Gitee 优先线路（默认， 设置里可切成 GitHub 线路）：只要 Gitee 上有同一个版本，就直接从 Gitee 下，
+    // 不再跟 GitHub 探速比快慢（国内 Gitee 快一个数量级
     string? giteeUrl = info.PartUrls.Count > 0
         ? info.PartUrls[0]
         : (IsGiteeUrl(info.MirrorUrl) ? info.MirrorUrl
@@ -955,10 +874,7 @@ private static string CandidateName(string url)
     catch { return "候选地址"; }
 }
 
-/// <summary>
-/// 清掉别的版本/别的源留下来的下载残件：这次不用它们了，留着白占几百 MB，
-/// 更怕哪天被当成"半截包"接着续传，拼出一坨 SHA256 永远对不上的东西。
-/// </summary>
+/// <summary>清掉别的版本/别的源留下来的下载残件：这次不用它们了，留着白占几百 MB， 更怕哪天被当成"半截包"接着续传，拼出一坨 SHA256 永远对不上的东西。</summary>
 private static void CleanStaleDownloads(string keepDir)
 {
     try
@@ -1001,10 +917,7 @@ private static async Task<int> ReadWithStallAsync(Stream src, byte[] buffer, Can
     }
 }
 
-/// <summary>
-/// 国内可用的 GitHub 下载加速镜像（前缀式）。直连失败或中断时按顺序回退，
-/// 内容与文件名都不变，最后照样用官方 SHA256 校验，不牺牲安全性。
-/// </summary>
+/// <summary>国内可用的 GitHub 下载加速镜像（前缀式）。直连失败或中断时按顺序回退， 内容与文件名都不变，最后照样用官方 SHA256 校验，不牺牲安全性。</summary>
 public static IReadOnlyList<string> Mirrors { get; } = new[]
 {
     "https://ghproxy.net/",
@@ -1053,11 +966,7 @@ private static string AssetNameFromUrl(string url)
     catch { return ""; }
 }
 
-/// <summary>
-/// 按 tag + 资产名拼出 GitHub 直链候选（含加速镜像）：Gitee 快路径没经过 GitHub API，
-/// 手里只有 Gitee 地址，回退时得靠这个拼出 GitHub 那边的同一份资产。
-/// 分片名（deepsleep-Setup.exe.part1）要先还原成整包名，GitHub 上放的是完整 exe。
-/// </summary>
+/// <summary>按 tag + 资产名拼出 GitHub 直链候选（含加速镜像）：Gitee 快路径没经过 GitHub API， 手里只有 Gitee 地址，回退时得靠这个拼出 GitHub 那边的同一份资产。</summary>
 private static List<string> GitHubDirectCandidates(string owner, string repo, UpdateInfo info)
 {
     var list = new List<string>();
@@ -1145,7 +1054,7 @@ private static async Task<string> DownloadOnceAsync(UpdateInfo info, string url,
         }
     }
 
-    // 防御：如果下回来的还是 JSON（含 "release-assets" 之类元数据），直接判失败
+    // 防御：如果下回来的还是 JSON（含 "release-assets"之类元数据），直接判失败
     if (jsonProbe)
     {
         using var head = File.OpenRead(dest);
@@ -1161,11 +1070,7 @@ private static async Task<string> DownloadOnceAsync(UpdateInfo info, string url,
     return dest;
 }
 
-/// <summary>
-/// 下载 Gitee 上的安装包分片（deepsleep-Setup.exe.part1/N）再拼回一个完整安装包。
-/// 每片单独重试、支持断点续传，拼完按官方 SHA256 校验 —— 所以和从 GitHub 下整包完全等价。
-/// 多片**一起下**：单条连接吃不完整带宽，Gitee 那边两片并着下才跑得起来。
-/// </summary>
+/// <summary>下载 Gitee 上的安装包分片（deepsleep-Setup.exe.part1/N）再拼回一个完整安装包。</summary>
 private static async Task<string> DownloadPartsAsync(UpdateInfo info, string dest,
                                                      IProgress<double>? progress, CancellationToken ct,
                                                      Action<string>? onStatus = null, double minKbps = 0)
@@ -1290,7 +1195,7 @@ public readonly record struct DownloadTick(long Read, long Start, long Goal, dou
 private static string SpeedText(string label, double kbps, long read, long goal)
 {
     string speed = kbps >= 1024 ? (kbps / 1024.0).ToString("0.0") + " MB/s" : kbps.ToString("0") + " KB/s";
-    var sb = new StringBuilder("正在从 ").Append(label).Append(" 下载… ").Append(speed);
+    var sb = new StringBuilder("正在从 ").Append(label).Append("下载… ").Append(speed);
     if (goal > 0)
     {
         sb.Append(" · 已下 ").Append(HumanSize(read)).Append(" / ").Append(HumanSize(goal));
@@ -1322,10 +1227,7 @@ private static void VerifyHash(string file, string expectedHex)
             $"更新包校验失败（SHA256 不匹配，已自动重下 {3} 次）：`n期望 {expectedHex.Trim().ToLowerInvariant()}`n实际 {actual.ToLowerInvariant()}`n文件大小 {new FileInfo(file).Length} 字节`n多半是下载被网络/代理截断，请重试，或到 Releases 页面手动下载安装包。");
 }
 
-/// <summary>
-/// 应用更新：写一个临时批处理——等待当前程序退出 → 静默安装新版本到原目录 → 重新启动程序。
-/// 调用后应立刻关闭当前程序。
-/// </summary>
+/// <summary>应用更新：写一个临时批处理——等待当前程序退出 → 静默安装新版本到原目录 → 重新启动程序。</summary>
 public static void ApplyAndRestart(string installerPath, string installDir, string exePath)
 {
     BackupUserConfig(installDir);      // 升级前先把 config.json 备份一份
@@ -1378,9 +1280,7 @@ public static void ApplyAndRestart(string installerPath, string installDir, stri
     });
 }
 
-/// <summary>
-/// Linux / macOS：写一个 bash 脚本——等本进程退出 → 解包 tar.gz 覆盖安装目录 → 重新启动。
-/// </summary>
+/// <summary>Linux / macOS：写一个 bash 脚本——等本进程退出 → 解包 tar.gz 覆盖安装目录 → 重新启动。</summary>
 private static void ApplyAndRestartUnix(string installerPath, string installDir, string exePath)
 {
     // Linux：这次更新落在用户级目录（系统装在 /opt 写不进去）时，把用户级启动项也指过去，
@@ -1392,9 +1292,7 @@ private static void ApplyAndRestartUnix(string installerPath, string installDir,
     int pid = Environment.ProcessId;
     string dataDir = Platform.DefaultDataDir();
     string logPath = Path.Combine(dataDir, "update.log");
-    // 只等"我们自己"这个 PID 退出。旧代码用 pgrep -f deepsleep —— 脚本路径 /tmp/deepsleep-update/apply-update.sh
-    // 本身就含 "deepsleep"，pgrep 会匹配到自己，15 秒后 pkill -f deepsleep 把脚本自己（连进程）干掉，
-    // 解包和重启都执行不到 —— Linux OTA "什么都没发生" 的元凶之一。
+    // 只等"我们自己"这个 PID 退出。
     var sb = new StringBuilder();
     sb.AppendLine("#!/usr/bin/env bash");
     sb.AppendLine("sleep 2");
@@ -1432,12 +1330,7 @@ private static void ApplyAndRestartUnix(string installerPath, string installDir,
     });
 }
 
-/// <summary>
-/// Linux：把用户级启动项（~/.local/share/applications/deepsleep.desktop、~/.local/bin/deepsleep）
-/// 指向用户级自更新目录。系统安装在 /opt（root 所有）时 OTA 只能写用户目录，不重指启动项的话
-/// 菜单里点开的仍是老版本。用户级 .desktop 在 XDG_DATA_DIRS 里排在 /usr/share 前面，
-/// 同名会覆盖系统那份，全程不需要 root。
-/// </summary>
+/// <summary>Linux：把用户级启动项（~/.local/share/applications/deepsleep.desktop、~/.local/bin/deepsleep） 指向用户级自更新目录。</summary>
 private static void WriteLinuxUserLaunchers(string appsDir)
 {
     try
@@ -1479,11 +1372,7 @@ private static void WriteLinuxUserLaunchers(string appsDir)
     catch { }
 }
 
-/// <summary>
-/// 升级前把 data\config.json 备份成 data\config.json.bak。
-/// 里面是 API Key 和各项设置，一旦被安装包模板覆盖、或者手抖删掉，靠它就能捞回来
-/// （程序启动时发现配置不在会自动从 .bak 恢复）。
-/// </summary>
+/// <summary>升级前把 data\config.json 备份成 data\config.json.bak。</summary>
 public static string? BackupUserConfig(string installDir)
 {
     try

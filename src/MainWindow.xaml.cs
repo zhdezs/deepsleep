@@ -18,10 +18,7 @@ using WinRT.Interop;
 
 namespace TrollWrangler;
 
-/// <summary>
-/// 外壳 = WebView2 宿主：把 ui\ 里的 HTML 界面当成本程序的界面跑，逻辑全部交给 Deepsleep.Core。
-/// 界面与内核之间只走 JSON（WebMessage / PostWebMessageAsJson）。
-/// </summary>
+/// <summary>外壳 = WebView2 宿主：把 ui\ 里的 HTML 界面当成本程序的界面跑，逻辑全部交给 Deepsleep.Core。</summary>
 public sealed partial class MainWindow : Window
 {
     private readonly Kernel _kernel = new();
@@ -75,9 +72,7 @@ public sealed partial class MainWindow : Window
         };
     }
 
-    // ------------------------------------------------------------------
     // 标题栏 / 主题
-    // ------------------------------------------------------------------
 
     private void SetupTitleBar()
     {
@@ -110,9 +105,7 @@ public sealed partial class MainWindow : Window
         catch { }
     }
 
-    // ------------------------------------------------------------------
     // WebView2
-    // ------------------------------------------------------------------
 
     private async Task StartWebAsync()
     {
@@ -121,9 +114,7 @@ public sealed partial class MainWindow : Window
         _ = WatchdogAsync();
     }
 
-    /// <summary>界面迟迟没渲染出来（WebView2 起不来）→ 显示兜底面板，别让用户看着白窗口。
-    /// 低配机 / 首次初始化 WebView2 会很慢，所以先等 90 秒；引擎对象已经建出来、只是页面
-    /// 还没加载完的，再给 60 秒。老版本只等 20 秒，慢机器上经常误报。</summary>
+    /// <summary>界面迟迟没渲染出来（WebView2 起不来）→ 显示兜底面板，别让用户看着白窗口。</summary>
     private async Task WatchdogAsync()
     {
         for (int i = 0; i < 180 && !_closing && !_webReady; i++) await Task.Delay(500);
@@ -177,9 +168,7 @@ public sealed partial class MainWindow : Window
         catch (Exception ex) { Log("打开目录失败：" + ex.Message); }
     }
 
-    // ==================================================================
     // 一键绑定的授权窗口
-    // ==================================================================
 
     private bool _authOpen;
     private string _authRedirect = "";
@@ -231,10 +220,7 @@ public sealed partial class MainWindow : Window
                 c0.Settings.AreDevToolsEnabled = false;
                 c0.Settings.IsStatusBarEnabled = false;
 
-                // 关键一步：拦下「平台跳回本机回调地址」的导航，把授权码直接拿走。
-                // 不能等它真的去请求 127.0.0.1 —— 拦截必须发生在导航阶段。
-                // （NavigationStarting 对 302 链的每一跳都会触发，所以这里不用再挂 Redirecting；
-                //   万一漏了，内核那边还有一条回环监听兜底。）
+                // 关键一步：拦下「平台跳回本机回调地址」的导航，把授权码直接拿走。不能等它真的去请求 127.0.0.1 —— 拦截必须发生在导航阶段。
                 c0.NavigationStarting += (s, e) => HandleAuthNav(e.Uri, cancel => e.Cancel = cancel);
                 // 授权页里的第三方登录有可能会开新窗口 —— 默认行为是丢给系统浏览器（会话不共享，
                 // 用户在那儿登完，应用这边再也等不到结果）。这里强制留在同一个窗口里走完。
@@ -283,11 +269,7 @@ public sealed partial class MainWindow : Window
         catch (Exception ex) { Log("拦截授权回调失败：" + ex.Message); }
     }
 
-    /// <summary>
-    /// 按当前所在站点给「下一步该干嘛」的提示。
-    /// 最常见的误判是：在 GitHub 登录完以为结束了，其实 GitHub 上还有一步
-    /// 「Authorize OpenRouter」的授权确认页 —— 不点那个按钮，流程永远不会回到 deepsleep。
-    /// </summary>
+    /// <summary>按当前所在站点给「下一步该干嘛」的提示。</summary>
     private void HintIfStuck(string uri)
     {
         try
@@ -418,10 +400,7 @@ public sealed partial class MainWindow : Window
         });
     }
 
-    /// <summary>
-    /// 升级兜底：装完更新要退出进程，升级脚本才肯往下走。前端若没能发出 quitApp
-    /// （WebView2 异常等），到点由外壳自己退，别让「正在启动升级程序…」一直卡着。
-    /// </summary>
+    /// <summary>升级兜底：装完更新要退出进程，升级脚本才肯往下走。前端若没能发出 quitApp （WebView2 异常等），到点由外壳自己退，别让「正在启动升级程序…」一直卡着。</summary>
     private void ArmUpdateExitFallback()
     {
         _ = Task.Run(async () =>
@@ -538,14 +517,9 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    // ------------------------------------------------------------------
     // 内核服务（HTTP + 内网穿透）：桌面版和内核版跑的是同一份 CoreServer
-    // ------------------------------------------------------------------
 
-    /// <summary>
-    /// 桌面版自带内核服务：默认只监听本机，装上就能用网页端 / 手机连上来操控这台电脑；
-    /// 设置里开「公网隧道」后，人在外面也能连。能力和内核版（deepsleep-core）完全一致。
-    /// </summary>
+    /// <summary>桌面版自带内核服务：默认只监听本机，装上就能用网页端 / 手机连上来操控这台电脑；</summary>
     private void StartCoreServer()
     {
         try
@@ -714,9 +688,7 @@ public sealed partial class MainWindow : Window
         catch (Exception ex) { Log("选择文件夹失败：" + ex.Message); return null; }
     }
 
-    // ------------------------------------------------------------------
     // 日志
-    // ------------------------------------------------------------------
 
     private void Log(string text)
     {
@@ -727,9 +699,7 @@ public sealed partial class MainWindow : Window
         }
         catch { }
     }
-    // ------------------------------------------------------------------
     // 桌面桌宠（原生透明窗口）+ 桌宠聊天浮窗（HTML）
-    // ------------------------------------------------------------------
 
     /// <summary>按配置显示 / 关闭桌宠（设置里改了开关立即生效，不必重启）。</summary>
     private void ApplyPetVisibility()

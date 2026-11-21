@@ -62,14 +62,9 @@ public sealed partial class Kernel
         });
     }
 
-    // ------------------------------------------------------------------
-    // 第 2 期：Router / Worker 会话树
-    // ------------------------------------------------------------------
+    // Router / Worker 会话树
 
-    /// <summary>
-    /// 推会话树：Router（路由层）→ Worker（上下文隔离的执行会话）。
-    /// 界面「设置 → SuperAgent 架构」直接用这份数据画树；Watchdog（第 4 期）也读同一份索引。
-    /// </summary>
+/// <summary>推会话树：Router → Worker。</summary>
     private void EmitSessionTree()
     {
         var routers = Sessions.List("router");
@@ -134,10 +129,7 @@ public sealed partial class Kernel
         });
     }
 
-    /// <summary>
-    /// 上下文用量估算：把当前会话里会进模型的内容（正文 + 工具产出）按中英文字符折算成 token，
-    /// 再除以模型窗口。不是精确计数（各家 tokenizer 不同），但足够让用户看出"快满了"。
-    /// </summary>
+    /// <summary>上下文用量估算：把当前会话里会进模型的内容（正文 + 工具产出）按中英文字符折算成 token， 再除以模型窗口。</summary>
     private void EmitCtxUsage()
     {
         var conv = _agentCur;
@@ -155,10 +147,17 @@ public sealed partial class Kernel
         }
         // 中文 1 字≈1 token，英文/符号 ≈4 字符 1 token
         long tokens = cjk + (chars - cjk) / 4;
+        // 会话里的气泡是「历史记录」，不等于「这次要发给模型的上下文」：
+        // 自动压缩后气泡还在，按气泡算环就一直停在 90%。有 Agent 实时历史就以它为准。
+        long live = conv != null ? _agent.HistoryTokens(conv.Sid) : 0;
+        if (live > 0) tokens = live;
         string model = _config.UseOllama ? _config.OllamaModel : _config.ApiModel;
         int auto = ContextWindowFor(model);
         int overrideWin = _config.CtxWindowOverride;
         int window = overrideWin > 0 ? overrideWin : auto;
+        // 两个 Agent 的自动压缩阈值也用同一个窗口，别各估各的
+        _agent.ContextWindow = window;
+        _clusterAgent.ContextWindow = window;
         double percent = window > 0 ? Math.Min(100.0, tokens * 100.0 / window) : 0;
         Emit(new
         {
@@ -173,10 +172,7 @@ public sealed partial class Kernel
         });
     }
 
-    /// <summary>
-    /// 手动指定上下文窗口（0 = 恢复跟随模型）。用量环立刻按新上限重算。
-    /// 上限做了钳制：小于 4k 没意义，大于 8M 只可能是手滑。
-    /// </summary>
+    /// <summary>手动指定上下文窗口（0 = 恢复跟随模型）。用量环立刻按新上限重算。 上限做了钳制：小于 4k 没意义，大于 8M 只可能是手滑。</summary>
     private void SetCtxWindow(int window)
     {
         int w = Math.Max(0, Math.Min(8_000_000, window));
@@ -205,10 +201,7 @@ public sealed partial class Kernel
         return _config.UseOllama ? 32768 : 128000;
     }
 
-    /// <summary>
-    /// 启动时把 Router / Worker 的 sid 计数器推到已有最大值之后。
-    /// 不这么做的话，重启后新 Router 会复用旧 sid，把上一条会话的记录覆盖掉。
-    /// </summary>
+    /// <summary>启动时把 Router / Worker 的 sid 计数器推到已有最大值之后。</summary>
     private void SyncSessionSidCounters()
     {
         try

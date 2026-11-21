@@ -108,10 +108,7 @@ public static class Sandbox
 
     private static string[] ExecutableLike => Platform.IsWindows ? ExecutableLikeWindows : ExecutableLikeUnix;
 
-    /// <summary>
-    /// 打开这类文件会直接执行系统里的代码，属于"要动手"的操作 —— 沙箱不再一刀切禁止，
-    /// 改为交给上层：work 模式先弹确认，boom 模式直接放行。
-    /// </summary>
+    /// <summary>打开这类文件会直接执行系统里的代码，属于"要动手"的操作 —— 沙箱不再一刀切禁止， 改为交给上层：work 模式先弹确认，boom 模式直接放行。</summary>
     public static bool IsExecutableLike(string path)
     {
         string ext = Path.GetExtension(path).ToLowerInvariant();
