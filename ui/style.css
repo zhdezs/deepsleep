@@ -152,6 +152,34 @@ body.light .only-dark { display: none; }
 .row.self .bubble a { color: #fff; text-decoration: underline; }
 .bubble { user-select: text; }
 .bubble .who { font-size: 11px; font-weight: 600; opacity: .7; margin-bottom: 3px; }
+/* 回答下方标注「谁答的」：Router 和 Worker 可能用不同模型，用户得看得出这一条是谁给的 */
+.bubble .mtag,
+.titem-b .mtag {
+  margin-top: 6px; padding-top: 5px; border-top: 1px dashed var(--border);
+  font-size: 10.5px; color: var(--muted); letter-spacing: .2px; opacity: .9;
+}
+.worker-open { margin-top: 8px; }
+/* Worker 会话弹窗：左竖线区分「派给它的任务 / 它的产出」 */
+.wsession { display: flex; flex-direction: column; gap: 10px; }
+.wmsg { border-left: 2px solid var(--border); padding: 1px 0 1px 10px; }
+.wmsg.task { border-left-color: var(--blue); }
+.wmsg-h {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 4px;
+  font-size: 11px; font-weight: 600; color: var(--muted);
+}
+.wmsg-h em { margin-left: auto; font-style: normal; font-weight: 400; font-size: 10.5px; opacity: .85; }
+.wmsg-b { font-size: 12.5px; line-height: 1.65; color: var(--text); user-select: text; }
+.wmsg-b p { margin: 0 0 6px; } .wmsg-b p:last-child { margin-bottom: 0; }
+.wmsg-b ul, .wmsg-b ol { margin: 4px 0 6px; padding-left: 20px; }
+.wmsg-b pre {
+  background: var(--code); padding: 8px 10px; border-radius: 8px; overflow: auto;
+  font: 12px/1.5 "SF Mono", "Cascadia Mono", Consolas, monospace;
+}
+.wmsg-b code {
+  background: var(--code); padding: 1px 5px; border-radius: 5px;
+  font: 12px/1.5 "SF Mono", "Cascadia Mono", Consolas, monospace;
+}
+.wmsg-b pre code { background: none; padding: 0; }
 .sysbar {
   font-size: 11.5px; color: var(--muted); background: var(--code);
   padding: 5px 13px; border-radius: 12px; max-width: 78%; text-align: center;

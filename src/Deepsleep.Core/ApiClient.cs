@@ -11,7 +11,9 @@ namespace TrollWrangler;
 /// <summary>外部 API 客户端（OpenAI 兼容 chat/completions 接口，如 DeepSeek）。</summary>
 public sealed class ApiClient : IDisposable
 {
-    private readonly HttpClient _http = new();
+    // 超时一律交给 CancellationToken：HttpClient 默认 100 秒会硬砍请求，
+    // 长对话在网关上经常要 100 秒以上，被砍之后又只表现为「返回空」，看起来像模型不给正文。
+    private readonly HttpClient _http = new() { Timeout = Timeout.InfiniteTimeSpan };
     public string Url { get; set; } = "https://api.deepseek.com/chat/completions";
     public string Model { get; set; } = "deepseek-v4-flash";
     public string ApiKey { get; set; } = "";
@@ -21,6 +23,24 @@ public sealed class ApiClient : IDisposable
     public bool Thinking { get; set; } = false;
     /// <summary>思考强度：low / medium / high（配合 Thinking 使用）。</summary>
     public string ReasoningEffort { get; set; } = "high";
+
+    /// <summary>界面档位换成接口认的值：低=low、中=high、高=max。界面保持四档，发出去的是三档。</summary>
+    private string EffortParam => (ReasoningEffort ?? "").Trim().ToLowerInvariant() switch
+    {
+        "low" => "low",
+        "medium" => "high",
+        "high" => "max",
+        var v => v,
+    };
+
+    /// <summary>关思考参数被哪个「地址|模型」拒过。同一条线不再重复试，换模型/换线路自然恢复。</summary>
+    private string? _thinkingRejectedFor;
+
+    /// <summary>设置里关着思考时要不要明说 thinking:{type:disabled}。</summary>
+    private bool ForceThinkingOff => _thinkingRejectedFor != (Url + "|" + Model);
+
+    /// <summary>这一轮会不会真的发「关思考」参数（日志用）。</summary>
+    public bool SendingThinkingOff => !Thinking && ForceThinkingOff;
 
     /// <summary>最近一次调用里模型吐出的思考 / 推理内容（reasoning_content / reasoning / Responses 的 reasoning 条目）。</summary>
     public string Reasoning { get; private set; } = "";
@@ -45,8 +65,20 @@ public sealed class ApiClient : IDisposable
     /// <summary>最近一次调用失败的原因（用于界面诊断）。</summary>
     public string? LastError { get; private set; }
 
+    /// <summary>这一轮是不是本机等超时了（不是用户点停止，也不是模型不给正文）。</summary>
+    public bool TimeoutHit { get; private set; }
+
     /// <summary>最近一次回复是不是被输出长度上限截断了（finish_reason=length）。</summary>
     public bool LastTruncated { get; internal set; }
+
+    /// <summary>最近一次返回的 finish_reason：stop / length / tool_calls。为空表示这轮没拿到。</summary>
+    public string? LastFinish { get; private set; }
+
+    /// <summary>最近一轮思考用了多少 token（网关给了 usage 才知道，否则 -1）。</summary>
+    public int LastReasoningTokens { get; private set; } = -1;
+
+    /// <summary>接口通了、状态码也正常，但正文一个字都没给（换模型后最容易撞上）。</summary>
+    public bool EmptyReply { get; set; }
 
     /// <summary>规范化后的请求地址。用户容易只填主机名（例如 https://api.deepseek.com/）， 直接 POST 根地址会 404，所以这里按协议自动补全路径。</summary>
     public string Endpoint => NormalizeUrl(Url, EffectiveFormat);
@@ -102,6 +134,8 @@ public sealed class ApiClient : IDisposable
             401 or 403 => "（API Key 无效或没有权限）",
             404 => "（地址或模型名不对：OpenAI 兼容地址一般要写到 /chat/completions）",
             429 => "（触发限流，稍后重试或换模型）",
+            502 or 503 or 504 => "（网关等不到上游就返回了，稍后重试或换线路）",
+            524 => "（网关等待上游超时：这轮请求太大或上游排队太久）",
             >= 500 => "（服务端错误，稍后重试）",
             _ => "",
         };
@@ -115,7 +149,8 @@ public sealed class ApiClient : IDisposable
 
     /// <summary>多轮消息版本（供 AI 助手使用）。消息角色：user / assistant / tool。</summary>
     public async Task<string?> ChatAsync(string system, IReadOnlyList<(string Role, string Content)> messages,
-        int timeoutSeconds = 300, CancellationToken ct = default)
+        int timeoutSeconds = 300, CancellationToken ct = default,
+        int maxOut = 8192, bool noThinking = false)
     {
         if (!Configured)
         {
@@ -124,7 +159,8 @@ public sealed class ApiClient : IDisposable
         }
         // 一律走流式。非流式要等服务端生成完才回第一个字节，长回答几分钟不动，看起来像卡死。
         return await ChatStreamAsync(system, messages, onDelta: null,
-            timeoutSeconds: timeoutSeconds, ct: ct).ConfigureAwait(false);
+            timeoutSeconds: timeoutSeconds, ct: ct,
+            maxOut: maxOut, noThinking: noThinking).ConfigureAwait(false);
     }
 
     private static string MapRole(string role) => role switch
@@ -176,7 +212,8 @@ public sealed class ApiClient : IDisposable
         IReadOnlyList<(string Role, string Content)> messages,
         Action<string>? onDelta = null, int timeoutSeconds = 600, CancellationToken ct = default,
         Action<string>? onReasoning = null,
-        int idleSeconds = 30, int maxResumes = 3, Action<string>? onStatus = null)
+        int idleSeconds = 30, int maxResumes = 3, Action<string>? onStatus = null,
+        int maxOut = 8192, bool noThinking = false)
     {
         if (!Configured)
         {
@@ -185,13 +222,18 @@ public sealed class ApiClient : IDisposable
         }
         ResetReasoning();
         IdleAborted = false;
+        TimeoutHit = false;
+        LastFinish = null;
+        LastTruncated = false;
+        LastReasoningTokens = -1;
         try
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
             if (EffectiveFormat == "anthropic")
-                return await ChatAnthropicAsync(system, messages, cts.Token, stream: true, onDelta: onDelta);
+                return await ChatAnthropicAsync(system, messages, cts.Token, stream: true, onDelta: onDelta,
+                    maxOut: maxOut, idleSeconds: Math.Max(idleSeconds, 90));   // 首字节可能排队，比 OpenAI 线路给得宽
             if (EffectiveFormat == "gemini")
                 return await ChatGeminiAsync(system, messages, cts.Token, stream: true, onDelta: onDelta);
             if (EffectiveFormat == "responses")
@@ -221,7 +263,7 @@ public sealed class ApiClient : IDisposable
                 }
 
                 var outcome = await StreamOnceAsync(system, round, Sink,
-                    ct, onReasoning, idleSeconds, timeoutSeconds).ConfigureAwait(false);
+                    ct, onReasoning, idleSeconds, timeoutSeconds, maxOut, noThinking).ConfigureAwait(false);
 
                 if (!flushed && pending.Length > 0)      // 这一轮很短，收尾时再判一次
                 {
@@ -250,7 +292,12 @@ public sealed class ApiClient : IDisposable
         }
         catch (OperationCanceledException)
         {
-            LastError = ct.IsCancellationRequested ? "已取消" : null;
+            // 用户没点停止却抛了取消：是这条链路自己等超时了（总时长到点 / 看门狗掐断）。
+            // 以前这里写 null，上层只能判成「接口通了但没正文」，把责任推给模型，误导排查方向。
+            LastError = ct.IsCancellationRequested
+                ? "已取消"
+                : "等了太久没拿到回复（网关排队或上游太慢）";
+            TimeoutHit = !ct.IsCancellationRequested;
             return null;
         }
         catch (Exception ex)
@@ -292,7 +339,8 @@ public sealed class ApiClient : IDisposable
     private async Task<StreamOutcome> StreamOnceAsync(string system,
         IReadOnlyList<(string Role, string Content)> messages,
         Action<string> onDelta, CancellationToken outerCt, Action<string>? onReasoning,
-        int idleSeconds, int timeoutSeconds)
+        int idleSeconds, int timeoutSeconds, int maxOut = 8192, bool noThinking = false,
+        bool allowThinkingParam = true)
     {
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(outerCt);
         var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
@@ -310,19 +358,27 @@ public sealed class ApiClient : IDisposable
             var msgs = new List<object> { new { role = "system", content = system } };
             foreach (var (role, content) in messages)
                 msgs.Add(new { role = MapRole(role), content = BuildContent(content) });
+            bool sentThinkingOff = false;
             var payload = new Dictionary<string, object?>
             {
                 ["model"] = Model,
                 ["messages"] = msgs,
                 ["temperature"] = 0.9,
-                ["max_tokens"] = 8192,
+                ["max_tokens"] = maxOut,
                 ["stream"] = true,
             };
             if (Thinking)
             {
                 payload["thinking"] = new { type = "enabled" };
-                if (!string.IsNullOrWhiteSpace(ReasoningEffort))
-                    payload["reasoning_effort"] = ReasoningEffort;
+                if (!string.IsNullOrWhiteSpace(EffortParam))
+                    payload["reasoning_effort"] = EffortParam;
+            }
+            else if (allowThinkingParam && (noThinking || ForceThinkingOff))
+            {
+                // 有些推理模型默认就会思考，不传参数等于让它一直想：长对话里输出预算全被思考吃掉，
+                // 正文一个字不剩（finish_reason=length）。设置里既然关着思考，就得明说。
+                payload["thinking"] = new { type = "disabled" };
+                sentThinkingOff = true;
             }
             using var req = new HttpRequestMessage(HttpMethod.Post, Endpoint);
             req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
@@ -333,13 +389,23 @@ public sealed class ApiClient : IDisposable
             if (!resp.IsSuccessStatusCode)
             {
                 LastError = HttpError(resp);
+                string errBody = "";
                 try
                 {
-                    string errBody = await resp.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
+                    errBody = await resp.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
                     if (errBody.Length > 200) errBody = errBody[..200];
                     LastError += " " + errBody;
                 }
                 catch { /* 只保留状态码 */ }
+                // 这个模型不认 thinking 参数：记住，去掉它重发一次。
+                // 别把「参数不支持」当成「模型不可用」——以前这种情况只会甩给用户一句 400。
+                if (sentThinkingOff && ((int)resp.StatusCode == 400 || (int)resp.StatusCode == 422))
+                {
+                    _thinkingRejectedFor = Url + "|" + Model;
+                    return await StreamOnceAsync(system, messages, onDelta, outerCt, onReasoning,
+                        idleSeconds, timeoutSeconds, maxOut, noThinking, allowThinkingParam: false)
+                        .ConfigureAwait(false);
+                }
                 return StreamOutcome.Failed;
             }
             Rearm();   // 响应头到了：从现在起重新算「多久没动静」
@@ -363,8 +429,17 @@ public sealed class ApiClient : IDisposable
                     var choices = doc.RootElement.GetProperty("choices");
                     if (choices.GetArrayLength() == 0) continue;
                     if (choices[0].TryGetProperty("finish_reason", out var fr) &&
-                        fr.ValueKind == JsonValueKind.String && fr.GetString() == "length")
-                        LastTruncated = true;
+                        fr.ValueKind == JsonValueKind.String && fr.GetString() is string frs && frs.Length > 0)
+                    {
+                        LastFinish = frs;
+                        if (frs == "length") LastTruncated = true;
+                    }
+                    // 有些网关在最后一包里带 usage，能直接看出思考吃掉了多少输出预算
+                    if (doc.RootElement.TryGetProperty("usage", out var us) && us.ValueKind == JsonValueKind.Object &&
+                        us.TryGetProperty("completion_tokens_details", out var ctd) &&
+                        ctd.ValueKind == JsonValueKind.Object &&
+                        ctd.TryGetProperty("reasoning_tokens", out var rt) && rt.TryGetInt32(out int rtn))
+                        LastReasoningTokens = rtn;
                     var delta = choices[0].GetProperty("delta");
                     // 思考增量单独收集：界面上折叠，不跟正文混在一起。
                     // 同时按「累积全文」回调给界面 —— 思考也要流式显示，不能等整轮跑完才出现。
@@ -440,7 +515,7 @@ public sealed class ApiClient : IDisposable
         // Responses 端点对参数更严格：只带必要字段，temperature 之类留给服务端默认，
         // 只有显式开了深度思考才带 reasoning.effort。
         if (Thinking)
-            payload["reasoning"] = new { effort = string.IsNullOrWhiteSpace(ReasoningEffort) ? "medium" : ReasoningEffort };
+            payload["reasoning"] = new { effort = string.IsNullOrWhiteSpace(EffortParam) ? "medium" : EffortParam };
 
         using var req = new HttpRequestMessage(HttpMethod.Post, Endpoint);
         req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
@@ -618,7 +693,7 @@ public sealed class ApiClient : IDisposable
     // Anthropic Claude（POST /v1/messages）
     private async Task<string?> ChatAnthropicAsync(string system,
         IReadOnlyList<(string Role, string Content)> messages, CancellationToken ct,
-        bool stream, Action<string>? onDelta, int maxOut = 8192)
+        bool stream, Action<string>? onDelta, int maxOut = 8192, int idleSeconds = 0)
     {
         var msgs = new List<object>();
         foreach (var (role, content) in messages)
@@ -629,16 +704,27 @@ public sealed class ApiClient : IDisposable
         var payload = new Dictionary<string, object?>
         {
             ["model"] = Model,
-            ["max_tokens"] = 8192,
+            // 以前写死 8192：上层遇到「预算被思考吃光」把 maxOut 提到 32768 时，这条路径收不到，补救等于没做。
+            ["max_tokens"] = maxOut,
             ["system"] = system,
             ["messages"] = msgs,
             ["stream"] = stream,
         };
+        // 这里不发 thinking：Anthropic 的扩展思考要求多轮历史回传 thinking 签名，
+        // 而历史消息在这里都被摊平成纯文本，开了只会 400。设置里的思考强度只作用于 OpenAI 兼容线路。
         using var req = new HttpRequestMessage(HttpMethod.Post, Endpoint);
         req.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
         req.Headers.TryAddWithoutValidation("x-api-key", ApiKey.Trim());
         req.Headers.TryAddWithoutValidation("anthropic-version", "2023-06-01");
-        using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+        // 等响应头单独计时：网关排队时可能几十秒不回头，不能让它一直干等，也不能算进正文的看门狗。
+        using var headCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        if (stream && idleSeconds > 0) headCts.CancelAfter(TimeSpan.FromSeconds(idleSeconds));
+        // ResponseHeadersRead：默认的 ResponseContentRead 会等整个流结束才返回，
+        // 长回答要憋到最后才一次性显示，也测不出真实的首字延迟。
+        using var resp = await _http.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, headCts.Token)
+            .ConfigureAwait(false);
+        // 头已经拿到，后面的等待交给读取阶段的看门狗；这里撤掉定时器，否则它会连正在读的流一起掐断。
+        if (stream && idleSeconds > 0) headCts.CancelAfter(Timeout.InfiniteTimeSpan);
         if (!resp.IsSuccessStatusCode)
         {
             LastError = HttpError(resp);
@@ -655,26 +741,74 @@ public sealed class ApiClient : IDisposable
         {
             string body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             using var doc = JsonDocument.Parse(body);
-            var content = doc.RootElement.GetProperty("content");
-            if (content.GetArrayLength() == 0) { LastError = "响应中没有 content"; return null; }
+            if (!doc.RootElement.TryGetProperty("content", out var content) ||
+                content.ValueKind != JsonValueKind.Array)
+            {
+                LastError = "网关返回的结构不对（没有 content 数组）";
+                return null;
+            }
             LastError = null;
-            if (doc.RootElement.TryGetProperty("stop_reason", out var sr) && sr.ValueKind == JsonValueKind.String &&
-                sr.GetString() == "max_tokens") LastTruncated = true;
-            return content[0].GetProperty("text").GetString() ?? "";
+            string stop = doc.RootElement.TryGetProperty("stop_reason", out var sr) &&
+                          sr.ValueKind == JsonValueKind.String ? sr.GetString() ?? "" : "";
+            LastTruncated = false;
+            LastFinish = stop switch
+            {
+                "max_tokens" => "length",
+                "" => null,
+                _ => "stop",
+            };
+            if (stop == "max_tokens") LastTruncated = true;
+            // content 是块数组：第一个块不一定是正文，开了思考时排在最前面的是 thinking 块。
+            // 以前直接取 content[0].text，遇到 thinking 就抛异常，上层只看到「返回 0 字」。
+            var text = new StringBuilder();
+            foreach (var block in content.EnumerateArray())
+            {
+                if (block.ValueKind != JsonValueKind.Object) continue;
+                string type = block.TryGetProperty("type", out var ty) && ty.ValueKind == JsonValueKind.String
+                    ? ty.GetString() ?? "" : "";
+                if (type == "text")
+                {
+                    if (block.TryGetProperty("text", out var tx) && tx.ValueKind == JsonValueKind.String)
+                        text.Append(tx.GetString());
+                }
+                else if (type == "thinking")
+                {
+                    if (block.TryGetProperty("thinking", out var th) && th.ValueKind == JsonValueKind.String)
+                        AddReasoning(th.GetString());
+                }
+            }
+            if (text.Length == 0 && content.GetArrayLength() == 0) LastError = "响应中没有 content";
+            return text.ToString();
         }
         LastError = null;
+        LastFinish = null;
         return await ReadSseAsync(await resp.Content.ReadAsStreamAsync(ct).ConfigureAwait(false),
             ct, onDelta, ev =>
             {
-                if (ev.TryGetProperty("delta", out var delta))
+                string type = ev.TryGetProperty("type", out var tp) && tp.ValueKind == JsonValueKind.String
+                    ? tp.GetString() ?? "" : "";
+                if (!ev.TryGetProperty("delta", out var delta) || delta.ValueKind != JsonValueKind.Object)
+                    return null;
+                // 结束事件只带 stop_reason，正文增量在 content_block_delta 里
+                if (delta.TryGetProperty("stop_reason", out var sr2) && sr2.ValueKind == JsonValueKind.String)
                 {
-                    if (delta.TryGetProperty("stop_reason", out var sr2) && sr2.ValueKind == JsonValueKind.String &&
-                        sr2.GetString() == "max_tokens") LastTruncated = true;
-                    if (delta.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String)
-                        return t.GetString() ?? "";
+                    string st = sr2.GetString() ?? "";
+                    LastFinish = st == "max_tokens" ? "length" : (st.Length > 0 ? "stop" : null);
+                    if (st == "max_tokens") LastTruncated = true;
+                    return null;
                 }
+                if (type != "content_block_delta") return null;
+                string dtype = delta.TryGetProperty("type", out var dt) && dt.ValueKind == JsonValueKind.String
+                    ? dt.GetString() ?? "" : "";
+                if (dtype == "thinking_delta" && delta.TryGetProperty("thinking", out var th2))
+                {
+                    AddReasoning(th2.GetString());
+                    return null;
+                }
+                if (delta.TryGetProperty("text", out var t) && t.ValueKind == JsonValueKind.String)
+                    return t.GetString() ?? "";
                 return null;
-            });
+            }, idleSeconds);
     }
 
     // Google Gemini（generateContent / streamGenerateContent）
@@ -755,14 +889,23 @@ public sealed class ApiClient : IDisposable
 
     /// <summary>通用 SSE 读取：逐行解析 data: JSON，用 extract 提取增量文本。</summary>
     private static async Task<string?> ReadSseAsync(Stream stream, CancellationToken ct,
-        Action<string>? onDelta, Func<JsonElement, string?> extract)
+        Action<string>? onDelta, Func<JsonElement, string?> extract, int idleSeconds = 0)
     {
+        // idleSeconds > 0 时启用「多久没数据就掐断」：网关真的卡死时不用等满总超时。
+        using var idle = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        void Rearm()
+        {
+            if (idleSeconds <= 0) return;
+            try { idle.CancelAfter(TimeSpan.FromSeconds(idleSeconds)); } catch { }
+        }
+        Rearm();
         var sb = new StringBuilder();
         using var reader = new StreamReader(stream, Encoding.UTF8);
         while (true)
         {
-            string? line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
+            string? line = await reader.ReadLineAsync(idleSeconds > 0 ? idle.Token : ct).ConfigureAwait(false);
             if (line == null) break;
+            Rearm();
             if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("data:", StringComparison.Ordinal)) continue;
             string data = line["data:".Length..].Trim();
             if (data == "[DONE]") break;

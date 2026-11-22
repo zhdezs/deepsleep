@@ -536,6 +536,8 @@ public sealed partial class Kernel
         ["toolDetail"] = it.ToolDetail,
         ["toolKind"] = it.ToolKind,
         ["thought"] = it.Thought,
+        ["model"] = it.Model,
+        ["workerSid"] = it.WorkerSid,
         ["accepted"] = it.Accepted,
     };
 

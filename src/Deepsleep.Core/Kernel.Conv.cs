@@ -637,12 +637,21 @@ AI 助手 / Agent 集群 / 桌宠浮窗都用同一份，会话界面里改不�
         if (a.TryGetProperty("router", out var rb))
         {
             var nb = AppConfig.ReadBinding(rb);
-            if (nb != null) _config.Router = nb;
+            if (nb != null)
+            {
+                // 前端没传 Key（留空 = 不改）时沿用已存的那把，别每保存一次就抹掉
+                if (string.IsNullOrWhiteSpace(nb.ApiKey)) nb.ApiKey = _config.Router.ApiKey;
+                _config.Router = nb;
+            }
         }
         if (a.TryGetProperty("worker", out var wb))
         {
             var nb = AppConfig.ReadBinding(wb);
-            if (nb != null) _config.Worker = nb;
+            if (nb != null)
+            {
+                if (string.IsNullOrWhiteSpace(nb.ApiKey)) nb.ApiKey = _config.Worker.ApiKey;
+                _config.Worker = nb;
+            }
         }
         if (a.TryGetProperty("useFreeKey", out _)) _config.UseFreeKey = GetBool(a, "useFreeKey");
         if (a.TryGetProperty("multimodalMain", out _)) _config.MultimodalMain = GetBool(a, "multimodalMain");

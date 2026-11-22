@@ -223,6 +223,8 @@ public sealed partial class Kernel
                 AvatarColor = "#4A90D9",
                 ImagePath = isVisionResult ? visionImagePath : m.ImagePath,
                 VideoPath = m.VideoPath,
+                // 「谁答的」标在气泡下方：Router 和 Worker 用不同模型时，用户能直接看出这一条是哪个模型给的
+                Model = isUser ? "" : _agent.ModelTag,
                 SessionId = sid,
                 TimeStr = Now(),
                 ShowTime = ShouldShowTime(),
@@ -261,6 +263,7 @@ public sealed partial class Kernel
                     AvatarText = "AI",
                     SelfAvatarText = "你",
                     AvatarColor = "#4A90D9",
+                    Model = _agent.ModelTag,
                     SessionId = sid,
                     TimeStr = Now(),
                     ShowTime = ShouldShowTime(),
@@ -272,6 +275,16 @@ public sealed partial class Kernel
             item.Text += delta;
             Emit(new { ev = "delta", kind = 0, conv = sid, id = item.Id, text = item.Text });
         }
+    }
+
+    /// <summary>流式气泡是边收边建的，落盘前把模型名补齐，否则「谁答的」只出现在非流式回答上。</summary>
+    private void PatchStreamModel(int sid)
+    {
+        if (!_streamItems.TryGetValue(sid, out var it)) return;
+        string tag = _agent.ModelTag;
+        if (string.IsNullOrWhiteSpace(tag) || it.Model == tag) return;
+        it.Model = tag;
+        Emit(new { ev = "msgUpdate", kind = 0, conv = sid, id = it.Id, model = tag });
     }
 
     /// <summary>工具开始执行时，在用户提问下方显示「正在…」状态气泡。</summary>
@@ -806,6 +819,7 @@ public sealed partial class Kernel
         finally
         {
             _agentCts.Remove(sid);
+            PatchStreamModel(sid);
             _streamItems.Remove(sid);
             RemoveAgentThinking(sid);
             RemoveAgentWorking(sid);
@@ -845,6 +859,7 @@ public sealed partial class Kernel
         finally
         {
             _agentCts.Remove(sid);
+            PatchStreamModel(sid);
             _streamItems.Remove(sid);
             RemoveAgentThinking(sid);
             RemoveAgentWorking(sid);
@@ -877,6 +892,7 @@ public sealed partial class Kernel
         finally
         {
             _agentCts.Remove(sid);
+            PatchStreamModel(sid);
             _streamItems.Remove(sid);
             RemoveAgentThinking(sid);
             RemoveAgentWorking(sid);

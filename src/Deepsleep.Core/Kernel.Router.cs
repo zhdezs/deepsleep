@@ -28,6 +28,8 @@ public sealed partial class Kernel
         public string Note { get; set; } = "";
         /// <summary>该 Worker 专属会话 id；0 表示还没跑过。</summary>
         public int Sid { get; set; }
+        /// <summary>它上次实际使用的模型名（设置里可单独给 Worker 指模型）。</summary>
+        public string Model { get; set; } = "";
         /// <summary>跑过几轮。</summary>
         public int Runs { get; set; }
         public string LastUsed { get; set; } = "";
@@ -60,6 +62,8 @@ public sealed partial class Kernel
                         Note = el.TryGetProperty("note", out var n) && n.ValueKind == JsonValueKind.String
                             ? (n.GetString() ?? "") : "",
                         Sid = el.TryGetProperty("sid", out var s) && s.TryGetInt32(out int sv) ? sv : 0,
+                        Model = el.TryGetProperty("model", out var md) && md.ValueKind == JsonValueKind.String
+                            ? (md.GetString() ?? "") : "",
                         Runs = el.TryGetProperty("runs", out var ru) && ru.TryGetInt32(out int rv) ? rv : 0,
                         LastUsed = el.TryGetProperty("lastUsed", out var lu) && lu.ValueKind == JsonValueKind.String
                             ? (lu.GetString() ?? "") : "",
@@ -84,6 +88,7 @@ public sealed partial class Kernel
                     ["role"] = s.Role,
                     ["note"] = s.Note,
                     ["sid"] = s.Sid,
+                    ["model"] = s.Model,
                     ["runs"] = s.Runs,
                     ["lastUsed"] = s.LastUsed,
                 });
@@ -138,7 +143,8 @@ public sealed partial class Kernel
                 .OrderByDescending(s => s.LastUsed)
                 .Select(s => (object)new
                 {
-                    id = s.Id, role = s.Role, note = s.Note, sid = s.Sid, runs = s.Runs, lastUsed = s.LastUsed,
+                    id = s.Id, role = s.Role, note = s.Note, sid = s.Sid, model = s.Model,
+                    runs = s.Runs, lastUsed = s.LastUsed,
                 })
                 .ToList();
     }
@@ -228,7 +234,8 @@ public sealed partial class Kernel
 
             AddAgentSys(sid, " Router 派出 " + tasks.Count + "路：" +
                              string.Join(" / ", tasks.Select(x => x.Role)) +
-                             "。各自的上下文互相隔离，只共享我下发的简报。");
+                             "。各自的上下文互相隔离，只共享我下发的简报。" +
+                             "（Router 模型 " + RouterCfg.ApiModel + " · Worker 模型 " + WorkerCfg.ApiModel + "）");
             string summary = await RunSplitAsync(BuildSplitArgs(tasks), cts.Token).ConfigureAwait(false);
 
             // 把「原始请求 + 各路产出」一起交回主助手写最终回答。

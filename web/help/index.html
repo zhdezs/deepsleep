@@ -414,7 +414,7 @@ footer{padding:30px 0 50px;color:var(--muted);font-size:12.5px;text-align:center
   <div class="grid">
     <div class="card"><h4>Session 数据库</h4><p>会话不再是截到 4000 字的快照文件，而是带 <code>kind</code>、<code>parentSid</code>、<code>state</code>、时间戳和摘要的独立记录。原子写入，旧数据自动迁移，可以按状态查询。</p></div>
     <div class="card"><h4>Router 层</h4><p>每次拆分任务由一个 Router 会话收口。它持有共享简报，里面有目标、权限、约束、同批角色和已产出的路径，再下发给 Worker。路由判定是毫秒级规则，能解释清楚。</p></div>
-    <div class="card"><h4>Worker 会话隔离</h4><p>每个 Worker 是 Session 库里独立会话，<code>parentSid</code>指向 Router。执行中是 <code>active</code>，完成是 <code>done</code>，中断是 <code>stopped</code>，产出压成摘要。重启后能按父子关系和状态查回来。</p></div>
+    <div class="card"><h4>Worker 会话隔离</h4><p>每个 Worker 是 Session 库里独立会话，<code>parentSid</code>指向 Router。执行中是 <code>active</code>，完成是 <code>done</code>，中断是 <code>stopped</code>，产出压成摘要。重启后能按父子关系和状态查回来。设置里点「看它干的活」能打开它的完整会话，拆分卡片上也有入口。</p></div>
     <div class="card"><h4>发送即路由</h4><p>每条消息先到常驻 Router。命中多步骤、多领域或者明确要求并行，就走慢路径：Router 用它自己的模型规划分工，优先从你的 Worker 名单里挑人，再并行执行和汇总。否则走快路径，主助手直接答。chat 模式的拆分门槛更高，宁可不拆。开关在「设置 → SuperAgent 架构 → 自动路由」。</p></div>
     <div class="card"><h4>触发器</h4><p>每隔 N 分钟、每天某个时间、或者某个文件一变动，就把一句话当成用户消息交给 Router，和你手打走同一条链路。在「设置 → 扩展 → 触发器」里增删。</p></div>
     <div class="card"><h4>看门狗</h4><p>启动时把上次遗留的「运行中」Worker 收成 stopped。运行中每 30 秒巡检一次，只收状态写着 active、本进程没在跑、并且超时没动静的会话。真在跑的长任务不会被误杀，常驻的 Router 也不受影响。</p></div>

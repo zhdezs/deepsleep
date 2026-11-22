@@ -252,6 +252,7 @@ function paintBubble(row, it) {
     if (it.video) html += '<video src="' + esc(it.video) + '" controls preload="metadata"></video>';
     if (it.attName) html += '<div class="who">附件：' + esc(it.attName) + '　' + esc(it.attSize) + '</div>';
     html += md(it.text);
+    if (it.model) html += '<div class="mtag">' + esc(it.model) + '</div>';
     b.innerHTML = html;
   } else {
     const bar = row.querySelector('.sysbar');
@@ -295,6 +296,9 @@ function paintTool(b, it) {
   sum.append(nm, tx);
   const body = document.createElement('div'); body.className = 'tbody';
   body.innerHTML = md(it.toolDetail || it.text || '');
+  if (it.model) body.insertAdjacentHTML('beforeend', '<div class="mtag">' + esc(it.model) + '</div>');
+  // Worker 卡片：直接开它的会话，看这一步到底是怎么干出来的
+  if (it.workerSid) body.appendChild(workerOpenBtn(it.workerSid, it.toolSummary || ''));
   det.append(sum, body);
   b.innerHTML = '';
   b.appendChild(det);
@@ -375,6 +379,7 @@ function paintGroup(row, kind, items) {
     h.textContent = (i + 1) + '. ' + (it.toolSummary || it.tool || '');
     const c = document.createElement('div'); c.className = 'titem-b';
     c.innerHTML = md(it.toolDetail || it.text || '');
+    if (it.workerSid) c.appendChild(workerOpenBtn(it.workerSid, it.toolSummary || ''));
     sub.append(h, c);
     body.appendChild(sub);
   });
@@ -545,6 +550,7 @@ function patchItem(conv, m) {
     // 拆分任务的子任务卡片是先落一张空的、跑完再回填产出的，所以这两项必须能更新
     if (m.toolDetail != null) it.toolDetail = m.toolDetail;
     if (m.toolSummary != null) it.toolSummary = m.toolSummary;
+    if (m.model != null) it.model = m.model;
   }
   const row = findRow(conv, m.id);
   if (!row) return;
@@ -754,6 +760,61 @@ function maybeRefreshModels() {
 }
 
 // ---------------- 第 2 期：Router / Worker 会话树 ----------------
+/* ---------------- Worker 会话 ----------------
+   Worker 看不到主对话，也看不到别的 Worker：它收到的任务 + 自己的产出就是全部上下文。
+   点开看这个，才分得清「它真干了活」和「它只是被派了个活」。 */
+function workerOpenBtn(sid) {
+  const b = document.createElement('button');
+  b.className = 'btn sm worker-open';
+  b.type = 'button';
+  b.textContent = '查看 Worker 过程';
+  b.title = '打开这个 Worker 的会话：收到的任务、产出、以及用的是哪个模型';
+  b.onclick = ev => { ev.preventDefault(); ev.stopPropagation(); call('sessionGet', { sid: Number(sid) }); };
+  return b;
+}
+
+const wStateName = s => ({ active: '进行中', idle: '空闲', stopped: '已停', done: '完成' }[s] || s || '');
+
+function showWorkerSession(m) {
+  const rec = m.record || {};
+  const body = openModal('worker', 'Worker · ' + (rec.title || ('会话 #' + m.sid)), [
+    { t: '关闭' },
+    { t: '刷新', fn: () => { call('sessionGet', { sid: m.sid }); return false; } },
+  ]);
+  if (!m.found) {
+    body.appendChild(hintEl('没有找到这个 Worker 的会话记录（名单里删掉不影响历史，但记录可能已被清理）。'));
+    return;
+  }
+  const head = document.createElement('div');
+  head.className = 'hint';
+  head.style.marginBottom = '10px';
+  head.textContent = '会话 #' + rec.sid + ' · ' + wStateName(rec.state) +
+    ' · 上级 Router #' + (rec.parentSid || 0) + ' · 每次跑完的摘要：' + (rec.summary || '（无）');
+  body.appendChild(head);
+
+  const msgs = rec.messages || [];
+  if (!msgs.length) { body.appendChild(hintEl('这个 Worker 还没跑过。')); return; }
+  const box = document.createElement('div');
+  box.className = 'wsession';
+  let turn = 0;
+  for (const msg of msgs) {
+    const isTask = msg.role === 'user';
+    if (isTask) turn++;
+    const blk = document.createElement('div');
+    blk.className = 'wmsg' + (isTask ? ' task' : '');
+    const h = document.createElement('div');
+    h.className = 'wmsg-h';
+    h.innerHTML = '<span>' + (isTask ? ('第 ' + turn + ' 轮 · 派给它的任务') : ('第 ' + Math.max(turn, 1) + ' 轮产出')) + '</span>' +
+      (isTask ? '' : '<em>' + esc(msg.model || '模型未记录') + '</em>');
+    const c = document.createElement('div');
+    c.className = 'wmsg-b';
+    c.innerHTML = md(msg.content || '');
+    blk.append(h, c);
+    box.appendChild(blk);
+  }
+  body.appendChild(box);
+}
+
 function showSessionTree(m) {
   const body = openModal('sessiontree', 'SuperAgent 架构', [
     { t: '关闭' },
@@ -796,7 +857,9 @@ function showSessionTree(m) {
     }
     for (const w of (r.workers || [])) {
       const row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:flex-start;gap:8px;padding:6px 0 6px 14px;border-left:2px solid var(--border);margin-left:2px;font-size:12.5px';
+      row.style.cssText = 'display:flex;align-items:flex-start;gap:8px;padding:6px 0 6px 14px;border-left:2px solid var(--border);margin-left:2px;font-size:12.5px;cursor:pointer';
+      row.title = '点开看这个 Worker 的会话';
+      row.onclick = () => call('sessionGet', { sid: w.sid });
       row.innerHTML = '<span style="color:var(--muted)">└</span>' +
         '<span style="min-width:64px;font-weight:600">' + esc(w.role || ('#' + w.sid)) + '</span>' +
         '<span style="font-size:11px;color:' + stateColor(w.state) + '">' + esc(stateName(w.state)) + '</span>' +
@@ -1133,6 +1196,7 @@ function handleEvent(m) {
     case 'update': S.update = m.update; showUpdatePill(m.update); break;
     case 'ctxUsage': paintCtxRing(m); break;
     case 'sessionTree': showSessionTree(m); break;
+    case 'session': showWorkerSession(m); break;
     // 上下文超阈值自动压缩：内核已经插了「 …」系统气泡、也弹过 toast、还刷了占用环。
     // 前端只需要在「当前会话」里滚到底，让那条系统消息可见 —— 聊天区在别处滚动时别打断。
     case 'ctxCompacted':
@@ -2039,29 +2103,42 @@ function openSettings(fresh, tabIdx) {
   pane.appendChild(inst);
 
   // ---- Router / Worker 各自的模型 ----
-  // 发送消息 = 交给常驻的 Router：它自己答，或者按 Worker 名单派活。
-  // 这里把两层拆开配：路由用便宜快的，Worker 用能打的，是很常见的省钱方式。
-  const bindingBlock = (title, desc, kind, b) => {
+  // 同一个设置页配两层：Router 收消息 + 派活，Worker 干活。路由用便宜快的、Worker 用能打的，是很常见的省钱方式。
+  // 「同源」体现在三处：地址/Key 留空就沿用主接口；模型候选直接复用上面那份模型列表；协议跟着地址走。
+  const liveCfg = s.routerLive || {};
+  const modelOpts = (apiModelList || [])
+    .map(m => '<option value="' + esc(m.id) + '">' +
+      esc(m.label && m.label !== m.id ? m.label : '') + '</option>')
+    .join('');
+  const bindingBlock = (title, desc, kind, b, liveModel) => {
     b = b || {};
     sect(title);
     pane.appendChild(hintEl(desc));
+    pane.appendChild(hintEl('当前实际在用：' + (liveModel || '（跟随主模型）')));
     const head = document.createElement('div');
     head.className = 'field';
     head.innerHTML = '<label>模型来源</label><select id="' + kind + 'UseMain">' +
-      '<option value="1">跟随主模型（跟「① AI 接口」同一套）</option>' +
-      '<option value="0">单独指定一家 / 一个模型</option></select>';
+      '<option value="1">跟随主模型（' + esc(s.apiModel || '未设置') + '）</option>' +
+      '<option value="0">单独指定（可以是同一家网关的另一个模型）</option></select>';
     pane.appendChild(head);
     const own = document.createElement('div');
     own.className = 'bind-own';
     own.innerHTML =
       '<div class="field"><label for="' + kind + 'ApiUrl">接口地址</label>' +
-        '<input id="' + kind + 'ApiUrl" type="text" placeholder="https://…/chat/completions"></div>' +
+        '<input id="' + kind + 'ApiUrl" type="text" placeholder="' + esc(s.apiUrl || 'https://…/chat/completions') + '">' +
+        '<div class="hint">留空就用主接口（「① AI 接口」里那个）。只换模型时不用填。</div></div>' +
       '<div class="field"><label for="' + kind + 'ApiFormat">协议</label>' +
         '<select id="' + kind + 'ApiFormat">' +
         '<option value="openai">OpenAI 兼容</option><option value="anthropic">Anthropic</option>' +
         '<option value="gemini">Gemini</option></select></div>' +
       '<div class="field"><label for="' + kind + 'ApiModel">模型名</label>' +
-        '<input id="' + kind + 'ApiModel" type="text" placeholder="例如 gpt-4.1-mini / glm-4-flash"></div>' +
+        '<input id="' + kind + 'ApiModel" type="text" list="' + kind + 'ModelList" autocomplete="off" ' +
+          'placeholder="例如 gpt-4.1-mini / glm-4-flash">' +
+        '<datalist id="' + kind + 'ModelList">' + modelOpts + '</datalist>' +
+        (modelOpts
+          ? '<div class="hint">候选就是「① AI 接口」拉到的那份模型列表，点开直接选，也能自己填。</div>'
+          : '<div class="hint">还没拉过模型列表：先去上面点「联网获取」，或者直接填模型名。</div>') +
+      '</div>' +
       '<div class="field"><label for="' + kind + 'ApiKey">Key（留空沿用主 Key）</label>' +
         '<input id="' + kind + 'ApiKey" type="password" placeholder="' +
           (b.hasKey ? '已保存，留空不改' : '同一家网关时不用再填') + '"></div>';
@@ -2071,15 +2148,22 @@ function openSettings(fresh, tabIdx) {
     document.getElementById(kind + 'ApiUrl').value = b.apiUrl || '';
     document.getElementById(kind + 'ApiModel').value = b.apiModel || '';
     document.getElementById(kind + 'ApiFormat').value = b.apiFormat || 'openai';
-    const sync = () => { own.style.display = sel.value === '0' ? 'block' : 'none'; };
-    sel.onchange = sync; sync();
+    const sync = () => {
+      own.style.display = sel.value === '0' ? 'block' : 'none';
+      // 协议只在自带地址时才有意义：用主接口却自带协议，等于偷偷换了一种请求格式
+      const fmt = document.getElementById(kind + 'ApiFormat');
+      if (fmt) fmt.disabled = !document.getElementById(kind + 'ApiUrl').value.trim();
+    };
+    sel.onchange = sync;
+    document.getElementById(kind + 'ApiUrl').oninput = sync;
+    sync();
   };
   bindingBlock('Router 模型（常驻·收消息 + 派活）',
     '发送的每条消息都先到 Router：它决定自己回答，还是按 Worker 名单拆出去并行做。默认跟主模型。',
-    'router', s.router);
+    'router', s.router, liveCfg.model);
   bindingBlock('Worker 模型（子任务执行）',
     '拆分出来的每个 Worker 用它自己的模型跑，上下文彼此隔离。默认跟主模型。',
-    'worker', s.worker);
+    'worker', s.worker, liveCfg.workerModel);
 
   pane = panes[1];
   // ---- 图像 / 识别 / 视频：都能「选平台 → 绑账号」----
@@ -2305,7 +2389,16 @@ function openSettings(fresh, tabIdx) {
     row.className = 'extrow';
     row.innerHTML = '<div class="extinfo"><b>' + esc(w.role) + '</b><span>' +
       esc(w.note || '（没写备注）') + '</span><em>会话 #' + esc(String(w.sid || 0)) + ' · 跑过 ' +
-      esc(String(w.runs || 0)) + '轮' + (w.lastUsed ? ' · 最近 ' + esc(w.lastUsed) : '') + '</em></div>';
+      esc(String(w.runs || 0)) + '轮' + (w.lastUsed ? ' · 最近 ' + esc(w.lastUsed) : '') +
+      (w.model ? ' · 模型 ' + esc(w.model) : '') + '</em></div>';
+    if (w.sid > 0) {
+      const view = document.createElement('button');
+      view.className = 'btn sm';
+      view.textContent = '看它干的活';
+      view.title = '打开这个 Worker 的会话，看它收到的任务和产出';
+      view.onclick = () => call('sessionGet', { sid: w.sid });
+      row.appendChild(view);
+    }
     const del = document.createElement('button');
     del.className = 'btn danger sm';
     del.textContent = '移除';

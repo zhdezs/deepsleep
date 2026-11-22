@@ -27,6 +27,8 @@ public sealed class AgentMessage
     public string? VideoPath { get; set; }
     /// <summary>可选：这条消息里给用户看的那句话。</summary>
     public string Say { get; set; } = "";
+    /// <summary>这条回复由哪个模型产生（Worker 会话详情里显示；旧记录为空就不显示）。</summary>
+    public string Model { get; set; } = "";
     public bool Archived { get; set; }
 }
 
@@ -110,6 +112,23 @@ public sealed class Agent
 
     /// <summary>后端：auto（已配置 API 则走 API，否则 Ollama）/ api / llm / local。</summary>
     public string Backend { get; set; } = "auto";
+
+    /// <summary>这一轮实际用到的引擎：api / ollama / local。用它标注回答来源，别再让「换成小模型」这件事无声发生。</summary>
+    public string ReplyEngine { get; private set; } = "api";
+
+    /// <summary>这一轮实际应答的模型名（界面显示在回答下方）。</summary>
+    public string LastModel { get; private set; } = "";
+
+    /// <summary>模型 + 引擎的标记：cloud 只看模型名，本机补一个「本机」，本地自训练直接写死。</summary>
+    public string ModelTag => string.IsNullOrWhiteSpace(LastModel) ? ""
+        : ReplyEngine == "ollama" ? LastModel + "（本机）"
+        : LastModel;
+
+    /// <summary>模型没读进当前对话、只回了一句开场白（这一轮结果已丢弃）。网关降级和本机小模型都会这样。</summary>
+    public bool ContextLost { get; private set; }
+
+    /// <summary>已经提醒过「你正在用本机模型」的会话，每个会话只提醒一次，免得每轮都刷。</summary>
+    private readonly HashSet<int> _localNoticed = new();
 
     /// <summary>运行模式：chat（纯聊天，禁用工具）/ work（工作，执行命令需确认）/ boom（爆破，全自动）。</summary>
     public string RunMode { get; set; } = "work";
@@ -460,9 +479,20 @@ public sealed class Agent
     {
         _currentSid = sid;
         LastRunStopped = false;
+        ContextLost = false;
         var injectedSkills = new HashSet<string>();
         int formatFixes = 0;
         bool searched = false;
+        // 勾了「启用本地 Ollama 模型」时，界面上的模型名还是云端那个，用户根本看不出回答是小模型给的。
+        // 没填 Key 时也一样：auto 会直接落到本机模型。这两种都要在会话开头明说一次。
+        if (_localNoticed.Add(sid))
+        {
+            if (Backend == "llm" && _api.Configured)
+                StatusNote?.Invoke(sid,
+                    $"当前由本机模型 {_ollama.Model} 回答（设置里取消「启用本地 Ollama 模型」回到 {_api.Model}）");
+            else if (Backend == "auto" && !_api.Configured)
+                StatusNote?.Invoke(sid, $"还没有配置云端 API，当前用本机模型 {_ollama.Model} 回答");
+        }
         // 搜索 / 研究意图在所有模式下都要认（深度研究不是 chat 模式的专属）
         bool userWantsSearch = history.Any(m => m.Role == "user" &&
             (IsSearchIntent(m.Content) || WantsResearch(m.Content)));
@@ -539,18 +569,43 @@ public sealed class Agent
             if (string.IsNullOrWhiteSpace(reply))
             {
                 var errs = new List<string>();
+                if (_api.EmptyReply) errs.Add($"接口没有返回正文（模型 {_api.Model} · 地址 {_api.Endpoint}）");
                 if (!string.IsNullOrWhiteSpace(_api.LastError)) errs.Add($"API：{_api.LastError}（地址 {_api.Endpoint} · 模型 {_api.Model}）");
                 if (!string.IsNullOrWhiteSpace(_ollama.LastError)) errs.Add($"Ollama：{_ollama.LastError}");
-                string detail = errs.Count > 0 ? "（" + string.Join("；", errs) + "）" : "";
-                bool rateLimited = !string.IsNullOrWhiteSpace(_api.LastError) && IsRateLimit(_api.LastError);
-                // 看门狗已经自动掐断 + 续写过几轮还是没动静：这不是配置写错，是链路卡死，
-                // 给「检查地址/模型名」的建议只会把用户带偏。
-                string advice = _api.IdleAborted
-                    ? "模型 30 秒内没有任何响应，已自动暂停并恢复 3 次仍失败：多半是网络/代理不通或服务端排队，稍后重试，或在设置换一个模型/线路。"
+                // 这些细节只写日志：气泡里塞模型名和地址只会挡住重点，用户要的是「为什么没出话、怎么办」。
+                Log("LLM 失败明细：" + (errs.Count > 0 ? string.Join("；", errs) : "（无）"));
+                string le = _api.LastError ?? "";
+                bool rateLimited = IsRateLimit(le);
+                bool emptyReply = _api.EmptyReply;
+                bool timedOut = _api.TimeoutHit;
+                bool contextLost = ContextLost;
+                // 输出预算被思考吃光：推理模型的长对话会先想满 max_tokens，正文一点没剩
+                bool starved = _api.LastFinish == "length";
+                // 401/403/404 这类是配置写错，用户自己能改；其余「没拿到回复」一律按服务器繁忙说。
+                bool misconfigured = le.Contains("401") || le.Contains("403") || le.Contains("404") ||
+                                     le.Contains("未配置") || le.Contains("没有权限");
+                string advice = contextLost
+                    ? (ReplyEngine == "api"
+                        ? $"云端模型 {_api.Model} 这次只回了一句开场白，完全没接上文，已经丢掉没有显示。" +
+                          "多半是网关把长上下文截掉了，或者排队时降级成了小模型：重发一次通常就好了；连续出现就换一个模型/线路。"
+                        : _api.Configured
+                        ? $"本机模型 {_ollama.Model} 没读进这段对话，只回了一句开场白，已经丢掉没有显示。" +
+                          $"设置里取消「启用本地 Ollama 模型」就能回到 {_api.Model}；要继续用本机模型，先「新对话」把上下文清短再问。"
+                        : $"本机模型 {_ollama.Model} 没读进这段对话，只回了一句开场白，已经丢掉没有显示。" +
+                          "这段对话对小模型来说太长了，开一个「新对话」再问。")
+                    : starved
+                    ? $"模型的思考把输出上限吃光了（思考用了 {(_api.LastReasoningTokens >= 0 ? _api.LastReasoningTokens + " token" : "大半预算")}）：" +
+                      "自动调大预算重试过一次仍然没留出正文。这段对话太长，开「新对话」把上下文切短；或者在设置里把思考强度调低、换一个不做长思考的模型。"
+                    : timedOut
+                    ? "服务器繁忙：等太久没等到回复，已经中断。稍后重试；对话太长的话先「新对话」把上下文切短。"
                     : rateLimited
-                    ? "API 限流（模型访问量过大），已自动重试仍失败：可稍后重试，或把 AI 助手模式切到「本地（自训练）」/「大模型 1.5B」走本地。"
-                    : "请在设置检查 API 地址/模型名/API Key：OpenAI 兼容地址一般要写到 /chat/completions（例如 https://api.deepseek.com/chat/completions），模型名要和账号可用模型一致。";
-                string msg = $"LLM 后端不可用{detail}。{advice}";
+                    ? "服务器繁忙：当前访问量过大被限流，稍后重试；也可以把 AI 助手模式切到「本地（自训练）」/「大模型 1.5B」先顶着。"
+                    : emptyReply
+                    ? "服务器繁忙：网关这次没有返回内容，稍后重试。连续出现就换一个模型或线路。"
+                    : misconfigured
+                    ? "请在设置检查 API 地址/模型名/API Key：OpenAI 兼容地址一般要写到 /chat/completions，模型名要和账号可用模型一致。"
+                    : "服务器繁忙：这一轮没有拿到回复，稍后重试。连续出现就在设置里换一个模型或线路。";
+                string msg = advice;
                 history.Add(new AgentMessage { Role = "assistant", Content = msg });
                 MessageAdded?.Invoke(sid, history[^1]);
                 return msg;
@@ -1243,9 +1298,12 @@ public sealed class Agent
         List<(string Role, string Content)> msgs, CancellationToken ct, Action<string>? onDelta,
         bool emitReasoning = false)
     {
+        ContextLost = false;
         if (Backend == "local")
         {
             _api.LastTruncated = false;
+            ReplyEngine = "local";
+            LastModel = "本地自训练";
             string user = msgs.Count > 0 ? msgs[^1].Content : "";
             string reply = LocalNormalReply(user);
             Log($"本地自训练 回复长度={reply.Length}");
@@ -1254,23 +1312,53 @@ public sealed class Agent
         if (Backend == "llm")
         {
             _api.LastTruncated = false;
+            ReplyEngine = "ollama";
+            LastModel = _ollama.Model;
             string? r = Streaming
                 ? await _ollama.ChatStreamAsync(system, msgs, onDelta, ct: ct)
                 : await _ollama.ChatAsync(system, msgs, ct: ct);
             if (string.IsNullOrEmpty(r) && Streaming && !ct.IsCancellationRequested)
                 r = await _ollama.ChatAsync(system, msgs, ct: ct);   // 流式失败回退普通请求
             Log($"Ollama 回复长度={r?.Length ?? 0} LastError={_ollama.LastError}");
-            return SanitizeOllamaReply(r);
+            string? clean = SanitizeOllamaReply(r);
+            // 本机模型接不上长对话时最典型的表现，就是只回一句「你好，我是…」的开场白。
+            // 这种回复直接吐给用户，看起来就是「AI 突然失忆」，还看不出已经换了引擎——宁可丢掉并说明。
+            if (LooksLikeLostContext(clean, msgs))
+            {
+                ContextLost = true;
+                Log($"本机模型疑似丢失上下文，丢弃回复（{clean!.Length} 字）");
+                return null;
+            }
+            return clean;
         }
 
         // api / auto：优先外部 API；429 限流自动退避重试，失败再降级本地 Ollama
         if (Backend == "api" || _api.Configured)
         {
+            // 记一下这一轮到底发出去多少内容：出问题时能立刻分清「模型没收到上文」还是「模型收到了但答偏」。
+            Log($"API 请求 条数={msgs.Count} 字符={msgs.Sum(m => m.Content?.Length ?? 0)} 流式={Streaming && onDelta != null} 关思考={_api.SendingThinkingOff}");
+            int budget = 8192;
+            bool offThinking = false;      // 只在重试时置位
+            bool budgetRetried = false;
             for (int attempt = 0; attempt < 3; attempt++)
             {
                 bool any = false;
+                _api.EmptyReply = false;
+                // 流式内容先压 90 字再放行：万一是「没读到上文」的开场白，能在它刷到界面上之前就丢掉，
+                // 否则用户先看到一句「你好，我是…」，再看到一条报错，比不显示更难受。正常回答只慢这一小段。
+                var head = new StringBuilder();
+                bool released = false;
                 Action<string>? sink = Streaming && onDelta != null
-                    ? d => { any = true; onDelta(d); }
+                    ? d =>
+                    {
+                        any = true;
+                        if (released) { onDelta(d); return; }
+                        head.Append(d);
+                        if (head.Length <= 90) return;
+                        released = true;
+                        onDelta(head.ToString());
+                        head.Clear();
+                    }
                     : null;
                 string? reply = null;
                 if (Streaming && onDelta != null)
@@ -1282,37 +1370,81 @@ public sealed class Agent
                             ? t => ReasoningStreaming?.Invoke(_currentSid, t)
                             : null,
                         idleSeconds: 30, maxResumes: 3,
-                        onStatus: t => StatusNote?.Invoke(_currentSid, t));
+                        onStatus: t => StatusNote?.Invoke(_currentSid, t),
+                        maxOut: budget, noThinking: offThinking);
                     // 流式不支持/失败（非限流、非取消）→ 回退普通请求，保证能出话。但如果刚才已经被看门狗自动恢复过几轮，再补一次普通请求就是让用户再干等一轮，
                     // 这时直接把「无响应」如实报出去。
                     if (string.IsNullOrEmpty(reply) && !ct.IsCancellationRequested &&
                         !IsRateLimit(_api.LastError) && !_api.IdleAborted)
-                        reply = await _api.ChatAsync(system, msgs, ct: ct);
+                        reply = await _api.ChatAsync(system, msgs, ct: ct, maxOut: budget, noThinking: offThinking);
                 }
                 else
                 {
-                    reply = await _api.ChatAsync(system, msgs, ct: ct);
+                    reply = await _api.ChatAsync(system, msgs, ct: ct, maxOut: budget, noThinking: offThinking);
                 }
-                Log($"API 回复长度={reply?.Length ?? 0} 流式增量={any} LastError={_api.LastError}");
+                Log($"API 回复长度={reply?.Length ?? 0} 流式增量={any} 超时={_api.TimeoutHit} LastError={_api.LastError}");
                 if (!string.IsNullOrEmpty(reply))
                 {
+                    ReplyEngine = "api";
+                    LastModel = _api.Model;
+                    // 长对话里只回一句开场白：不是模型在回答，是它压根没拿到上文（网关截断/降级最常见）。
+                    // 以前这种回复会原样进气泡，用户看到的就是「AI 突然失忆」；这里直接判失败并说明原因。
+                    if (LooksLikeLostContext(reply, msgs))
+                    {
+                        ContextLost = true;
+                        Log($"云端模型疑似丢失上下文，丢弃回复（{reply.Length} 字，会话 {msgs.Count} 条）");
+                        return null;
+                    }
+                    if (!released && head.Length > 0) onDelta?.Invoke(head.ToString());   // 短回答：这会儿才放行
                     // 思考 / 推理内容单独抛给界面折叠展示（以前被当成正文拼进去，用户就看见一大段英文）
                     if (emitReasoning && !string.IsNullOrEmpty(_api.Reasoning))
                         ReasoningAdded?.Invoke(_currentSid, _api.Reasoning);
                     return reply;
                 }
                 if (ct.IsCancellationRequested) return null;
+                // 输出预算被思考吃光：推理模型在长对话里先想满 8192 个 token，正文一个字都没剩
+                // （finish_reason=length）。这不是「模型不可用」，换更大的预算、顺手关掉思考再试一次。
+                if (_api.LastFinish == "length" && !budgetRetried)
+                {
+                    budgetRetried = true;
+                    offThinking = !_api.Thinking;
+                    budget = 32768;
+                    Log($"输出预算被思考吃光（思考 token={_api.LastReasoningTokens}），重试 关思考={offThinking} max_tokens={budget}");
+                    continue;
+                }
                 if (!IsRateLimit(_api.LastError) || any) break;
                 await Task.Delay(TimeSpan.FromSeconds(3) * (attempt + 1), ct);
             }
         }
-        // API 已配置但返回的是配置类错误（4xx，限流除外）→ 不许静默降级到本地小模型，否则用户看到的是「AI 突然不会用工具了、还胡说八道」，
-        // 其实是 API 地址/模型名/key 写错了。
-        if (_api.Configured && (_api.IdleAborted || IsClientConfigError(_api.LastError))) return null;
+        // 只要配了接口，这一轮失败就如实报错，不拿本机小模型顶上。
+        // 本机模型读不完长对话和工具提示，换过去的表现就是「AI 突然失忆、答非所问」——
+        // 用户根本看不出是换了引擎，只会以为换了模型就丢上下文。四种失败原因分开报：
+        // 连不上 / 4xx 配置错 / 限流 / 接口通了但没给正文（换模型后最常见）。
+        if (_api.Configured)
+        {
+            _api.EmptyReply = string.IsNullOrWhiteSpace(_api.LastError) && !_api.IdleAborted;
+            return null;
+        }
 
+        ReplyEngine = "ollama";
+        LastModel = _ollama.Model;
         return SanitizeOllamaReply(Streaming && onDelta != null
             ? await _ollama.ChatStreamAsync(system, msgs, onDelta, ct: ct)
             : await _ollama.ChatAsync(system, msgs, ct: ct));
+    }
+
+    /// <summary>长对话里只回一句开场白/自我介绍：不是回答，是它没拿到上文（网关截断、排队降级、本机小模型读不完都会这样）。</summary>
+    private static bool LooksLikeLostContext(string? reply, List<(string Role, string Content)> msgs)
+    {
+        if (string.IsNullOrWhiteSpace(reply) || msgs.Count < 8) return false;
+        string t = reply.Trim();
+        if (t.Length > 90) return false;
+        // 只认「重新介绍自己」这一种形态：丢了上文的模型读不到对话，但系统提示词还在，所以会报名号。
+        // 光说「有什么可以帮你」不算——那本来就是「ok」「嗯」这类短话的正常答法，误杀比漏判更难受。
+        if (!Regex.IsMatch(t, @"我是\s*.{0,16}deepsleep", RegexOptions.IgnoreCase)) return false;
+        // 用户就是在问「你是谁 / 能做什么」时，开场白是正确答案，别误判
+        string last = msgs[^1].Content ?? "";
+        return !Regex.IsMatch(last, @"你是谁|你叫什么|自我介绍|介绍一下你自己|你能做什么|怎么用|使用说明");
     }
 
     /// <summary>集群汇总：单次 LLM 调用，不走工具循环；支持流式与限流重试。</summary>
@@ -1337,29 +1469,6 @@ public sealed class Agent
             }
         }
         return (await CallOnceAsync(system, msgs, ct, onDelta)) ?? "";
-    }
-
-    /// <summary>是否属于「配置/网络问题」。这类失败不许静默降级到本地小模型—— 否则用户看到的是「AI 突然不会用工具了、还胡说八道」，其实是地址/模型名/Key 写错或根本连不上。</summary>
-    private static bool IsClientConfigError(string? err)
-    {
-        if (string.IsNullOrWhiteSpace(err)) return false;
-        var m = Regex.Match(err, @"HTTP\s*(\d{3})");
-        if (m.Success)
-        {
-            int code = int.Parse(m.Groups[1].Value);
-            if (code == 429) return false;
-            return code >= 400 && code < 500;              // 4xx：地址/模型名/Key 写错
-        }
-        // 连不上 / 超时 / DNS 失败：同样如实报错，不要偷偷换成本地小模型
-        string[] netHints =
-        {
-            "超时", "连接", "未能解析", "拒绝", "远程名称", "网络",
-            "timed out", "timeout", "No such host", "actively refused",
-            "connection", "SSL", "certificate",
-        };
-        foreach (string k in netHints)
-            if (err.Contains(k, StringComparison.OrdinalIgnoreCase)) return true;
-        return false;
     }
 
     private static bool IsRateLimit(string? err)

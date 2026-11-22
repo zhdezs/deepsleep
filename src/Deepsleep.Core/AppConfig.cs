@@ -71,7 +71,10 @@ public sealed class AppConfig
         public string ApiFormat { get; set; } = "openai";
 
         [JsonIgnore]
-        public bool Configured => !UseMain && ApiUrl.Trim().Length > 0 && ApiModel.Trim().Length > 0;
+        public bool Configured => !UseMain && ApiModel.Trim().Length > 0;
+
+        // 地址 / 协议 / Key 留空 = 沿用主接口：同一个网关只换个模型是最常见的用法，没必要让用户重抄三遍
+        public bool HasOwnEndpoint => !UseMain && ApiUrl.Trim().Length > 0;
 
         public ModelBinding Clone() => new()
         {
@@ -128,9 +131,13 @@ public sealed class AppConfig
     {
         if (b == null || !b.Configured) return this;
         var c = (AppConfig)MemberwiseClone();
-        c.ApiUrl = b.ApiUrl.Trim();
         c.ApiModel = b.ApiModel.Trim();
-        c.ApiFormat = string.IsNullOrWhiteSpace(b.ApiFormat) ? "openai" : b.ApiFormat.Trim();
+        // 自带了地址才用它的协议；沿用主接口时协议也跟着主接口走，免得「换了协议却说用主地址」
+        if (b.HasOwnEndpoint)
+        {
+            c.ApiUrl = b.ApiUrl.Trim();
+            if (!string.IsNullOrWhiteSpace(b.ApiFormat)) c.ApiFormat = b.ApiFormat.Trim();
+        }
         // Key 留空就沿用主 Key：同一个网关换了模型名，没必要再抄一遍 Key
         c.ApiKey = string.IsNullOrWhiteSpace(b.ApiKey) ? ApiKey : b.ApiKey.Trim();
         return c;

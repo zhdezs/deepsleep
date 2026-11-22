@@ -57,6 +57,7 @@ public sealed partial class Kernel
                 {
                     role = m.Role, content = m.Content, meta = m.Meta,
                     imagePath = m.ImagePath, videoPath = m.VideoPath,
+                    model = m.Model,
                 }).ToList(),
             },
         });
@@ -151,7 +152,9 @@ public sealed partial class Kernel
         // 自动压缩后气泡还在，按气泡算环就一直停在 90%。有 Agent 实时历史就以它为准。
         long live = conv != null ? _agent.HistoryTokens(conv.Sid) : 0;
         if (live > 0) tokens = live;
-        string model = _config.UseOllama ? _config.OllamaModel : _config.ApiModel;
+        // 勾了本地模型时，状态栏必须一眼看出来。以前这里和界面都只写模型名，
+        // 用户看到「claude-sonnet」却拿到小模型的回答，只会以为这软件开始失忆。
+        string model = _config.UseOllama ? "本机 · " + _config.OllamaModel : _config.ApiModel;
         int auto = ContextWindowFor(model);
         int overrideWin = _config.CtxWindowOverride;
         int window = overrideWin > 0 ? overrideWin : auto;

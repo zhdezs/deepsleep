@@ -74,9 +74,12 @@ public sealed partial class Kernel
             path = decision.Path == RoutePath.Slow ? "slow" : "fast",
             confidence = decision.Confidence,
             reasons = decision.Reasons,
+            routerModel = RouterCfg.ApiModel,
+            workerModel = WorkerCfg.ApiModel,
             workers = tasks.Select((t, i) => (object)new
             {
                 sid = workerSids[i], role = t.Role, task = Cap(t.Task, 120), state = "active",
+                model = WorkerCfg.ApiModel,
             }).ToList(),
         });
 
@@ -85,19 +88,21 @@ public sealed partial class Kernel
         var started = new List<ChatItem>();
         foreach (var (role, task) in tasks)
         {
+            int seatIndex = started.Count;
             var item = new ChatItem
             {
                 IsSelf = false,
                 CanAccept = false,
                 ToolName = Agent.ToolSplit,
                 ToolSummary = $"{role}：{Cap(task, 60)}",
-                ToolDetail = $"**角色**：{role}\n\n**子任务**：{task}\n\n（Worker 会话 #{workerSids[started.Count]} 独立执行，完成后在此汇总）",
+                ToolDetail = $"**角色**：{role}\n\n**子任务**：{task}\n\n**模型**：{WorkerCfg.ApiModel}\n\n（Worker 会话 #{workerSids[seatIndex]} 独立执行，完成后在此汇总）",
                 ToolKind = "split",
                 Text = $"拆出子任务「{role}」",
                 Meta = "拆分任务",
                 AvatarText = "AI",
                 SelfAvatarText = "你",
                 AvatarColor = "#4A90D9",
+                WorkerSid = workerSids[seatIndex],
                 SessionId = sid,
                 TimeStr = Now(),
                 ShowTime = false,
@@ -114,6 +119,7 @@ public sealed partial class Kernel
 
         // 每路一个独立 Agent，并行跑；并发上限沿用集群那套（4），避免同时触发各家限流
         var results = new string[tasks.Count];
+        var workerModels = new string[tasks.Count];
         using var gate = new SemaphoreSlim(Math.Min(4, tasks.Count));
         var workers = new List<Task>();
         for (int i = 0; i < tasks.Count; i++)
@@ -126,8 +132,10 @@ public sealed partial class Kernel
                 MarkWorkerLive(workerSids[idx], true);
                 try
                 {
-                    results[idx] = await RunOneSubAgentAsync(tasks[idx].Role, tasks[idx].Task, mode, ct,
-                                                             workerSids[idx], shared).ConfigureAwait(false);
+                    var one = await RunOneSubAgentAsync(tasks[idx].Role, tasks[idx].Task, mode, ct,
+                                                        workerSids[idx], shared).ConfigureAwait(false);
+                    results[idx] = one.Text;
+                    workerModels[idx] = one.Model;
                 }
                 catch (OperationCanceledException) { results[idx] = "（已停止）"; }
                 catch (Exception ex) { results[idx] = "[子智能体出错] " + ex.Message; }
@@ -154,7 +162,7 @@ public sealed partial class Kernel
             try { hist = Sessions.Load(workerSids[i])?.Messages ?? new List<AgentMessage>(); }
             catch { hist = new List<AgentMessage>(); }
             hist.Add(new AgentMessage { Role = "user", Content = tasks[i].Task });
-            hist.Add(new AgentMessage { Role = "assistant", Content = results[i] });
+            hist.Add(new AgentMessage { Role = "assistant", Content = results[i], Model = workerModels[i] });
             if (hist.Count > 40) hist = hist.Skip(hist.Count - 40).ToList();
             UpsertSession(workerSids[i], "worker", routerSid, tasks[i].Role, state, summary, hist);
             foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(
@@ -171,6 +179,7 @@ public sealed partial class Kernel
             if (seats[i] == null) continue;
             seats[i].Runs++;
             seats[i].LastUsed = Now();
+            if (!string.IsNullOrWhiteSpace(workerModels[i])) seats[i].Model = workerModels[i];
         }
         SaveSeats();
         EmitWorkers();
@@ -179,9 +188,11 @@ public sealed partial class Kernel
             ev = "routerDone",
             routerSid,
             path = decision.Path == RoutePath.Slow ? "slow" : "fast",
+            routerModel = RouterCfg.ApiModel,
             workers = tasks.Select((t, i) => (object)new
             {
-                sid = workerSids[i], role = t.Role, state = results[i] == "（已停止）" ? "stopped" : "done",
+                sid = workerSids[i], role = t.Role, model = workerModels[i],
+                state = results[i] == "（已停止）" ? "stopped" : "done",
             }).ToList(),
             artifacts = shared.Artifacts,
         });
@@ -192,10 +203,18 @@ public sealed partial class Kernel
         {
             for (int i = 0; i < tasks.Count && i < started.Count; i++)
             {
+                string modelLine = string.IsNullOrWhiteSpace(workerModels[i])
+                    ? "" : $"**模型**：{workerModels[i]}\n\n";
+                started[i].Model = workerModels[i];
                 started[i].ToolDetail = $"**角色**：{tasks[i].Role}\n\n**子任务**：{tasks[i].Task}\n\n"
+                    + modelLine
                     + $"**Worker 会话**：#{workerSids[i]}\n\n---\n\n"
                     + (string.IsNullOrWhiteSpace(results[i]) ? "（没有产出）" : results[i]);
-                Emit(new { ev = "msgUpdate", kind = 0, conv = sid, id = started[i].Id, toolDetail = started[i].ToolDetail });
+                Emit(new
+                {
+                    ev = "msgUpdate", kind = 0, conv = sid, id = started[i].Id,
+                    toolDetail = started[i].ToolDetail, model = started[i].Model,
+                });
             }
             ScheduleSave();
         }
@@ -220,8 +239,8 @@ public sealed partial class Kernel
     }
 
     /// <summary>跑一路子任务：独立 Agent 实例（独立 Worker 会话），配置继承主助手，但权限按 chat 规则收紧。</summary>
-    private async Task<string> RunOneSubAgentAsync(string role, string task, string mode, CancellationToken ct,
-                                                   int workerSid = -1, SharedContext? shared = null)
+    private async Task<(string Text, string Model)> RunOneSubAgentAsync(string role, string task, string mode,
+                                                   CancellationToken ct, int workerSid = -1, SharedContext? shared = null)
     {
         var sub = new Agent(_engine)
         {
@@ -255,7 +274,8 @@ public sealed partial class Kernel
             }
             catch { /* 历史读不到就当新会话跑，不阻塞 */ }
         }
-        return await sub.RunAsync(workerSid, prompt, ct).ConfigureAwait(false);
+        string text = await sub.RunAsync(workerSid, prompt, ct).ConfigureAwait(false);
+        return (text, sub.ModelTag);
     }
 
     /// <summary>落一个 Session 记录（保留 CreatedUtc、Meta 等已有字段，避免每次覆盖丢元数据）。</summary>

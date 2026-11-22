@@ -47,6 +47,12 @@ public sealed class ChatItem
 
     /// <summary>模型的思考过程（reasoning）。界面把它折叠在正文上方（默认不展开），绝不混进正文。</summary>
     public string Thought { get; set; } = "";
+
+    /// <summary>这条回答是哪个模型给的（显示在气泡下方）。Router / Worker 用不同模型时，用户一眼能看出谁在答。</summary>
+    public string Model { get; set; } = "";
+
+    /// <summary>拆分卡片对应的 Worker 会话 id（0 = 不是拆分卡片）。点卡片能打开那个 Worker 的完整过程。</summary>
+    public int WorkerSid { get; set; }
 }
 
 /// <summary>一个对话会话（AI 助手 kind=0 / Agent 集群 kind=2）。</summary>
