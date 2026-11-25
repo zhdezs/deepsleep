@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -30,6 +30,15 @@ public sealed class AgentMessage
     /// <summary>这条回复由哪个模型产生（Worker 会话详情里显示；旧记录为空就不显示）。</summary>
     public string Model { get; set; } = "";
     public bool Archived { get; set; }
+    /// <summary>这条 assistant 消息发起的原生工具调用（function calling）。 只在这一轮循环里用：不落盘 —— 会话重启后按纯文本历史续跑更稳， 也避免把上一家的 call_id 发给另一家接口。</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public List<ApiToolCall>? ToolCalls { get; set; }
+    /// <summary>role=tool 时对应哪次原生调用（OpenAI / Anthropic / Responses 靠它配对）。</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? ToolCallId { get; set; }
+    /// <summary>role=tool 时对应哪个函数名（Gemini 的回执只认名字）。</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? ToolName { get; set; }
 }
 
 /// <summary>AI 助手核心：类似 Codex / Claude Code 的智能体循环。 通过 JSON 工具调用协议驱动，兼容 DeepSeek API 与本地 Ollama。</summary>
@@ -560,13 +569,18 @@ public sealed class Agent
             string? reply = useDecision
                 ? await CallLlmForDecisionAsync(history, ct, injectedSkills)
                 : await CallLlmAsync(history, ct, sink, injectedSkills);
-            Log($"RunLoop 回复长度={reply?.Length ?? 0} 已流式显示={streamed}");
+            Log($"RunLoop 回复长度={reply?.Length ?? 0} 已流式显示={streamed} 原生调用={_api.ToolCalls.Count}");
+            // 原生工具调用：模型可能一口气发好几个，先快照下来（后面还会再调接口，状态会被清空）
+            var nativeCalls = ReplyEngine == "api" && _api.ToolCalls.Count > 0
+                ? _api.ToolCalls.Select(c => new ApiToolCall { Id = c.Id, Name = c.Name, Arguments = c.Arguments }).ToList()
+                : new List<ApiToolCall>();
+            bool hasNativeCalls = nativeCalls.Count > 0;
             if (ct.IsCancellationRequested)
             {
                 LastRunStopped = true;
                 return "（已停止）";
             }
-            if (string.IsNullOrWhiteSpace(reply))
+            if (string.IsNullOrWhiteSpace(reply) && !hasNativeCalls)
             {
                 var errs = new List<string>();
                 if (_api.EmptyReply) errs.Add($"接口没有返回正文（模型 {_api.Model} · 地址 {_api.Endpoint}）");
@@ -611,24 +625,43 @@ public sealed class Agent
                 return msg;
             }
 
-            string tool = "";
-            JsonElement args = default;
-            bool isToolCall = useDecision && TryParseToolCall(reply, out tool, out args);
-            if (isToolCall) tool = NormalizeToolName(tool);
-            // 决策与执行入口使用同一能力分类。
-            bool blockedToolInChat = isToolCall && !ToolAllowedInMode(tool, args);
-            if (blockedToolInChat) isToolCall = false;
+            // 这一轮要调哪些工具：原生 function calling 优先（可一次多个），其次文本 JSON 协议
+            var calls = CollectToolCalls(reply, useDecision, nativeCalls);
+            // chat 模式不许的调用直接滤掉（以前是整轮降级成最终回答）
+            int blockedCount = 0;
+            for (int i = calls.Count - 1; i >= 0; i--)
+            {
+                if (ToolAllowedInMode(calls[i].Name, calls[i].Args)) continue;
+                Log($"chat 模式拦下工具调用「{calls[i].Name}」");
+                calls.RemoveAt(i);
+                blockedCount++;
+            }
+            bool isToolCall = calls.Count > 0;
+            // 原生调用回来了但一个都拼不完整（名字空/参数坏）：让它重发，别把空回复丢给用户
+            if (!isToolCall && hasNativeCalls)
+            {
+                var bad = new AgentMessage
+                {
+                    Role = "tool",
+                    Meta = "工具调用格式修正中…",
+                    Content = "刚才的工具调用没有带上有效的工具名。请重新发起调用（原生 function call），一次可以发多个。",
+                };
+                history.Add(bad);
+                MessageAdded?.Invoke(sid, bad);
+                continue;
+            }
+            var finalCall = calls.FirstOrDefault(c => IsFinalTool(c.Name));
             // 决策阶段判定「不需要工具 / 已完成」→ 进入【生成最终回复】阶段：
             // 工具结果已经在上下文里，这一轮让模型用自然语言回答（流式），决策用的 JSON 不进历史也不进气泡。
             bool decisionDone = useDecision &&
-                (blockedToolInChat ||
-                 (isToolCall && IsFinalTool(tool)) || IsNoToolDecision(reply));
+                (finalCall != null || (calls.Count == 0 && blockedCount > 0) || IsNoToolDecision(reply));
             if (decisionDone)
             {
-                string keep = ExtractFinalText(reply, args);      // 模型若顺手写了答案，作为兜底
+                // 模型若顺手在「完成」调用里写了答案，作为兜底
+                string keep = ExtractFinalText(reply ?? "", finalCall?.Args ?? default);
                 if (LooksLikeJson(keep)) keep = "";
                 isToolCall = false;
-                tool = "";
+                calls.Clear();
                 bool prevChatTool = _chatToolMode;
                 _chatToolMode = false;              // 这一轮要自然语言，不再要求只输出 JSON
                 string? final = await CallLlmFinalAsync(history, ct, sink, injectedSkills);
@@ -657,24 +690,33 @@ public sealed class Agent
             bool codeSaved = false;
             if (!isToolCall && !malformedCall && RunMode != "chat" && !LooksLikeJson(reply))
             {
-                string? note = await TrySaveCodeBlockAsync(sid, reply, history, ct);
+                string? note = await TrySaveCodeBlockAsync(sid, reply ?? "", history, ct);
                 if (note != null)
                 {
-                    reply = reply.TrimEnd() + "\n\n>  " + note;
+                    reply = (reply ?? "").TrimEnd() + "\n\n>  " + note;
                     codeSaved = true;
                 }
             }
 
             // 历史里保留模型原始输出（上下文需要），界面只显示 Meta 提示，避免暴露 {JSON}
+            // 原生调用的 id / 参数要挂在这条消息上：下一轮工具结果按 tool_call_id 才对得回去
+            var nativeForHistory = calls.Where(c => c.Native).Select(c => new ApiToolCall
+            {
+                Id = c.Id,
+                Name = c.NativeName,
+                Arguments = c.Args.ValueKind == JsonValueKind.Undefined ? "{}" : c.Args.GetRawText(),
+            }).ToList();
             var assistantMsg = new AgentMessage
             {
                 Role = "assistant",
-                Content = reply,
-                Meta = isToolCall ? $"调用了工具「{tool}」"
-                     : malformedCall ? "工具调用格式修正中…" : "",
+                Content = reply ?? "",
+                Meta = isToolCall
+                    ? $"调用了工具「{string.Join("、", calls.Select(c => c.Name))}」"
+                    : malformedCall ? "工具调用格式修正中…" : "",
                 // 模型在工具调用前写的那句人话（"我先看看这个文件…"）要显示出来 ——
                 // 以前界面把整条带 "调用了工具"的消息直接丢弃，用户只看得到工具卡片。
-                Say = isToolCall ? ExtractToolProse(reply) : "",
+                Say = isToolCall ? ExtractToolProse(reply ?? "") : "",
+                ToolCalls = nativeForHistory.Count > 0 ? nativeForHistory : null,
             };
             history.Add(assistantMsg);
             // 格式错或存过代码时补发一条正文，覆盖流式气泡。
@@ -710,58 +752,97 @@ public sealed class Agent
                     MessageAdded?.Invoke(sid, corr);
                     continue;
                 }
-                return reply;
+                return reply ?? "";
             }
 
             // 搜索意图拦截：用户要搜索时，第一个工具必须是「网络搜索」或「深度研究」，
             // 否则直接把模型的无关工具调用纠正回来（不执行）
-            if (userWantsSearch && !searched && tool != ToolSearch && tool != ToolResearch)
+            if (userWantsSearch && !searched && !calls.Any(c => c.Name is ToolSearch or ToolResearch))
             {
+                // 这些调用不会执行：原生 id 必须摘掉，否则下一轮会出现「assistant 发了 tool_calls、
+                // 却没有对应 tool 结果」的孤儿状态，OpenAI / Claude 都会直接 400。
+                assistantMsg.ToolCalls = null;
+                string tried = string.Join("、", calls.Select(c => c.Name));
                 var corr = new AgentMessage
                 {
                     Role = "tool",
                     Meta = "工具纠正",
-                    Content = $"用户要求的是搜索/查资料，必须用「网络搜索」或「深度研究」工具，而不是「{tool}」。请立即调用 {{\"tool\":\"网络搜索\",\"args\":{{\"关键词\":\"用户要查的内容\"}}}}（需要多轮调研、写报告时用 {{\"tool\":\"深度研究\",\"args\":{{\"主题\":\"...\"}}}}）；如果提示已关闭，请提醒用户打开开关。",
+                    Content = $"用户要求的是搜索/查资料，必须用「网络搜索」或「深度研究」工具，而不是「{tried}」。" +
+                              "请立即调用「网络搜索」（关键词=用户要查的内容）或「深度研究」（主题=…，需要多轮调研、写报告时用）；" +
+                              "如果提示已关闭，请提醒用户打开开关。",
                 };
                 history.Add(corr);
                 MessageAdded?.Invoke(sid, corr);
                 continue;
             }
 
-
-            _lastImagePath = null;
-            _lastVideoPath = null;
-            ToolStarted?.Invoke(sid, tool);
-            string result;
-            try
+            // 一次收的几个调用挨个执行：互不依赖的活本来就能并排跑，没必要来回多轮
+            for (int ci = 0; ci < calls.Count; ci++)
             {
-                result = await ExecuteToolAsync(tool, args, sid, ct);
-            }
-            catch (OperationCanceledException)
-            {
-                // 被终止：把"未完成"记进上下文，恢复时可从断点继续
-                history.Add(new AgentMessage { Role = "tool", Meta = tool, Content = "（执行被用户停止，未完成，可在恢复后继续）" });
+                var call = calls[ci];
+                if (ct.IsCancellationRequested)
+                {
+                    // 没收到的调用也要补一条回执：原生 tool_calls 缺结果，下一轮接口会直接报错
+                    for (int j = ci; j < calls.Count; j++)
+                        history.Add(new AgentMessage
+                        {
+                            Role = "tool", Meta = calls[j].Name, Content = "（执行被用户停止，未完成，可在恢复后继续）",
+                            ToolCallId = calls[j].Native ? calls[j].Id : null,
+                            ToolName = calls[j].Native ? calls[j].NativeName : null,
+                        });
+                    LastRunStopped = true;
+                    return "（已停止）";
+                }
+                _lastImagePath = null;
+                _lastVideoPath = null;
+                ToolStarted?.Invoke(sid, call.Name);
+                string result;
+                try
+                {
+                    result = await ExecuteToolAsync(call.Name, call.Args, sid, ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    // 被终止：把"未完成"记进上下文，恢复时可从断点继续
+                    for (int j = ci; j < calls.Count; j++)
+                        history.Add(new AgentMessage
+                        {
+                            Role = "tool", Meta = calls[j].Name, Content = "（执行被用户停止，未完成，可在恢复后继续）",
+                            ToolCallId = calls[j].Native ? calls[j].Id : null,
+                            ToolName = calls[j].Native ? calls[j].NativeName : null,
+                        });
+                    MessageAdded?.Invoke(sid, history[^1]);
+                    LastRunStopped = true;
+                    return "（已停止）";
+                }
+                if (call.Name is ToolSearch or ToolResearch) searched = true;
+                // 停止后立刻结束本轮，不再继续调用其他工具
+                if (ct.IsCancellationRequested)
+                {
+                    for (int j = ci; j < calls.Count; j++)
+                        history.Add(new AgentMessage
+                        {
+                            Role = "tool", Meta = calls[j].Name,
+                            Content = j == ci ? result : "（执行被用户停止，未完成，可在恢复后继续）",
+                            ToolCallId = calls[j].Native ? calls[j].Id : null,
+                            ToolName = calls[j].Native ? calls[j].NativeName : null,
+                        });
+                    LastRunStopped = true;
+                    return "（已停止）";
+                }
+                history.Add(new AgentMessage
+                {
+                    Role = "tool",
+                    Content = result,
+                    Meta = call.Name,
+                    Detail = call.Name == ToolWriteFile ? WriteFileDetail(call.Args) : (_lastToolFull ?? ""),
+                    ImagePath = call.Name == ToolImage ? _lastImagePath : null,
+                    VideoPath = call.Name == ToolVideo ? _lastVideoPath : null,
+                    ToolCallId = call.Native ? call.Id : null,
+                    ToolName = call.Native ? call.NativeName : null,
+                });
                 MessageAdded?.Invoke(sid, history[^1]);
-                LastRunStopped = true;
-                return "（已停止）";
             }
-            if (tool is ToolSearch or ToolResearch) searched = true;
-            // 停止后立刻结束本轮，不再继续调用其他工具
-            if (ct.IsCancellationRequested)
-            {
-                LastRunStopped = true;
-                return "（已停止）";
-            }
-            history.Add(new AgentMessage
-            {
-                Role = "tool",
-                Content = result,
-                Meta = tool,
-                Detail = tool == ToolWriteFile ? WriteFileDetail(args) : (_lastToolFull ?? ""),
-                ImagePath = tool == ToolImage ? _lastImagePath : null,
-                VideoPath = tool == ToolVideo ? _lastVideoPath : null,
-            });
-            MessageAdded?.Invoke(sid, history[^1]);
             continue;
         }
 
@@ -852,9 +933,9 @@ public sealed class Agent
 
     private static readonly string SystemPrompt =
         "你是一个运行在 " + Platform.DisplayName + "电脑上的 AI 助手，能力类似 Claude Code / Codex。\n" +
-        "你可以调用工具完成实际任务。当你需要工具时，**只输出一行 JSON**，不要输出任何解释，格式：\n" +
-        "{\"tool\":\"工具名\",\"args\":{...}}\n\n" +
-        "可用工具：\n" +
+        "你可以调用工具完成实际任务。需要工具时，按提示词【工具决策阶段】里给出的调用方式发起调用；" +
+        "工具执行结果会回传给你，然后继续下一步。\n\n" +
+        "可用工具（参数名照抄，不要改名）：\n" +
         "- 运行命令：参数 {\"命令\":\"要执行的 " + Platform.ShellName + "命令\"}。在用户电脑上执行命令并返回输出（最长 10 分钟）。\n" +
         "- 运行Python脚本：参数 {\"代码\":\"Python 3 源码\",\"工作目录\":\"可选\"}。自动选择 Python 3 解释器，写入临时脚本并运行，返回输出与报错。\n" +
         "- 生成图片：参数 {\"提示词\":\"详细的画面描述\",\"尺寸\":\"可选 1024x1024 / 768x1344 / 1344x768\"}。调用 CogView-3-Flash 生成图片并保存到本地，返回本地图片路径。用户要求画图/生成图片/配图时使用。\n" +
@@ -864,7 +945,7 @@ public sealed class Agent
         "- 安装扩展：参数 {\"路径\":\"本地 .dslt / .dslp 文件绝对路径\"}。把用户下载的扩展包装进 deepsleep（工具包进 data\\tools，皮肤包进 data\\skins）。\n" +
         "- 制作扩展：参数 {\"类型\":\"tool 或 skin\",\"目录\":\"放清单和文件的绝对路径\",\"输出\":\"要生成的 .dslt / .dslp 绝对路径\"}。把目录打成可分发的扩展包。\n" +
         "- 操作电脑：参数 {\"动作\":\"截图|移动|点击|双击|右键|输入|按键|滚动|等待\",\"x\":0.42,\"y\":0.31,\"relative\":true,\"text\":\"要输入的文字\",\"key\":\"enter 或 ctrl+c\",\"amount\":3}。执行完自动截图并读屏，返回界面描述与可点元素坐标，用来看一步走一步（网页点按钮、操作别的软件、填表单）。\n" +
-        "- 看图：参数 {\"图片路径\":\"本地图片绝对路径\",\"问题\":\"可选，要问的问题\"}。调用 GLM-4.6V-Flash 多模态模型识别/分析图片（描述内容、读图、检查截图、审查生成的图片等）。\n" +
+        "- 看图：参数 {\"图片路径\":\"本地图片绝对路径\",\"问题\":\"可选，要问的问题\"}。把图片转成 base64 直接附在模型请求里看图（描述内容、读图、检查截图、审查生成的图片等），用的是当前配置的模型，不需要额外的视觉 Key。\n" +
         "- 网络搜索：参数 {\"关键词\":\"搜索词\"}。用内置爬虫直接抓取搜索结果页（Bing → 搜狗 → 360 → DuckDuckGo 依次尝试），返回标题/链接/摘要，无需 API Key；搜索/查价格/查资料/找最新信息时用它。\n" +
         "- 深度研究：参数 {\"主题\":\"研究主题\",\"深度\":1-3}。多轮子查询搜索 + 抓取多个网页正文 + 汇总成一份带来源的 Markdown 研究报告（自动保存到本地，返回文件路径）；用户说「深度研究 / 调研 / 全面了解 / 整理一份报告」时用它。\n" +
         "- 抓取网页：参数 {\"网址\":\"https://...\"}。用内置爬虫下载网页并提取正文文本（自动去标签、限长），同时渲染一张页面截图，用于阅读搜索结果指向的文章、新闻、价格页等。\n" +
@@ -881,22 +962,21 @@ public sealed class Agent
         "拆出来的每个子任务要**自包含**：说清楚目标、要给什么产物、放到哪个目录，因为子智能体看不到你和用户的上下文。" +
         "子智能体不能反过来问你，所以别把需要用户拍板的事情拆出去。\n\n" +
         "规则：\n" +
-        "1. 需要工具时只输出那一行 JSON；收到工具结果后继续思考，直到能给出最终回答。\n" +
+        "1. 需要工具就发起工具调用；收到工具结果后继续思考，直到能给出最终回答。\n" +
         "2. 最终回答用普通中文文本，简洁、直接、专业，不要输出 JSON。\n" +
         "3. 运行命令要安全、可逆；写文件前先说明要写什么；路径必须使用绝对路径。\n" +
-        "5. 遇到现有工具做不了、或做起来很麻烦的任务（批量处理、解析、转换、抓取、计算、自动化、文件操作等），" +
+        "4. 遇到现有工具做不了、或做起来很麻烦的任务（批量处理、解析、转换、抓取、计算、自动化、文件操作等），" +
         "优先用「运行Python脚本」写 Python 3 脚本解决：根据返回的报错修改代码重跑，直到成功。" +
         "脚本会自动选择本机 Python 3（注意系统默认 python 可能是 2.7，不要依赖它）。\n" +
-        "6. 工具调用 JSON 必须是合法 JSON：字符串内换行写成 \\n，双引号写成 \\\"（Python 代码里尽量用单引号），花括号不需要转义；不要用 Markdown 代码块包裹 JSON。\n" +
-        "7. 严禁声称已执行：在真实调用工具并收到工具结果之前，禁止说「已运行」「已完成」之类的话；每一步执行都必须先调用工具，工具结果会返回给你。\n" +
-        "8. 写代码 / 做网页 / 做项目时需要图片素材（图标、Logo、横幅、占位图、插图、配图等）时，用「生成图片」工具生成真实图片并引用本地路径，不要跳过、不要用手写 SVG 或纯色占位代替。\n" +
-        "9. 工具执行失败、超时或被停止时：如实告知用户发生了什么并询问下一步；严禁调用无关工具、严禁假装任务已完成、严禁用「好的，我明白了」之类的通用话术敷衍。\n" +
-        "10. 用户要求搜索、查价格、查资料、找最新信息时，必须用「网络搜索」工具（需要系统调研、写报告时用「深度研究」）；搜到链接后如需原文，用「抓取网页」读取；严禁用 curl / wget / Invoke-WebRequest 等命令行代替（会触发拦截并导致失败）。\n" +
-        "11. 工具选择指南：搜索/查价格/查资料/找最新信息→「网络搜索」；要系统调研/写报告→「深度研究」；阅读搜索结果的具体页面→「抓取网页」；执行命令/系统操作→「运行命令」；写代码跑脚本→「运行Python脚本」或「写入文件」；生成图片→「生成图片」；生成视频/动画→「生成视频」；做 3D 模型/导出 GLB→「Blender」；看 GitHub 仓库或 issue→「GitHub」；看图片→「看图」；读写文件→「读取文件/写入文件」；用默认程序打开文件→「打开文件」；任务可以拆成几块互相独立的活→「拆分任务」。\n" +
-        "12. 最终回答必须是纯文本中文，禁止输出任何 JSON、代码块或结构化片段。\n" +
-        "13. 用户提到重要事实、偏好、要求（比如称呼、习惯、项目约定、不想要什么）时，用「记住」工具保存；保存后告知用户已记住。\n" +
-        "14. 当【已安装技能】里出现与你任务匹配的技能时，必须真正执行技能：按说明调用「运行Python脚本」「写入文件」「运行命令」「生成图片」等工具，把产物（PPT/文档/网页/脚本等）真实生成到磁盘，并在最终回复里给出完整本地路径；严禁只讲解步骤、只描述怎么做、或假装已完成。" +
-        "15. 思考 / 推理过程也必须用简体中文，禁止用英文思考；思考内容界面会单独折叠展示，不要写进正文。";
+        "5. 严禁声称已执行：在真实调用工具并收到工具结果之前，禁止说「已运行」「已完成」之类的话；每一步执行都必须先调用工具，工具结果会返回给你。\n" +
+        "6. 写代码 / 做网页 / 做项目时需要图片素材（图标、Logo、横幅、占位图、插图、配图等）时，用「生成图片」工具生成真实图片并引用本地路径，不要跳过、不要用手写 SVG 或纯色占位代替。\n" +
+        "7. 工具执行失败、超时或被停止时：如实告知用户发生了什么并询问下一步；严禁调用无关工具、严禁假装任务已完成、严禁用「好的，我明白了」之类的通用话术敷衍。\n" +
+        "8. 用户要求搜索、查价格、查资料、找最新信息时，必须用「网络搜索」工具（需要系统调研、写报告时用「深度研究」）；搜到链接后如需原文，用「抓取网页」读取；严禁用 curl / wget / Invoke-WebRequest 等命令行代替（会触发拦截并导致失败）。\n" +
+        "9. 工具选择指南：搜索/查价格/查资料/找最新信息→「网络搜索」；要系统调研/写报告→「深度研究」；阅读搜索结果的具体页面→「抓取网页」；执行命令/系统操作→「运行命令」；写代码跑脚本→「运行Python脚本」或「写入文件」；生成图片→「生成图片」；生成视频/动画→「生成视频」；做 3D 模型/导出 GLB→「Blender」；看 GitHub 仓库或 issue→「GitHub」；看图片→「看图」；读写文件→「读取文件/写入文件」；用默认程序打开文件→「打开文件」；任务可以拆成几块互相独立的活→「拆分任务」。\n" +
+        "10. 最终回答必须是纯文本中文，禁止输出任何 JSON、代码块或结构化片段。\n" +
+        "11. 用户提到重要事实、偏好、要求（比如称呼、习惯、项目约定、不想要什么）时，用「记住」工具保存；保存后告知用户已记住。\n" +
+        "12. 当【已安装技能】里出现与你任务匹配的技能时，必须真正执行技能：按说明调用「运行Python脚本」「写入文件」「运行命令」「生成图片」等工具，把产物（PPT/文档/网页/脚本等）真实生成到磁盘，并在最终回复里给出完整本地路径；严禁只讲解步骤、只描述怎么做、或假装已完成。" +
+        "13. 思考 / 推理过程也必须用简体中文，禁止用英文思考；思考内容界面会单独折叠展示，不要写进正文。";
 
     /// <summary>工具决策阶段的协议：软件先发这条指令，模型这一轮只准输出 JSON， 正文放到「完成」的 回答 字段里；</summary>
     /// <summary>用户是不是要做扩展（工具/皮肤）。命中就把完整格式规范灌进系统提示词。</summary>
@@ -931,17 +1011,35 @@ public sealed class Agent
         "完成后告诉用户： 设置 →  扩展 里能看到并启用；工具装好后你能直接按名字调用。\n" +
         "安全：工具是本机脚本，别写删除/上传私人文件之类的危险操作；皮肤只能改 CSS。\n";
 
-    private const string ToolDecisionPrompt =
-        "\n\n【工具决策阶段 · 先说一句话，再输出 JSON】\n" +
-        "整体流程：用户输入 → 你分析意图 → 需要工具就输出 tool_call → 软件执行工具 → 结果回传给你 → 你继续决策，直到不再需要工具。\n" +
-        "合法输出只有两种：\n" +
-        "① 需要调用工具：**先用一行中文说明你接下来要做什么**（例如「我先读一下这个文件」「我来搜一下最新资料」——这句会**实时显示给用户**，让他知道你在干嘛），然后空一行，再输出工具 JSON：{\"tool_call\":{\"name\":\"工具名\",\"arguments\":{...}}}\n" +
-        "② 不需要任何工具 / 已经拿到足够结果：{\"tool_call\":null}\n" +
-        "要点：\n" +
-        "· 那句说明要**简短**（一句话以内），详细分析留到最后的「完成」阶段；\n" +
-        "· 需要动手的任务（读写文件、跑命令、跑脚本、搜索、抓网页、画图、看图、装技能）必须先走 ①，不许直接说「已完成」；\n" +
-        "· 代码、命令、文件内容都放进 arguments 字段，字符串内换行写 \\n、双引号写 \\\"；\n" +
-        "· 严禁在没收到工具结果前宣称「已运行 / 已完成」。";
+    /// <summary>工具决策阶段的协议。原生 function calling 可用时让模型直接调工具（一次可以多个）， 不可用时退回「只输出 JSON」的文本协议（老网关、本地小模型都靠这条兜底）。</summary>
+    private static string ToolDecisionPrompt(bool native)
+    {
+        if (native)
+            return
+                "\n\n【工具决策阶段 · 原生工具调用】\n" +
+                "工具已经通过接口的 tools 参数提供给你（function calling）。需要动手时**直接发起工具调用**，" +
+                "不要输出 {\"tool_call\":...} 这种 JSON，也不要写 tool_call 字段。\n" +
+                "要点：\n" +
+                "· **互不依赖的多件事，一次发起多个调用**（例如同时读三个文件、同时搜几个方向、同时建多个文件），" +
+                "这样一轮就能全部执行完，别一个一个来；互相依赖的步骤才分轮次。\n" +
+                "· 调用前可以先写一句简短中文说明你要做什么（这句话会实时显示给用户），详细分析留到最终回答；\n" +
+                "· 已经拿到足够结果、或根本不需要工具：直接用中文回答用户，不要输出 JSON；\n" +
+                "· 不要在同一轮里既调用工具又给出最终结论；工具结果回来后再收尾。\n" +
+                "（只有接口明确不支持原生工具调用时才退回文本协议：{\"tool_call\":{\"name\":\"工具名\",\"arguments\":{...}}}）";
+
+        return
+            "\n\n【工具决策阶段 · 先说一句话，再输出 JSON】\n" +
+            "整体流程：用户输入 → 你分析意图 → 需要工具就输出 tool_call → 软件执行工具 → 结果回传给你 → 你继续决策，直到不再需要工具。\n" +
+            "合法输出只有两种：\n" +
+            "① 需要调用工具：**先用一行中文说明你接下来要做什么**（例如「我先读一下这个文件」「我来搜一下最新资料」——这句会**实时显示给用户**，让他知道你在干嘛），然后空一行，再输出工具 JSON：{\"tool_call\":{\"name\":\"工具名\",\"arguments\":{...}}}\n" +
+            "② 不需要任何工具 / 已经拿到足够结果：{\"tool_call\":null}\n" +
+            "要点：\n" +
+            "· 那句说明要**简短**（一句话以内），详细分析留到最后的「完成」阶段；\n" +
+            "· 需要动手的任务（读写文件、跑命令、跑脚本、搜索、抓网页、画图、看图、装技能）必须先走 ①，不许直接说「已完成」；\n" +
+            "· **一次要做几件互不依赖的事**时，可以一次给出多个调用：{\"tool_calls\":[{\"name\":\"工具名\",\"arguments\":{...}},{\"name\":\"工具名\",\"arguments\":{...}}]}，软件会依次执行并把结果一起回传；\n" +
+            "· 代码、命令、文件内容都放进 arguments 字段，字符串内换行写 \\n、双引号写 \\\"；\n" +
+            "· 严禁在没收到工具结果前宣称「已运行 / 已完成」。";
+    }
 
     /// <summary>阶段三协议：工具结果已回传，这一轮只负责用自然语言写最终回复。</summary>
     private const string FinalAnswerPrompt =
@@ -962,7 +1060,8 @@ public sealed class Agent
         "- 抓取网页：{\"网址\":\"https://...\"}；渲染图片：{\"网址\":\"…\"} 或 {\"HTML\":\"…\"}；GitHub：{\"操作\":\"me/repos/issues/issue/search/create_issue\",\"仓库\":\"owner/name\"}。\n" +
         "- 记住：{\"内容\":\"长期用户画像、偏好或明确要求记住的事实\"}；删除记忆：{\"序号\":1}。禁止把每轮问答摘要写入记忆。\n" +
         "- 查知识库：{\"关键词\":\"问题\"}；拆分任务：{\"tasks\":[{\"role\":\"角色\",\"task\":\"任务\"}]}，子任务同样遵守 chat 权限。\n" +
-        "禁止读写、打开本地文件、生成本地媒体、操作电脑、运行脚本或自定义工具。无需工具时输出 {\"tool_call\":null}。";
+        "禁止读写、打开本地文件、生成本地媒体、操作电脑、运行脚本或自定义工具。无需工具时输出 {\"tool_call\":null}。\n" +
+        "（接口支持原生工具调用时，直接发起 function call 即可，不必照上面的 JSON 写法；一次可以做多件互不依赖的事。）";
 
     /// <summary>系统提示词 = 初始提示词（AGENT.md，放最前面）+ 各模式自己的提示词。</summary>
     /// <param name="phase">decision=工具决策阶段 / final=最终回复阶段 / 空=普通对话。
@@ -1051,7 +1150,7 @@ public sealed class Agent
         }
 
         if (MultimodalMain)
-            sb.Append("\n\n注意：主模型是多模态模型，用户上传的图片会作为多模态输入直接发给你。看到图片直接描述/分析，严禁调用「看图」工具。");
+            sb.Append("\n\n注意：主模型是多模态模型，用户上传的图片会作为多模态输入直接发给你。看到图片直接描述/分析，不要再为同一张图调用「看图」工具；要看别的本地图片时再用它。");
         string mem = Memory?.AllText() ?? "";
         if (!string.IsNullOrWhiteSpace(mem))
             sb.Append("\n\n【长期记忆】以下是你跨会话保存的关于用户/任务的事实与偏好（序号即「删除记忆」工具的序号）：\n" +
@@ -1078,10 +1177,15 @@ public sealed class Agent
                                                    HashSet<string>? injectedSkills)
     {
         var msgs = await PrepareModelMessagesAsync(history, ct);
-        string sys = SystemPromptForMode("decision") + BuildSkillsPrompt(history, injectedSkills) + ToolDecisionPrompt;
+        // 优先原生：把工具按接口协议交给模型，模型直接发起调用（一轮可多个）；不支持时自动退回文本 JSON
+        var tools = NativeToolsWanted() ? BuildNativeTools() : null;
+        bool native = tools is { Count: > 0 };
+        if (native) Log($"原生工具调用：{tools!.Count} 个工具 · 协议 {_api.EffectiveFormat}");
+        else if (!string.IsNullOrEmpty(_api.NativeToolsWhy)) Log("原生工具不可用：" + _api.NativeToolsWhy);
+        string sys = SystemPromptForMode("decision") + BuildSkillsPrompt(history, injectedSkills) + ToolDecisionPrompt(native);
         // 决策这一轮也会被 max_tokens 截断（模型一口气把整个文件内容塞进参数里就会）：
         // 截断后 JSON 只剩半截、工具根本执行不了，所以这里同样自动续写拼回完整调用。
-        return await CallOnceAutoContinueAsync(sys, msgs, ct, null, emitReasoning: true);
+        return await CallOnceAutoContinueAsync(sys, msgs, ct, null, emitReasoning: true, tools);
     }
 
     /// <summary>阶段三：生成最终回复。工具结果已经在 history 里，这一轮流式产出自然语言回答。</summary>
@@ -1101,7 +1205,9 @@ public sealed class Agent
     private async Task<string?> FinalInnerAsync(List<AgentMessage> history, CancellationToken ct,
                                                 Action<string>? onDelta, HashSet<string>? injectedSkills)
     {
-        var msgs = await PrepareModelMessagesAsync(history, ct);
+        // 收尾这一轮不再发 tools，历史里的原生调用也摊平成纯文本：
+        // 免得「assistant 带 tool_calls」在不再声明 tools 的请求里被严格网关判成非法请求。
+        var msgs = await PrepareModelMessagesAsync(history, ct, plainTools: true);
         string sys = SystemPromptForMode("final") + BuildSkillsPrompt(history, injectedSkills) + FinalAnswerPrompt;
         return await CallOnceAutoContinueAsync(sys, msgs, ct, onDelta, emitReasoning: true);
     }
@@ -1184,10 +1290,14 @@ public sealed class Agent
                                                msgs, ct, onDelta, emitReasoning: true);
     }
 
-    private async Task<List<(string Role, string Content)>> PrepareModelMessagesAsync(List<AgentMessage> history, CancellationToken ct)
+    private async Task<List<ApiMsg>> PrepareModelMessagesAsync(List<AgentMessage> history, CancellationToken ct,
+                                                              bool plainTools = false)
     {
-        var messages = new List<(string Role, string Content)>();
+        var messages = new List<ApiMsg>();
         bool? allowImage = null;
+        // 只有「上一条 assistant 真发起过这个 call_id」时，tool 消息才能当原生回执发；
+        // 从会话存档恢复出来的历史没有 id（不落盘），降级成普通文本，否则接口会报「找不到对应的 tool_calls」。
+        HashSet<string>? liveCallIds = null;
         foreach (var message in history)
         {
             // IMG 是客户端的本地文件读取协议，不能接受模型或历史原文伪造它。
@@ -1203,7 +1313,28 @@ public sealed class Agent
                     if (attached != message.Content) content = attached;
                 }
             }
-            messages.Add((message.Role, content));
+            var item = new ApiMsg(message.Role, content)
+            {
+                ToolCalls = plainTools ? null : message.ToolCalls,
+                ToolCallId = message.ToolCallId,
+                ToolName = message.ToolName,
+            };
+            if (message.Role == "tool" &&
+                (plainTools || string.IsNullOrEmpty(message.ToolCallId) || liveCallIds == null ||
+                 !liveCallIds.Contains(message.ToolCallId)))
+            {
+                item.ToolCallId = null;
+                item.ToolName = null;
+                if (!content.StartsWith("[工具执行结果]", StringComparison.Ordinal))
+                    item.Content = "[工具执行结果]\n" + content;
+            }
+            messages.Add(item);
+            if (message.Role == "assistant")
+                liveCallIds = message.ToolCalls is { Count: > 0 }
+                    ? message.ToolCalls.Where(c => c.Id.Length > 0).Select(c => c.Id).ToHashSet()
+                    : null;
+            else if (message.Role == "user")
+                liveCallIds = null;
         }
         return messages;
     }
@@ -1220,7 +1351,17 @@ public sealed class Agent
         if (!File.Exists(path)) return c;
         string ext = Path.GetExtension(path).ToLowerInvariant();
         bool isImage = ext is ".png" or ".jpg" or ".jpeg" or ".gif" or ".webp" or ".bmp";
-        return isImage ? "IMG|" + path + "|" + c : c;
+        if (!isImage) return c;
+        // 超过上限的图发不出去：明说，别让模型以为用户没传图
+        try
+        {
+            long len = new FileInfo(path).Length;
+            if (len > ApiClient.MaxImageBytes)
+                return c + $"\n（图片 {len / 1024.0 / 1024.0:0.0} MB，超过 {ApiClient.MaxImageBytes / 1024 / 1024} MB 上限，" +
+                            "没能一起发给你；要看请让用户压缩后再上传。）";
+        }
+        catch { /* 读不到大小就照常尝试 */ }
+        return "IMG|" + path + "|" + c;
     }
 
     private string BuildSkillsPrompt(List<AgentMessage> history, HashSet<string>? injected)
@@ -1264,17 +1405,19 @@ public sealed class Agent
 
     /// <summary>调一次 LLM；如果回复因为 max_tokens 被截断（finish_reason=length）， 自动把已写内容回灌并让它接着写，直到写完或到次数上限。</summary>
     private async Task<string?> CallOnceAutoContinueAsync(string system,
-        List<(string Role, string Content)> msgs, CancellationToken ct, Action<string>? onDelta,
-        bool emitReasoning = false)
+        List<ApiMsg> msgs, CancellationToken ct, Action<string>? onDelta,
+        bool emitReasoning = false, List<ApiTool>? tools = null)
     {
-        string? text = await CallOnceAsync(system, msgs, ct, onDelta, emitReasoning);
+        string? text = await CallOnceAsync(system, msgs, ct, onDelta, emitReasoning, tools);
         for (int i = 0; i < MaxContinuations; i++)
         {
             if (string.IsNullOrEmpty(text) || ct.IsCancellationRequested || !_api.LastTruncated) break;
+            // 这一轮是「调工具」而不是「写长文」：参数被截断该让模型重发调用，续写半截参数只会更糟
+            if (_api.ToolCalls.Count > 0) break;
             Log($"回复被长度上限截断，自动续写第 {i + 1} 次（已 {text.Length} 字）");
-            msgs.Add(("assistant", text.StartsWith("IMG|", StringComparison.Ordinal) ? " " + text : text));
-            msgs.Add(("user", ContinueHint));
-            string? more = await CallOnceAsync(system, msgs, ct, onDelta, emitReasoning);
+            msgs.Add(new ApiMsg("assistant", text.StartsWith("IMG|", StringComparison.Ordinal) ? " " + text : text));
+            msgs.Add(new ApiMsg("user", ContinueHint));
+            string? more = await CallOnceAsync(system, msgs, ct, onDelta, emitReasoning, tools);
             if (string.IsNullOrWhiteSpace(more)) { Log("续写没有返回内容，停止续写"); break; }
             more = TrimOverlap(text, more);
             if (more.Length == 0) { Log("续写内容与已写部分重复，停止续写"); break; }
@@ -1294,9 +1437,10 @@ public sealed class Agent
     }
 
     /// <summary>单次 LLM 调用（不跑工具循环）：按后端选择 API / Ollama，429 自动退避重试。</summary>
+    /// <param name="tools">原生工具定义（只给决策阶段；给了就优先走 function calling）。</param>
     private async Task<string?> CallOnceAsync(string system,
-        List<(string Role, string Content)> msgs, CancellationToken ct, Action<string>? onDelta,
-        bool emitReasoning = false)
+        List<ApiMsg> msgs, CancellationToken ct, Action<string>? onDelta,
+        bool emitReasoning = false, List<ApiTool>? tools = null)
     {
         ContextLost = false;
         if (Backend == "local")
@@ -1314,11 +1458,12 @@ public sealed class Agent
             _api.LastTruncated = false;
             ReplyEngine = "ollama";
             LastModel = _ollama.Model;
+            var plain = ToTuples(msgs);
             string? r = Streaming
-                ? await _ollama.ChatStreamAsync(system, msgs, onDelta, ct: ct)
-                : await _ollama.ChatAsync(system, msgs, ct: ct);
+                ? await _ollama.ChatStreamAsync(system, plain, onDelta, ct: ct)
+                : await _ollama.ChatAsync(system, plain, ct: ct);
             if (string.IsNullOrEmpty(r) && Streaming && !ct.IsCancellationRequested)
-                r = await _ollama.ChatAsync(system, msgs, ct: ct);   // 流式失败回退普通请求
+                r = await _ollama.ChatAsync(system, plain, ct: ct);   // 流式失败回退普通请求
             Log($"Ollama 回复长度={r?.Length ?? 0} LastError={_ollama.LastError}");
             string? clean = SanitizeOllamaReply(r);
             // 本机模型接不上长对话时最典型的表现，就是只回一句「你好，我是…」的开场白。
@@ -1371,18 +1516,28 @@ public sealed class Agent
                             : null,
                         idleSeconds: 30, maxResumes: 3,
                         onStatus: t => StatusNote?.Invoke(_currentSid, t),
-                        maxOut: budget, noThinking: offThinking);
+                        maxOut: budget, noThinking: offThinking, tools: tools);
                     // 流式不支持/失败（非限流、非取消）→ 回退普通请求，保证能出话。但如果刚才已经被看门狗自动恢复过几轮，再补一次普通请求就是让用户再干等一轮，
                     // 这时直接把「无响应」如实报出去。
-                    if (string.IsNullOrEmpty(reply) && !ct.IsCancellationRequested &&
+                    if (string.IsNullOrEmpty(reply) && _api.ToolCalls.Count == 0 && !ct.IsCancellationRequested &&
                         !IsRateLimit(_api.LastError) && !_api.IdleAborted)
-                        reply = await _api.ChatAsync(system, msgs, ct: ct, maxOut: budget, noThinking: offThinking);
+                        reply = await _api.ChatAsync(system, msgs, ct: ct, maxOut: budget, noThinking: offThinking, tools: tools);
                 }
                 else
                 {
-                    reply = await _api.ChatAsync(system, msgs, ct: ct, maxOut: budget, noThinking: offThinking);
+                    reply = await _api.ChatAsync(system, msgs, ct: ct, maxOut: budget, noThinking: offThinking, tools: tools);
                 }
-                Log($"API 回复长度={reply?.Length ?? 0} 流式增量={any} 超时={_api.TimeoutHit} LastError={_api.LastError}");
+                Log($"API 回复长度={reply?.Length ?? 0} 流式增量={any} 超时={_api.TimeoutHit} 原生工具={_api.ToolCalls.Count} LastError={_api.LastError}");
+                // 这一轮模型没写正文、只发起了工具调用：算成功（reply 给空串，上层看 ToolCalls）
+                if (_api.ToolCalls.Count > 0)
+                {
+                    ReplyEngine = "api";
+                    LastModel = _api.Model;
+                    if (!released && head.Length > 0) onDelta?.Invoke(head.ToString());
+                    if (emitReasoning && !string.IsNullOrEmpty(_api.Reasoning))
+                        ReasoningAdded?.Invoke(_currentSid, _api.Reasoning);
+                    return reply ?? "";
+                }
                 if (!string.IsNullOrEmpty(reply))
                 {
                     ReplyEngine = "api";
@@ -1428,13 +1583,14 @@ public sealed class Agent
 
         ReplyEngine = "ollama";
         LastModel = _ollama.Model;
+        var plainTail = ToTuples(msgs);
         return SanitizeOllamaReply(Streaming && onDelta != null
-            ? await _ollama.ChatStreamAsync(system, msgs, onDelta, ct: ct)
-            : await _ollama.ChatAsync(system, msgs, ct: ct));
+            ? await _ollama.ChatStreamAsync(system, plainTail, onDelta, ct: ct)
+            : await _ollama.ChatAsync(system, plainTail, ct: ct));
     }
 
     /// <summary>长对话里只回一句开场白/自我介绍：不是回答，是它没拿到上文（网关截断、排队降级、本机小模型读不完都会这样）。</summary>
-    private static bool LooksLikeLostContext(string? reply, List<(string Role, string Content)> msgs)
+    private static bool LooksLikeLostContext(string? reply, List<ApiMsg> msgs)
     {
         if (string.IsNullOrWhiteSpace(reply) || msgs.Count < 8) return false;
         string t = reply.Trim();
@@ -1447,13 +1603,21 @@ public sealed class Agent
         return !Regex.IsMatch(last, @"你是谁|你叫什么|自我介绍|介绍一下你自己|你能做什么|怎么用|使用说明");
     }
 
+    /// <summary>带工具上下文的消息转成旧签名要求的 (role, content)：本机 Ollama 通道还不认原生工具。</summary>
+    private static List<(string Role, string Content)> ToTuples(List<ApiMsg> msgs)
+    {
+        var list = new List<(string, string)>(msgs.Count);
+        foreach (var m in msgs) list.Add((m.Role, m.Content ?? ""));
+        return list;
+    }
+
     /// <summary>集群汇总：单次 LLM 调用，不走工具循环；支持流式与限流重试。</summary>
     public async Task<string> SummarizeAsync(string system, string content,
         CancellationToken ct = default, Action<string>? onDelta = null)
     {
-        var msgs = new List<(string Role, string Content)>
+        var msgs = new List<ApiMsg>
         {
-            ("user", content.StartsWith("IMG|", StringComparison.Ordinal) ? " " + content : content),
+            new("user", content.StartsWith("IMG|", StringComparison.Ordinal) ? " " + content : content),
         };
         if (MaxConcurrentCalls > 0)
         {
@@ -1982,6 +2146,299 @@ public sealed class Agent
         ToolSplit, ToolKnowledge,
     };
 
+    // ── 原生工具调用（function calling）────────────────────────────────────────
+    // 以前只能让模型吐 {"tool_call":{...}} 这种 JSON：多一层格式错误、一次只能调一个、
+    // 参数里的代码还容易把 JSON 撑破。现在优先把工具按各家协议原生交给模型，文本 JSON 只作兜底。
+
+    /// <summary>这一轮要执行的一次工具调用（原生或文本协议解析出来的）。</summary>
+    private sealed record ToolCall(string Name, JsonElement Args, string Id, string NativeName, bool Native);
+
+    private const string SchemaRunCommand = """
+{"type":"object","properties":{"命令":{"type":"string","description":"要执行的 shell 命令"},"工作目录":{"type":"string","description":"可选，绝对路径"}},"required":["命令"]}
+""";
+    private const string SchemaRunPython = """
+{"type":"object","properties":{"代码":{"type":"string","description":"Python 3 源码"},"工作目录":{"type":"string","description":"可选，绝对路径"}},"required":["代码"]}
+""";
+    private const string SchemaWriteFile = """
+{"type":"object","properties":{"路径":{"type":"string","description":"绝对路径"},"内容":{"type":"string","description":"要写入的完整文本"}},"required":["路径","内容"]}
+""";
+    private const string SchemaReadFile = """
+{"type":"object","properties":{"路径":{"type":"string","description":"绝对路径"}},"required":["路径"]}
+""";
+    private const string SchemaOpenFile = """
+{"type":"object","properties":{"路径":{"type":"string","description":"绝对路径"}},"required":["路径"]}
+""";
+    private const string SchemaSearch = """
+{"type":"object","properties":{"关键词":{"type":"string","description":"搜索词"}},"required":["关键词"]}
+""";
+    private const string SchemaResearch = """
+{"type":"object","properties":{"主题":{"type":"string","description":"研究主题"},"深度":{"type":"integer","minimum":1,"maximum":3,"description":"1 快 / 2 标准 / 3 全面"}},"required":["主题"]}
+""";
+    private const string SchemaFetch = """
+{"type":"object","properties":{"网址":{"type":"string","description":"https://..."}},"required":["网址"]}
+""";
+    private const string SchemaRender = """
+{"type":"object","properties":{"网址":{"type":"string"},"HTML":{"type":"string","description":"直接渲染一段 HTML"},"宽度":{"type":"integer"},"高度":{"type":"integer"},"输出":{"type":"string","description":"可选，PNG 保存路径"}}}
+""";
+    private const string SchemaImage = """
+{"type":"object","properties":{"提示词":{"type":"string","description":"详细的画面描述"},"尺寸":{"type":"string","description":"可选 1024x1024 / 768x1344 / 1344x768"}},"required":["提示词"]}
+""";
+    private const string SchemaVideo = """
+{"type":"object","properties":{"提示词":{"type":"string","description":"详细的画面描述"},"尺寸":{"type":"string","description":"可选 1920x1080 / 1280x960 / 1024x1024"}},"required":["提示词"]}
+""";
+    private const string SchemaVision = """
+{"type":"object","properties":{"图片路径":{"type":"string","description":"本地图片绝对路径"},"问题":{"type":"string","description":"可选，要问的问题"}},"required":["图片路径"]}
+""";
+    private const string SchemaBlender = """
+{"type":"object","properties":{"代码":{"type":"string","description":"Blender Python(bpy) 脚本"},"输出":{"type":"string","description":"可选，.blend / .glb / .obj 路径"},"工作目录":{"type":"string"}},"required":["代码"]}
+""";
+    private const string SchemaGitHub = """
+{"type":"object","properties":{"操作":{"type":"string","enum":["me","repos","issues","issue","search","create_issue"]},"仓库":{"type":"string","description":"owner/name"},"编号":{"type":"integer"},"查询":{"type":"string"},"标题":{"type":"string"},"内容":{"type":"string"}},"required":["操作"]}
+""";
+    private const string SchemaRemember = """
+{"type":"object","properties":{"内容":{"type":"string","description":"要长期记住的事实或用户偏好"}},"required":["内容"]}
+""";
+    private const string SchemaForget = """
+{"type":"object","properties":{"序号":{"type":"integer","description":"长期记忆里的序号"}},"required":["序号"]}
+""";
+    private const string SchemaInstallExt = """
+{"type":"object","properties":{"路径":{"type":"string","description":".dslt / .dslp 文件绝对路径"}},"required":["路径"]}
+""";
+    private const string SchemaMakeExt = """
+{"type":"object","properties":{"类型":{"type":"string","enum":["tool","skin"]},"目录":{"type":"string","description":"放清单和文件的绝对路径"},"输出":{"type":"string","description":"要生成的扩展包绝对路径"}},"required":["目录","输出"]}
+""";
+    private const string SchemaComputer = """
+{"type":"object","properties":{"动作":{"type":"string","enum":["截图","移动","点击","双击","右键","输入","按键","滚动","等待"]},"x":{"type":"number"},"y":{"type":"number"},"relative":{"type":"boolean","description":"true 时 x/y 是 0~1 的相对坐标"},"text":{"type":"string"},"key":{"type":"string","description":"如 enter / ctrl+c"},"amount":{"type":"integer"}},"required":["动作"]}
+""";
+    private const string SchemaSplit = """
+{"type":"object","properties":{"tasks":{"type":"array","description":"2~5 个互相独立的子任务","items":{"type":"object","properties":{"role":{"type":"string","description":"角色名"},"task":{"type":"string","description":"自包含的具体任务"}},"required":["role","task"]}}},"required":["tasks"]}
+""";
+    private const string SchemaKnowledge = """
+{"type":"object","properties":{"主题":{"type":"string","description":"要查的主题或问题"}},"required":["主题"]}
+""";
+    private const string SchemaFreeInput = """
+{"type":"object","properties":{"输入":{"type":"string","description":"交给这个工具处理的输入内容"}},"required":["输入"]}
+""";
+
+    /// <summary>这次决策要不要发原生工具（接口支持、且这条线路没拒过）。</summary>
+    private bool NativeToolsWanted()
+    {
+        if (Backend == "local" || Backend == "llm") return false;
+        if (!_api.Configured) return false;
+        return _api.NativeToolsAllowed;
+    }
+
+    /// <summary>把当前可用的工具编成原生定义（ASCII 短名 + JSON Schema）。</summary>
+    private List<ApiTool> BuildNativeTools()
+    {
+        var list = new List<ApiTool>();
+        void Add(string native, string tool, string desc, string schema)
+        {
+            if (!ToolAllowedInMode(tool)) return;
+            if (FastMode && tool == ToolKnowledge) return;
+            if (tool == ToolBlender && BlenderRunner == null) return;
+            if (tool == ToolGitHub && GitHubRunner == null) return;
+            if (tool == ToolSplit && SplitRunner == null) return;
+            if (!WebSearchEnabled && tool is ToolSearch or ToolResearch) return;
+            list.Add(new ApiTool { Name = native, Description = desc, ParametersJson = schema });
+        }
+
+        Add("run_command", ToolRunCommand,
+            "在用户电脑上执行一条 " + Platform.ShellName + " 命令并返回输出（最长 10 分钟）。系统操作、安装、跑工具时用。",
+            SchemaRunCommand);
+        Add("run_python", ToolPython,
+            "运行一段 Python 3 脚本并返回输出与报错。批量处理、解析、转换、计算、抓取等杂活用它最省事。",
+            SchemaRunPython);
+        Add("write_file", ToolWriteFile,
+            "写入或覆盖一个文本文件（必须用绝对路径）。长文件请分段写入或改用 Python 脚本生成。",
+            SchemaWriteFile);
+        Add("read_file", ToolReadFile, "读取文本文件内容（绝对路径）。", SchemaReadFile);
+        Add("open_file", ToolOpenFile,
+            "用系统默认程序打开本地文件；可执行文件/脚本也能打开（等于运行它），别反复调用。", SchemaOpenFile);
+        Add("web_search", ToolSearch,
+            "联网搜索，返回标题/链接/摘要。查价格、查资料、找最新信息时优先用；它已内置爬虫，不要用 curl 代替。",
+            SchemaSearch);
+        Add("deep_research", ToolResearch,
+            "多轮子查询 + 抓多篇网页正文 + 汇总成带来源的 Markdown 研究报告（自动存盘）。用户说「调研 / 全面了解 / 整理报告」时用，耗时较长。",
+            SchemaResearch);
+        Add("fetch_url", ToolFetch, "抓取指定网页并提取正文（自动去标签、限长）。", SchemaFetch);
+        Add("render_page", ToolRender,
+            "用本机浏览器无头把网页或一段 HTML 渲染成 PNG，返回图片路径。页面靠 JS 画出来（图表/Canvas/SPA）时用。",
+            SchemaRender);
+        Add("generate_image", ToolImage,
+            "调用文生图模型生成图片并保存到本地，返回路径。用户要画图/配图/图标/海报时用。", SchemaImage);
+        Add("generate_video", ToolVideo,
+            "调用文生视频模型生成一段短视频（异步，通常 30~120 秒），保存到本地并返回路径。", SchemaVideo);
+        Add("view_image", ToolVision,
+            "看本地图片：把图片以 base64 附进模型请求，用当前模型识别内容/读文字/检查截图。", SchemaVision);
+        Add("blender", ToolBlender,
+            "后台运行 Blender Python(bpy) 脚本，做 3D 建模/场景/渲染、导出 GLB/OBJ。", SchemaBlender);
+        Add("github", ToolGitHub,
+            "代表用户操作他的 GitHub：读仓库、看 issue、搜索、建 issue。", SchemaGitHub);
+        Add("remember", ToolRemember,
+            "把重要事实或用户偏好写进长期记忆（跨会话有效）。", SchemaRemember);
+        Add("forget", ToolForget, "删除长期记忆里指定序号的一条。", SchemaForget);
+        Add("install_extension", ToolInstallExt, "把用户下载的 .dslt / .dslp 扩展包装进 deepsleep。", SchemaInstallExt);
+        Add("pack_extension", ToolMakeExt, "把目录打成可分发的 .dslt 工具包或 .dslp 皮肤包。", SchemaMakeExt);
+        Add("computer_use", ToolComputer,
+            "操作本机鼠标键盘（截图/点击/输入/按键/滚动），执行后自动截图并读屏，返回界面描述与可点坐标。",
+            SchemaComputer);
+        Add("split_task", ToolSplit,
+            "把一个复杂任务拆成 2~5 个互相独立的子任务，交给独立子智能体并行执行，最后汇总。",
+            SchemaSplit);
+        Add("knowledge_search", ToolKnowledge, "查 deepsleep 自身的知识库（软件规格、用法、扩展格式）。", SchemaKnowledge);
+
+        // 用户装的 .dslt 自定义工具：名字转成 ASCII，装不上也没关系（中文名在 GPT/Gemini 上会被拒）
+        foreach (var t in _customTools)
+        {
+            if (!ToolAllowedInMode(t.Name)) continue;
+            list.Add(new ApiTool
+            {
+                Name = CustomNativeName(t.Id),
+                Description = string.IsNullOrWhiteSpace(t.PromptLine) ? "用户安装的自定义工具：" + t.Name : t.PromptLine,
+                ParametersJson = SchemaFreeInput,
+            });
+        }
+        return list;
+    }
+
+    /// <summary>自定义工具的原生名：custom_&lt;id&gt;，只留 ASCII 安全字符。</summary>
+    private static string CustomNativeName(string id)
+    {
+        var sb = new StringBuilder("custom_");
+        foreach (char c in (id ?? ""))
+            sb.Append(char.IsAsciiLetterOrDigit(c) || c is '_' or '-' ? c : '_');
+        return sb.ToString();
+    }
+
+    /// <summary>原生名 → 内部工具名（自定义工具按 id 找回原名，其余走别名表）。</summary>
+    private string ResolveNativeName(string native)
+    {
+        if (native.StartsWith("custom_", StringComparison.OrdinalIgnoreCase))
+        {
+            var t = _customTools.FirstOrDefault(x =>
+                string.Equals(CustomNativeName(x.Id), native, StringComparison.OrdinalIgnoreCase));
+            if (t != null) return t.Name;
+        }
+        return NormalizeToolName(native);
+    }
+
+    /// <summary>arguments 字符串 → JsonElement（半截 JSON 交空对象，让工具回一句参数错误让模型重试）。</summary>
+    private static JsonElement ParseToolArgs(string? json)
+    {
+        try
+        {
+            using var d = JsonDocument.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json);
+            return d.RootElement.Clone();
+        }
+        catch
+        {
+            using var d = JsonDocument.Parse("{}");
+            return d.RootElement.Clone();
+        }
+    }
+
+    /// <summary>收齐这一轮的调用：原生优先；没有原生调用才去解析文本 JSON（含一次多条的写法）。</summary>
+    private List<ToolCall> CollectToolCalls(string? reply, bool useDecision, List<ApiToolCall> nativeCalls)
+    {
+        var list = new List<ToolCall>();
+        if (!useDecision) return list;
+        if (nativeCalls.Count > 0)
+        {
+            foreach (var c in nativeCalls)
+            {
+                string name = ResolveNativeName(c.Name);
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                list.Add(new ToolCall(name, ParseToolArgs(c.Arguments), c.Id, c.Name, true));
+            }
+            return list;
+        }
+        foreach (var (name, args) in ParseTextToolCalls(reply))
+            list.Add(new ToolCall(NormalizeToolName(name), args, "", "", false));
+        return list;
+    }
+
+    /// <summary>文本协议兜底：支持单个 {"tool_call":…}，也支持一次多条的 {"tool_calls":[…]} / 连写多个 JSON。</summary>
+    private List<(string Name, JsonElement Args)> ParseTextToolCalls(string? reply)
+    {
+        var list = new List<(string Name, JsonElement Args)>();
+        string text = (reply ?? "").Trim();
+        if (text.Length == 0) return list;
+
+        if (TryParseToolCallArray(text, out var many))
+        {
+            list.AddRange(many);
+            return list;
+        }
+
+        if (!TryParseToolCall(text, out string first, out JsonElement firstArgs)) return list;
+        list.Add((first, firstArgs));
+
+        // 同一轮里还连写了别的调用：只在「整段就是 JSON」时才往下扫，
+        // 否则模型在正文里举例写的 {"name":"write_file",...} 也会被当成真调用执行。
+        if (!text.TrimStart().StartsWith('{')) return list;
+        int idx = text.IndexOf('{');
+        while (idx >= 0)
+        {
+            int end = FindJsonEnd(text, idx);
+            if (end > idx && TryParseToolObject(text[idx..end], out string nm, out JsonElement ar) &&
+                IsKnownToolName(nm) && !list.Any(x => x.Name == nm && x.Args.GetRawText() == ar.GetRawText()))
+                list.Add((nm, ar));
+            idx = text.IndexOf('{', idx + 1);
+        }
+        return list;
+    }
+
+    /// <summary>名字认不认识（内置中文名 / 别名 / 自定义工具）。认不出来就别当工具调用，免得把普通 JSON 也执行了。</summary>
+    private bool IsKnownToolName(string name)
+    {
+        string n = (name ?? "").Trim();
+        if (n.Length == 0) return false;
+        if (ToolNames.Contains(n)) return true;
+        if (NormalizeToolName(n) != n) return true;
+        return _customTools.Any(t => string.Equals(t.Name, n, StringComparison.OrdinalIgnoreCase) ||
+                                     string.Equals(t.Id, n, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>{"tool_calls":[{…},{…}]} 形态：找包含它的对象，逐个解析成工具调用。</summary>
+    private static bool TryParseToolCallArray(string reply, out List<(string Name, JsonElement Args)> calls)
+    {
+        calls = new List<(string, JsonElement)>();
+        int marker = reply.IndexOf("tool_calls", StringComparison.OrdinalIgnoreCase);
+        if (marker < 0) return false;
+        int start = reply.LastIndexOf('{', marker);
+        while (start >= 0)
+        {
+            int end = FindJsonEnd(reply, start);
+            if (end > start)
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(reply[start..end]);
+                    if (doc.RootElement.ValueKind == JsonValueKind.Object &&
+                        doc.RootElement.TryGetProperty("tool_calls", out var arr) &&
+                        arr.ValueKind == JsonValueKind.Array)
+                    {
+                        var got = new List<(string, JsonElement)>();
+                        foreach (var e in arr.EnumerateArray())
+                            if (e.ValueKind == JsonValueKind.Object &&
+                                TryParseToolObject(e.GetRawText(), out string nm, out JsonElement ar) &&
+                                !string.IsNullOrWhiteSpace(nm))
+                                got.Add((nm, ar));
+                        if (got.Count > 0)
+                        {
+                            calls = got;
+                            return true;
+                        }
+                    }
+                }
+                catch { /* 不是这一段，往上继续找 */ }
+            }
+            start = start > 0 ? reply.LastIndexOf('{', start - 1) : -1;
+        }
+        return false;
+    }
+
     /// <summary>「拆分任务」的执行器（由内核注入）：参数是工具调用的原始 JSON，返回汇总结论文本。</summary>
     public Func<string, CancellationToken, Task<string>>? SplitRunner;
 
@@ -2064,7 +2521,7 @@ public sealed class Agent
                 or "create_image" or "image" or "生成图片" or "画图" or "作图" => ToolImage,
             "computer" or "computer_use" or "mouse" or "keyboard" or "操作电脑" or "控制鼠标" or "控制电脑" => ToolComputer,
             "install_ext" or "install_extension" or "安装扩展" or "装扩展" => ToolInstallExt,
-            "make_ext" or "pack_ext" or "build_skin" or "制作扩展" or "打包扩展" or "做皮肤" => ToolMakeExt,
+            "make_ext" or "pack_ext" or "pack_extension" or "build_skin" or "制作扩展" or "打包扩展" or "做皮肤" => ToolMakeExt,
             "generate_video" or "gen_video" or "text_to_video" or "video_gen" or "create_video"
                 or "make_video" or "video" or "生成视频" or "做视频" or "生成动画" => ToolVideo,
             "see_image" or "view_image" or "image_to_text" or "vision" or "ocr" or "describe_image"
@@ -2082,9 +2539,13 @@ public sealed class Agent
             "forget" or "memory_delete" or "delete_memory" or "删除记忆" or "忘记" => ToolForget,
 
             // 拆分任务 / 子智能体
-            "split_task" or "splittask" or "split" or "delegate" or "sub_agents" or "subagents"
+            "split_task" or "split_tasks" or "splittask" or "split" or "delegate" or "sub_agents" or "subagents"
                 or "spawn_agents" or "parallel_tasks" or "orchestrate" or "dispatch"
                 or "拆分任务" or "拆分" or "并行" or "子智能体" or "并行处理" => ToolSplit,
+
+            // 知识库
+            "knowledge" or "knowledge_search" or "search_knowledge" or "kb_search" or "kb"
+                or "查知识库" or "知识库" => ToolKnowledge,
 
             _ => null,
         };
@@ -2191,9 +2652,7 @@ public sealed class Agent
                 ToolMakeExt => MakeExtTool(args),
                 ToolComputer => await ComputerTool(args, sid, ct),
                 ToolKnowledge => KnowledgeTool(args),
-                ToolVision => MultimodalMain
-                    ? "图片已作为多模态输入直接发送给主模型，请直接描述图片内容，不要再调用「看图」工具。"
-                    : await VisionTool(args, sid, ct),
+                ToolVision => await VisionTool(args, sid, ct),
                 ToolSearch => await WebSearchTool(args, ct),
                 ToolResearch => await ResearchToolAsync(args, sid, ct),
                 ToolFetch => await FetchUrlTool(args, ct),
@@ -2366,28 +2825,28 @@ public sealed class Agent
         _lastImagePath = path;
 
         string visual = "";
-        if (_vision.Configured)
+        const string ask =
+            "这是一张 Windows 屏幕截图。用简短中文回答，不要客套话：\n" +
+            "① 现在是什么程序/界面（标题栏文字也读出来）；\n" +
+            "② 主要可交互元素，每个都给出**相对百分比坐标**（把整张图当作 0~1，x 向右 y 向下），格式：名称(x,y)，最多 6 个；\n" +
+            "③ 有没有弹窗、输入框、报错或加载中状态。";
+        string? read = null;
+        try
         {
-            const string ask =
-                "这是一张 Windows 屏幕截图。用简短中文回答，不要客套话：\n" +
-                "① 现在是什么程序/界面（标题栏文字也读出来）；\n" +
-                "② 主要可交互元素，每个都给出**相对百分比坐标**（把整张图当作 0~1，x 向右 y 向下），格式：名称(x,y)，最多 6 个；\n" +
-                "③ 有没有弹窗、输入框、报错或加载中状态。";
-            try
-            {
-                string? r = await _vision.AnalyzeAsync(path, ask, ct).ConfigureAwait(false);
-                if (!string.IsNullOrWhiteSpace(r)) visual = "\n\n屏幕内容（视觉模型解读）：\n" + r.Trim();
-            }
-            catch { }
+            // 截图同样走 base64 内联：主模型能看图就直接读，不必依赖第二个 Key
+            if (_api.Configured) read = await _api.AskImageAsync(path, ask, ct).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(read) && _vision.Configured)
+                read = await _vision.AnalyzeAsync(path, ask, ct).ConfigureAwait(false);
         }
+        catch { }
+        if (!string.IsNullOrWhiteSpace(read))
+            visual = "\n\n屏幕内容（模型解读）：\n" + read.Trim();
         else
-        {
-            visual = "\n\n（未配置图像理解 Key，只能给你截图路径，没法读屏；要我看图请到设置 → 图像理解 填 Key）";
-        }
+            visual = "\n\n（截图已保存，但当前模型不能读图：可以在 设置 → 图像理解 里配一个视觉模型作为兜底）";
 
         return $"{msg}。\n截图：{path}（图上 {w}×{h}，实际屏幕 {RemoteDesktop.ScreenWidth}×{RemoteDesktop.ScreenHeight}）" +
                visual +
-               "\n\n下一步：需要点击就用 relative=true 传 0~1 的 x/y（视觉模型给的坐标就是这个口径）。";
+               "\n\n下一步：需要点击就用 relative=true 传 0~1 的 x/y（模型给的坐标就是这个口径）。";
     }
 
     private string RememberTool(JsonElement args)
@@ -2688,26 +3147,55 @@ public sealed class Agent
     /// <summary>探测本机 Blender（内核首启用它把路径写进配置）。真正的连接状态在 Blender 连接器里， 工具执行也走连接器 —— 这里只保留探测，避免「工具」和「连接器」两套路径各判一次。</summary>
     public string? DetectBlender() => BlenderConnector.Detect(string.IsNullOrWhiteSpace(BlenderPath) ? null : BlenderPath);
 
-    /// <summary>看图：调用 GLM-4.6V-Flash 多模态模型识别/分析本地图片。</summary>
+    /// <summary>
+    /// 看图：把本地图片转成 base64 直接塞进 API 请求参数（多模态），用当前配的主模型回答。
+    /// 主模型不支持图片时才回退到独立视觉模型（设置 → 图像理解）。
+    /// </summary>
     private async Task<string> VisionTool(JsonElement args, int sid, CancellationToken ct)
     {
         string? path = GetArg(args, "图片路径");
         if (string.IsNullOrWhiteSpace(path))
             return "参数错误：缺少「图片路径」。";
+        path = path.Trim().Trim('"');
         if (!File.Exists(path))
             return $"图片不存在：{path}";
         string? question = GetArg(args, "问题");
+        string ask = string.IsNullOrWhiteSpace(question)
+            ? "请描述这张图片的内容；有文字就逐字读出来，有界面/图表就说明结构和关键信息。"
+            : question!;
 
-        if (!_vision.Configured)
-            return "看图不可用：请到设置 → 图像理解 里填写 GLM-4.6V 的 API Key。";
-
-        string? result = await _vision.AnalyzeAsync(path, question, ct);
-        if (result == null)
+        // ① 首选：主模型 + base64 内联（一条普通请求，不依赖第二个 Key）
+        string? mainErr = null;
+        if (_api.Configured)
         {
+            string? main = await _api.AskImageAsync(path, ask, ct);
+            if (!string.IsNullOrWhiteSpace(main))
+            {
+                Log($"看图：主模型 {_api.Model} · base64 内联 · 图片 {new FileInfo(path).Length / 1024} KB");
+                return $"图片：{path}\n识别结果：\n{main}";
+            }
             if (ct.IsCancellationRequested) return "看图已停止。";
-            return "看图失败：接口返回异常，请检查图像理解 Key/模型名，或稍后重试。";
+            mainErr = _api.LastError;
+            Log($"看图：主模型失败（{mainErr}），尝试独立视觉模型");
         }
-        return $"图片：{path}\n识别结果：\n{result}";
+
+        // ② 兜底：独立视觉模型（有些网关的模型根本不收图）
+        if (_vision.Configured)
+        {
+            string? result = await _vision.AnalyzeAsync(path, ask, ct);
+            if (!string.IsNullOrWhiteSpace(result))
+            {
+                Log("看图：独立视觉模型 " + _vision.Model);
+                return $"图片：{path}\n识别结果：\n{result}";
+            }
+            if (ct.IsCancellationRequested) return "看图已停止。";
+        }
+
+        if (!_api.Configured && !_vision.Configured)
+            return "看图不可用：还没配置模型，请到设置 → API 里填好 Key。";
+        return "看图失败：当前模型可能不支持图片输入" +
+               (string.IsNullOrWhiteSpace(mainErr) ? "" : $"（{mainErr}）") +
+               "。可以在 设置 → 图像理解 里配一个视觉模型作为兜底。";
     }
 
     /// <summary>调用随程序分发的爬虫脚本 tools\websearch.py 搜索（多引擎，无需 API Key）。</summary>
@@ -2878,7 +3366,7 @@ public sealed class Agent
         {
             string sys = "你是研究助理，负责把研究主题拆成互不重复的中文搜索查询词。只输出查询词，每行一个，不要编号、不要解释。";
             string user = $"研究主题：{topic}\n请给出 {want} 个从不同角度切入的搜索查询词（可覆盖：最新进展、数据与事实、风险与争议、对比或案例）。";
-            string? r = await CallOnceAsync(sys, new List<(string, string)> { ("user", user) }, ct, null);
+            string? r = await CallOnceAsync(sys, new List<ApiMsg> { new("user", user) }, ct, null);
             if (!string.IsNullOrWhiteSpace(r))
             {
                 var list = new List<string>();
@@ -2934,7 +3422,7 @@ public sealed class Agent
             "## 摘要\n## 关键发现（3-6 条，每条标注依据的资料编号）\n## 详细分析\n## 风险与不确定性\n## 结论与建议\n## 参考来源（编号 + 标题 + 链接）\n" +
             "要求：引用资料用 [1][2] 这样的编号；不要编造；总长 800-2000 字；只输出报告本身，不要额外解释。\n\n" +
             Truncate(sb.ToString(), 16000);
-        return await CallOnceAsync(sys, new List<(string, string)> { ("user", user) }, ct, null);
+        return await CallOnceAsync(sys, new List<ApiMsg> { new("user", user) }, ct, null);
     }
 
     /// <summary>模型汇总失败时的兜底报告：把抓到的资料直接整理成 Markdown。</summary>

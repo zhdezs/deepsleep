@@ -1,0 +1,187 @@
+/* deepsleep · 深色模式基础样式 · dsh · 深眠 v1.1.0
+   这是该显示模式的【固有 CSS】，不是可安装皮肤：切换深浅色时整套启停。
+   下方变量块与 ui/style.css 里的 body.dark / body.light 同优先级，因后加载而生效；
+   用户安装的 .dslp 皮肤通过 #skinStyle (body.skin-on) 叠加在这之上。 */
+body.dark {
+  --bg: #0b0e17;
+  --panel: #111524;
+  --side: #0d1120;
+  --text: #e6e9f2;
+  --muted: #8b93ab;
+  --border: #232a42;
+  --bubble: #161c30;
+  --self: linear-gradient(135deg, #4f6ef7 0%, #7a5cff 100%);
+  --self-text: #ffffff;
+  --input: #131829;
+  --hover: #1a2138;
+  --sel: #2a3454;
+  --card: #141a2e;
+  --code: #0d1220;
+  --shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  --chipbg: #1a2138;
+  --chipon: #4f6ef7;
+  --ring: #4f6ef7;
+  --radius: 16px;
+}
+
+/* ↓ 以下为原始皮肤包内的 CSS，选择器保持原样 */
+/* dsh · 深眠 —— 动效与细节 */
+
+/* 氛围光：缓慢漂移 */
+body::before {
+  content: '';
+  position: fixed;
+  inset: -10%;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(800px 500px at 15% -10%, rgba(79, 110, 247, 0.12), transparent 60%),
+    radial-gradient(700px 450px at 90% 110%, rgba(122, 92, 255, 0.10), transparent 60%),
+    radial-gradient(500px 360px at 55% 50%, rgba(56, 189, 248, 0.05), transparent 60%);
+  animation: dsh-aurora 18s ease-in-out infinite alternate;
+}
+@keyframes dsh-aurora {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(3%, 2%, 0) scale(1.08); }
+}
+
+/* 星点闪烁 */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    radial-gradient(1.5px 1.5px at 12% 22%, rgba(230, 233, 242, 0.55), transparent),
+    radial-gradient(1px 1px at 28% 68%, rgba(230, 233, 242, 0.45), transparent),
+    radial-gradient(1.5px 1.5px at 46% 14%, rgba(160, 175, 255, 0.55), transparent),
+    radial-gradient(1px 1px at 63% 82%, rgba(230, 233, 242, 0.40), transparent),
+    radial-gradient(1.5px 1.5px at 78% 34%, rgba(190, 170, 255, 0.55), transparent),
+    radial-gradient(1px 1px at 91% 58%, rgba(230, 233, 242, 0.45), transparent),
+    radial-gradient(1px 1px at 6% 88%, rgba(160, 175, 255, 0.45), transparent);
+  animation: dsh-twinkle 4.5s ease-in-out infinite;
+}
+@keyframes dsh-twinkle {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 0.85; }
+}
+
+/* 头像呼吸光晕 */
+@keyframes dsh-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(79, 110, 247, 0.35); }
+  50% { box-shadow: 0 0 0 8px rgba(79, 110, 247, 0.08); }
+}
+.avatar {
+  animation: dsh-glow 3.2s ease-in-out infinite;
+  border: 1px solid rgba(122, 92, 255, 0.35);
+}
+
+/* 消息行淡入上浮 */
+@keyframes dsh-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.row { animation: dsh-rise 320ms ease both; }
+
+/* 气泡悬停上浮 */
+.bubble {
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+.bubble:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(79, 110, 247, 0.18);
+}
+
+/* 用户气泡：流光描边 */
+.row.self .bubble {
+  position: relative;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+.row.self .bubble::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(120deg, rgba(122, 92, 255, 0.55), rgba(79, 110, 247, 0.15), rgba(122, 92, 255, 0.55));
+  background-size: 220% 100%;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  animation: dsh-flow 5s linear infinite;
+  pointer-events: none;
+}
+@keyframes dsh-flow {
+  from { background-position: 0% 0; }
+  to { background-position: 220% 0; }
+}
+
+/* 工具气泡：左侧光条呼吸 */
+.bubble.tool {
+  border-left: 3px solid #4f6ef7;
+  background: #10152a;
+  animation: dsh-toolglow 2.8s ease-in-out infinite;
+}
+@keyframes dsh-toolglow {
+  0%, 100% { box-shadow: -2px 0 10px -2px rgba(79, 110, 247, 0.15); }
+  50% { box-shadow: -2px 0 16px 0 rgba(79, 110, 247, 0.45); }
+}
+
+/* 思考气泡：柔和脉动 + 流光扫过 */
+@keyframes dsh-pulse {
+  0%, 100% { opacity: 0.75; }
+  50% { opacity: 1; }
+}
+@keyframes dsh-shimmer {
+  from { background-position: 150% 0; }
+  to { background-position: -50% 0; }
+}
+.bubble.thinking {
+  border: 1px dashed rgba(139, 147, 171, 0.4);
+  background-image: linear-gradient(100deg, transparent 30%, rgba(122, 92, 255, 0.10) 50%, transparent 70%);
+  background-size: 250% 100%;
+  animation: dsh-pulse 2s ease-in-out infinite, dsh-shimmer 3.5s linear infinite;
+}
+
+/* 按钮悬停光晕 */
+button {
+  transition: box-shadow 160ms ease, transform 120ms ease, filter 160ms ease;
+}
+button:hover {
+  box-shadow: 0 0 14px rgba(79, 110, 247, 0.35);
+  filter: brightness(1.12);
+}
+button:active { transform: scale(0.96); }
+
+/* 输入框聚焦光环 */
+.composer {
+  transition: box-shadow 200ms ease;
+}
+.composer:focus-within {
+  box-shadow: 0 0 0 2px rgba(79, 110, 247, 0.45), 0 0 24px rgba(122, 92, 255, 0.22), var(--shadow);
+}
+
+/* 文字选中色 */
+::selection {
+  background: rgba(122, 92, 255, 0.45);
+  color: #ffffff;
+}
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 9px; }
+::-webkit-scrollbar-thumb {
+  background: #2a3454;
+  border-radius: 99px;
+  transition: background 160ms ease;
+}
+::-webkit-scrollbar-thumb:hover { background: #3a4770; }
+
+/* 系统开启减少动态效果时关闭动画 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}

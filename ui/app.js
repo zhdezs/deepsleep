@@ -2236,14 +2236,14 @@ function openSettings(fresh, tabIdx) {
   pane.appendChild(field('模型名', 'imageModel', s.imageModel));
   pane.appendChild(bindMainKey('imageApiKey'));
 
-  sect('图像识别（选平台 → 填 Key 即绑定）');
+  sect('图像识别（兜底视觉模型：主模型不吃图时才用）');
   pane.appendChild(mediaPlat('vision', s.visionApiUrl, 'visionApiUrl', 'visionModel', null));
   pane.appendChild(field('接口地址', 'visionApiUrl', s.visionApiUrl, 'text',
-    '任何 OpenAI 兼容的 chat/completions 都行（默认智谱 GLM-4.6V）。'));
+    '看图默认把图片转成 base64 直接发给上面配的主模型，这里只做兜底（主模型不支持图片时才调用）。'));
   pane.appendChild(field('账号 API Key', 'visionApiKey', s.visionApiKey, 'password'));
   pane.appendChild(field('模型名', 'visionModel', s.visionModel));
   pane.appendChild(bindMainKey('visionApiKey'));
-  pane.appendChild(ck('主模型是多模态（图片直接发给主模型，不再调用「看图」工具）', 'multimodalMain', s.multimodalMain));
+  pane.appendChild(ck('用户上传的图片自动附带给主模型（图片以 base64 内联发送）', 'multimodalMain', s.multimodalMain));
 
   pane = panes[2];
   sect('视频生成（选平台 → 填 Key 即绑定，完全支持自定义 API）');

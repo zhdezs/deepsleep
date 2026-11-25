@@ -1,0 +1,178 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>deepsleep</title>
+
+</head>
+<body class="light">
+<div id="app">
+
+  <header id="topbar">
+    <div class="seg" id="seg">
+      <button data-tab="0" class="on">Deepsleep</button>
+    </div>
+    <div class="tb-right">
+      <button id="btnUpdate" class="pill hidden"><span id="updateText">检查更新</span></button>
+      <button id="btnTheme" class="icon" title="切换深浅色">
+        <svg class="ico only-dark" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6L17 7M7 17l-1.4 1.4"/></svg>
+        <svg class="ico only-light" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z"/></svg>
+      </button>
+      <button id="btnLink" class="icon" title="超级连接（配对码 / 远程桌面）">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M10.2 13.8a4 4 0 0 0 5.7 0l2-2a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M13.8 10.2a4 4 0 0 0-5.7 0l-2 2a4 4 0 0 0 5.7 5.7l1-1"/></svg>
+      </button>
+      <button id="btnSettings" class="icon" title="设置">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div id="main">
+    <aside id="sidebar">
+      <div class="side-top">
+        <input id="convSearch" type="text" placeholder="搜索对话">
+        <button id="btnNew" class="round" title="新建对话">＋</button>
+      </div>
+      <div id="convList" class="scroll"></div>
+      <div class="side-bottom">
+        <button id="btnMemory" class="chip-btn" title="长期记忆">记忆</button>
+        <button id="btnSkills" class="chip-btn" title="技能管理">技能</button>
+      </div>
+    </aside>
+
+    <main id="chat">
+      <div id="agents" class="agents hidden"></div>
+      <div id="msgs" class="scroll"></div>
+      <button id="btnBottom" class="fab hidden" title="回到底部">↓</button>
+
+      <div id="composer">
+        <div class="compose-box">
+          <textarea id="input" rows="1" placeholder="今天帮你做些什么？@ 添加上下文，/ 调用技能与指令"></textarea>
+          <div class="compose-bar">
+            <button id="btnPlus" class="bar-icon plus" title="添加上下文 / 更多">＋</button>
+            <div class="mode-pill"><select id="mode" title="工具权限模式">
+              <option value="chat">chat · 聊天</option>
+              <option value="work">work · 需确认</option>
+              <option value="boom">boom · 全自动</option>
+            </select></div>
+            <button id="btnTpl" class="bar-icon" title="技能与指令（/）">
+              <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7l4 5-4 5M12 17h7"/></svg>
+            </button>
+            <span class="grow"></span>
+            <button id="ctxRing" class="ctx-ring" title="上下文用量">
+              <svg viewBox="0 0 22 22" aria-hidden="true">
+                <circle class="track" cx="11" cy="11" r="8.5"></circle>
+                <circle class="bar" cx="11" cy="11" r="8.5"></circle>
+              </svg>
+            </button>
+            <button id="btnModel" class="model-pill" title="切换模型">
+              <span id="modelLogo" class="brand-slot"></span><span id="modelText">模型</span><span class="caret">⌄</span>
+            </button>
+            <button id="btnSend" class="send-circle" title="发送（Enter）">↑</button>
+          </div>
+          <div id="plusMenu" class="plus-menu hidden">
+            <button id="btnAttach" class="menu-item"><span>上传文件</span></button>
+            <label class="menu-item"><input type="checkbox" id="tgFast"><span>极速模式</span></label>
+            <label class="menu-item"><input type="checkbox" id="tgLocal"><span>本地模型</span></label>
+            <label class="menu-item"><input type="checkbox" id="tgSearch"><span>联网搜索</span></label>
+            <div class="menu-item reason-row">
+              <span>思考强度</span>
+              <div class="seg-mini" id="reasonSeg">
+                <button type="button" data-level="off">关</button>
+                <button type="button" data-level="low">低</button>
+                <button type="button" data-level="medium">中</button>
+                <button type="button" data-level="high">高</button>
+              </div>
+            </div>
+            <div class="menu-sep"></div>
+            <button id="btnRegen" class="menu-item"><span>重新生成</span></button>
+            <button id="btnClear" class="menu-item"><span>清空当前对话</span></button>
+            <button id="btnClusterTpl" class="menu-item hidden"><span>分工模板</span></button>
+          </div>
+        </div>
+        <div id="ctxPanel" class="popover ctx-pop hidden">
+          <div class="pop-head"><b>上下文用量</b><button class="pop-x" data-close="ctxPanel" title="关闭">✕</button></div>
+          <div class="pop-body" id="ctxBody"></div>
+        </div>
+        <div id="skillPanel" class="popover skill-pop hidden">
+          <div class="pop-head"><b>技能与指令</b><button class="pop-x" data-close="skillPanel" title="关闭">✕</button></div>
+          <div class="pop-body" id="skillBody"></div>
+        </div>
+        <div id="modelPanel" class="popover model-pop hidden">
+          <div class="pop-head"><b>切换模型</b><button class="pop-x" data-close="modelPanel" title="关闭">✕</button></div>
+          <div class="pop-body">
+            <input id="modelSearch" class="pop-search" type="text" placeholder="搜索模型名（flash / qwen / deepseek）">
+            <div id="modelHint" class="pop-hint"></div>
+            <div id="modelList" class="pop-list"></div>
+          </div>
+        </div>
+        <div class="compose-foot">
+          <span id="busy" class="busy"></span>
+          <span id="statusLine" class="status"></span>
+          <span id="toolBar" class="toolbar" title="可用工具"></span>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<div id="toasts"></div>
+<div id="modalRoot"></div>
+
+<div id="rdRoot" class="hidden">
+  <div id="rdBar">
+    <button id="rdBack" class="rd-btn" title="返回（Esc）">← 返回</button>
+    <b id="rdTitle">远程桌面</b>
+    <span id="rdInfo"></span>
+    <span class="grow"></span>
+    <button id="rdOpen" class="rd-btn" title="在系统浏览器里打开">在新窗口打开</button>
+    <button id="rdReload" class="rd-btn" title="重新加载">↻</button>
+  </div>
+  <iframe id="rdFrame" allow="clipboard-read; clipboard-write" referrerpolicy="no-referrer"></iframe>
+</div>
+
+<script>
+/* 资源带版本号加载，避开 WebView2 对 app.local 的缓存。 */
+(function () {
+  var m = location.search.match(/[?&]v=([^&]*)/);
+  var v = m ? encodeURIComponent(m[1]) : Date.now();
+  window.__uiVersion = v;
+
+  function css(file, id) {
+    var l = document.createElement('link');
+    l.rel = 'stylesheet'; l.id = id;
+    l.href = file + '?v=' + v;
+    document.head.appendChild(l);
+    return l;
+  }
+  css('style.css', 'baseCss');
+  // 两套主题都是全局选择器，只能启用一份。
+  var themeLinks = {
+    dark: css('theme-dark.css', 'themeDarkCss'),
+    light: css('theme-light.css', 'themeLightCss')
+  };
+  var remembered = 'dark';
+  try { remembered = localStorage.getItem('ds-theme') || 'dark'; } catch (e) { }
+  window.__setThemeCss = function (t) {
+    var dark = t === 'dark';
+    themeLinks.dark.media = dark ? 'all' : 'not all';
+    themeLinks.light.media = dark ? 'not all' : 'all';
+    themeLinks.dark.disabled = !dark;
+    themeLinks.light.disabled = dark;
+    try { localStorage.setItem('ds-theme', dark ? 'dark' : 'light'); } catch (e) { }
+  };
+  window.__setThemeCss(remembered);
+  document.body.classList.toggle('dark', remembered === 'dark');
+  document.body.classList.toggle('light', remembered !== 'dark');
+
+  // 图标表和识别规则要在 app.js 之前就位，首屏画模型药丸时用。
+  ['logos.js', 'brands.js', 'app.js'].forEach(function (f) {
+    var sc = document.createElement('script');
+    sc.src = f + '?v=' + v;
+    document.body.appendChild(sc);
+  });
+})();
+</script>
+</body>
+</html>

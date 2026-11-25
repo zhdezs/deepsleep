@@ -14,7 +14,7 @@
                       （界面显示成 v3.2.3 · nebula.4）。换线时改名字，同线内不改。 -->
   <PropertyGroup>
     <Version>3.2.4</Version>
-    <FileVersion>3.2.4.9</FileVersion>
+    <FileVersion>3.2.4.11</FileVersion>
     <DeepSleepCode>nebula</DeepSleepCode>
   </PropertyGroup>
 

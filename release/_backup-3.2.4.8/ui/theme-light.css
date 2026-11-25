@@ -1,0 +1,117 @@
+/* deepsleep · 浅色模式基础样式 · OpenHarmony · ArkUI 清悦 v1.0.0
+   这套是用户提供的 ArkUI 风格皮肤，现在是**内置默认**：首次启动自动启用，
+   同时这里也作为浅色模式的固有 CSS（切换深浅色时整套启停）。
+   body.skin-on 的字样已经换成 body.light —— 原来那份皮肤是叠加层，
+   现在直接接管浅色模式，所以哪怕关掉皮肤，看到的也是同一套设计。
+   想换回旧配色：删掉本文件、把 body.light 里的变量换回你喜欢的值即可；深色模式没动。 */
+
+/* Original OpenHarmony / ArkUI inspired skin. All rules are scoped. */
+body.light {
+ --bg:#f1f3f5; --panel:#ffffff; --side:#f7f8fa;
+ --text:#18212f; --muted:#536174; --border:#d3dae4;
+ --bubble:#ffffff; --self:#0b55cc; --self-text:#ffffff;
+ --input:#ffffff; --hover:#e7edf5; --sel:#e2edff; --card:#ffffff;
+ --code:#eef1f6; --shadow:0 12px 40px rgba(28,46,75,.12);
+ --chipbg:#eaf0f6; --chipon:#dceaff; --ring:rgba(11,85,204,.22);
+ --radius:20px; --blue:#0b55cc;
+ color-scheme:light; color:var(--text); background:var(--bg);
+ font-family:'HarmonyOS Sans SC','HarmonyOS Sans','Microsoft YaHei UI','Segoe UI',sans-serif;
+}
+body.light::before, body.light::after {content:none!important; animation:none!important;}
+body.light #topbar {background:#fff; border-color:#e1e6ed; box-shadow:0 1px 5px rgba(28,46,75,.03); backdrop-filter:none;}
+body.light #sidebar {background:var(--side); border-color:#e1e6ed; backdrop-filter:none;}
+body.light .conv {border-radius:15px; padding:10px 12px; margin-bottom:5px; color:var(--text); transition:background-color .18s ease;}
+body.light .conv:hover {background:#e7edf5;}
+body.light .conv.on {background:#e2edff; color:#174b9c; box-shadow:inset 3px 0 0 #0b55cc;}
+body.light .conv .p {color:#536174; opacity:1;}
+body.light .side-top input {border-radius:18px; background:#eaf0f6; color:#18212f;}
+body.light .seg {border-radius:20px; background:#edf1f6; border-color:transparent; padding:3px;}
+body.light .seg button {border-radius:18px; color:#3e4d62; opacity:1;}
+body.light .seg button.on {background:#fff; color:#0b55cc; opacity:1; box-shadow:0 2px 7px rgba(28,46,75,.09);}
+body.light .pill, body.light .btn.primary {background:#0b55cc; color:#fff; border-color:transparent; border-radius:999px; box-shadow:none;}
+body.light .pill:hover, body.light .btn.primary:hover {background:#0647b1; color:#fff; filter:none;}
+body.light .chip-btn {border-radius:999px; color:#34445a; background:#eaf0f6; opacity:1;}
+body.light .chip-btn:hover {background:#dfe8f4;}
+body.light .row {animation:oh-card-in .22s cubic-bezier(.2,.7,.2,1) both;}
+body.light .bubble {background:#fff; color:#18212f; border:1px solid #e0e6ee; border-radius:20px; padding:12px 16px; box-shadow:0 3px 12px rgba(28,46,75,.045); line-height:1.65; transition:box-shadow .18s ease; animation:none;}
+body.light .bubble:hover {box-shadow:0 4px 15px rgba(28,46,75,.07); transform:none;}
+body.light .row:not(.self) .bubble {border-bottom-left-radius:8px;}
+body.light .row.self .bubble {background:#0b55cc; color:#fff; border-color:#0b55cc; border-radius:20px 20px 8px 20px; box-shadow:0 4px 12px rgba(11,85,204,.14);}
+body.light .bubble .who {color:#536174; opacity:1;}
+body.light .row.self .bubble .who {color:#fff; opacity:1;}
+body.light .bubble a {color:#084ebd; text-decoration:underline; text-underline-offset:3px;}
+body.light .row.self .bubble a {color:#fff;}
+body.light .bubble.tool {background:#f7f9fc; color:#27394f; border:1px solid #cdd9e8; border-left:3px solid #0b55cc; animation:none;}
+body.light .bubble.tool::before, body.light .bubble.tool::after {content:none; animation:none;}
+body.light .bubble.thinking {background:#eef4ff; color:#25436d; border-color:#c5d7f3; animation:oh-thinking 1.8s ease-in-out infinite;}
+body.light .avatar {background:#e2edff; color:#174b9c; border-radius:10px; box-shadow:none; animation:none;}
+body.light .row.self .avatar {background:#0b55cc; color:#fff;}
+body.light .bubble code {background:#edf1f6; color:#283a53; border-radius:6px;}
+body.light .bubble pre {background:#eef1f6; color:#18212f; border:1px solid #d3dae4; border-radius:14px;}
+body.light .bubble pre code {background:transparent; color:inherit;}
+body.light .row.self .bubble code, body.light .row.self .bubble pre {background:#07439f; color:#fff; border-color:#4380d5;}
+body.light .row.self .bubble pre code {background:transparent;}
+body.light .bubble blockquote {border-left:3px solid #7ba6eb; color:#465870;}
+body.light .row.self .bubble blockquote {border-color:#a7c7ff; color:#fff;}
+body.light .composer {background:transparent; box-shadow:none; border-color:transparent; animation:none;}
+body.light .composer:focus-within {box-shadow:none;}
+body.light .compose-box {background:#fff; border:1px solid #cbd5e2; border-radius:24px; box-shadow:0 6px 24px rgba(28,46,75,.07); padding:12px 14px 10px;}
+body.light .compose-box:focus-within {border-color:#0b55cc; box-shadow:0 0 0 3px rgba(11,85,204,.14),0 6px 24px rgba(28,46,75,.07);}
+body.light #input {color:#18212f;}
+body.light input::placeholder, body.light textarea::placeholder {color:#536174; opacity:1;}
+body.light .mode-pill select {background-color:#edf3fc; color:#174b9c; border:1px solid #afc7eb; border-radius:999px;}
+body.light .model-pill {color:#465870; background:#f0f3f7; border-radius:999px;}
+body.light .model-pill .dot {background:#0b55cc;}
+body.light .send-circle {background:#0b55cc; color:#fff; width:34px; height:34px; box-shadow:none;}
+body.light .send-circle:hover {background:#0647b1; filter:none;}
+body.light .send-circle.stop {background:#b3261e; color:#fff;}
+body.light .send-circle.resume {background:#176b3b; color:#fff;}
+body.light .plus-menu, body.light .popover, body.light .modal {background:#fff; color:#18212f; border:1px solid #d3dae4; border-radius:24px; box-shadow:0 18px 54px rgba(28,46,75,.16);}
+body.light .plus-menu {padding:8px; border-radius:20px;}
+body.light .plus-menu .menu-item {color:#18212f; border-radius:12px;}
+body.light .plus-menu .menu-item:hover {background:#e7edf5;}
+body.light .plus-menu .menu-item:has(input:checked) {color:#0b55cc; background:#edf3ff;}
+body.light .btn {border-radius:999px; background:#edf1f6; color:#29394f; border-color:transparent;}
+body.light .btn:hover {background:#dfe8f4;}
+body.light .btn.danger {background:#fff0ee; color:#a8211a;}
+body.light .modal .foot {border-color:#e1e6ed; background:#f8f9fb;}
+body.light .modal input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), body.light .modal textarea, body.light .modal select, body.light .pop-search {background:#f1f4f8; color:#18212f; border:1px solid #bdc9d9; border-radius:12px;}
+body.light input[type=checkbox], body.light input[type=radio], body.light input[type=range] {accent-color:#0b55cc;}
+body.light select option {background:#fff; color:#18212f;}
+body.light .toolcard {background:#f8faff; color:#27394f; border:1px solid #cdd9e8; border-radius:16px; box-shadow:none;}
+body.light .toolcard.runcard > .tbody {max-height:none; overflow:visible;}
+body.light details.runwrap {color:#344c6c;}
+body.light .acts button, body.light .pop-x {color:#536174;}
+body.light .acts button:hover, body.light .pop-x:hover {background:#e7edf5; color:#18212f;}
+body.light #statusLine, body.light #toolBar {color:#536174;}
+body.light button {transition:background-color .18s ease,box-shadow .18s ease,transform .14s ease;}
+body.light button:hover {transform:none;}
+body.light button:active {transform:scale(.98);}
+body.light button:focus-visible, body.light input:focus-visible, body.light select:focus-visible, body.light textarea:focus-visible, body.light summary:focus-visible {outline:2px solid #0b55cc; outline-offset:3px;}
+body.light button:disabled {opacity:1; color:#5d6878; background:#e6eaf0; box-shadow:none; cursor:default;}
+body.light .row.self .bubble ::selection {background:#dceaff; color:#18212f;}
+body.light ::selection {background:#c9ddff; color:#18212f;}
+body.light ::-webkit-scrollbar {width:7px; height:7px;}
+body.light ::-webkit-scrollbar-thumb {background:#b5c0cf; border-radius:999px;}
+body.light ::-webkit-scrollbar-thumb:hover {background:#7e8da3;}
+@keyframes oh-card-in {from {opacity:0; transform:translateY(5px);} to {opacity:1; transform:none;}}
+@keyframes oh-thinking {0%,100% {box-shadow:0 0 0 0 rgba(11,85,204,0);} 50% {box-shadow:0 0 0 3px rgba(11,85,204,.09);}}
+@media (prefers-reduced-motion:reduce) {
+ body.light *, body.light *::before, body.light *::after {animation:none!important; transition:none!important; scroll-behavior:auto!important;}
+}
+
+/* Dynamic settings and actual composer ID. */
+body.light #composer {background:var(--bg); border-top:0; backdrop-filter:none;}
+body.light .btn.pri {background:#0b55cc; color:#fff; border-color:transparent;}
+body.light .btn.pri:hover {background:#0647b1;}
+body.light .set-tabs {background:#fff; border-color:#e1e6ed; backdrop-filter:none;}
+body.light .set-tabs button {background:#edf1f6; color:#43536a; border-color:transparent; border-radius:999px;}
+body.light .set-tabs button.on {background:#0b55cc; color:#fff; border-color:#0b55cc;}
+body.light .menu {background:#fff; color:#18212f; border:1px solid #d3dae4; border-radius:18px; padding:7px;}
+body.light .menu button {border-radius:11px;}
+body.light .toast {background:#fff; color:#18212f; border-radius:18px;}
+body.light .toast.error {background:#fff3f1; color:#a8211a; border-color:#ca7b75;}
+body.light .hint, body.light .field label {color:#536174; opacity:1;}
+body.light .icon {color:#34445a; opacity:1;}
+body.light .icon.off {color:#647186; opacity:1; background:#edf1f6;}
+
